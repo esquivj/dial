@@ -15,6 +15,7 @@ It treats personal listening history as an instrument readout: amber numerals on
 - **Ambient.** Always present in the menubar, never in the way. Opens in under 100ms.
 - **Personal.** Every reading is about *you* — your counts, your ranks, your rediscoveries. Not global stats.
 - **Historically rich from day one.** Supports importing Spotify's Extended Streaming History export so "haven't heard since 2019" works the day the export arrives.
+- **Alive.** A pixel-pet mascot lives in the menubar strip — grows from an egg as you listen, reacts to what's playing, gets excited on first listens, goes dormant if neglected.
 - **Native feel.** No Electron. Tiny memory footprint. Proper macOS idioms (NSStatusItem, NSPopover, SF Symbols, Keychain, Core Image blur).
 
 ## Non-goals
@@ -29,14 +30,14 @@ It treats personal listening history as an instrument readout: amber numerals on
 
 ### Menubar strip (always visible)
 
-The strip lives in `NSStatusItem` and has four display states:
+The strip lives in `NSStatusItem` and has four display states. The activity indicator on the left is the **pixel pet** (see Pixel Pet subsystem below), not a generic equalizer — its stage, pose, and beat-sync animation are driven by `PetViewModel`.
 
 | State | Visual | Copy |
 |---|---|---|
-| Playing | Amber 3-bar equalizer + track title + `·<plays30d>` count | `▍▍▍ Chamber of Reflection ·24` |
-| First listen | Amber pulse dot + `NEW` label + track title | `● NEW So Hot You're Hurting…` |
-| Collapsed (narrow menubar) | Equalizer bars + play count only | `▍▍▍ ·24` |
-| Paused | Gray pause glyph + "Paused" | `❙❙ Paused` |
+| Playing | Pet sprite (beat-sync) + track title + `·<plays30d>` count | `[🐱] Chamber of Reflection ·24` |
+| First listen | Pet sprite (excited, eyes wide) + amber `NEW` label + track title | `[🐱!] NEW So Hot You're Hurting…` |
+| Collapsed (narrow menubar) | Pet sprite + play count only | `[🐱] ·24` |
+| Paused | Pet sprite (sitting, eyes closed) + "Paused" | `[🐱z] Paused` |
 
 The strip auto-collapses if available menubar width falls below a threshold (other apps claiming space). Click opens the dropdown. Scroll-over the strip cycles prev/next track (optional, behind a Settings toggle).
 
@@ -44,7 +45,7 @@ The strip auto-collapses if available menubar width falls below a threshold (oth
 
 Opens as `NSPopover` (or `MenuBarExtra` in SwiftUI 5, depending on OS target). Content is stacked top to bottom:
 
-1. **Status rail** (1px amber hairline + 20px bar): `NOW PLAYING` label + pulse dot + `MM:SS / MM:SS` progress on the right.
+1. **Status rail** (1px amber hairline + 28px bar): the pixel pet (rendered at 2×, ~24px) sits on the left + `NOW PLAYING` label + `MM:SS / MM:SS` progress on the right. The pet's animation state matches the menubar-strip sprite exactly (single source of truth).
 2. **Track hero** (72px): 52px album art + track title + "Artist · Album".
 3. **Readouts row** (68px, divided into 2 columns):
    - `PLAYS · 30D` — big amber mono numeral + small delta (`↑ 3` / `NEW`)
@@ -103,15 +104,17 @@ Single-process app. No helper processes. The menubar icon starts polling on logi
 Dial/
 ├── App/                  # @main, AppDelegate, StatusBarController
 ├── Auth/                 # OAuth (PKCE) + Keychain token store
-├── Spotify/              # API client: current-playing, track metadata
+├── Spotify/              # API client: current-playing, track metadata, audio-features
 ├── Polling/              # PollingService (Combine/AsyncStream-based)
 ├── History/              # Extended Streaming History importer
 ├── Store/                # GRDB DB, migrations, DAOs
 ├── Aggregations/         # SQL views / queries for readouts
+├── Pet/                  # Pixel pet: XP engine, stage transitions, behavior resolver, sprite data
 ├── ViewModels/           # @Observable view models
 ├── Views/
 │   ├── MenubarStrip/     # The status item SwiftUI view
 │   ├── Dropdown/         # The popover content
+│   ├── PixelSprite/      # The pet renderer (SwiftUI Canvas, 14×14 pixel arrays)
 │   └── Settings/         # The settings window
 └── DesignSystem/         # Colors, fonts, components (Chip, Readout, etc.)
 ```
@@ -121,7 +124,7 @@ Each module exposes a small interface and depends only on the layers below it. `
 ### Auth flow
 
 - **PKCE OAuth 2.0** via `ASWebAuthenticationSession`.
-- **Scopes:** `user-read-currently-playing`, `user-read-playback-state`, `user-modify-playback-state` (for transport controls), `user-read-recently-played`.
+- **Scopes:** `user-read-currently-playing`, `user-read-playback-state`, `user-modify-playback-state` (for transport controls), `user-read-recently-played`. Note: `/audio-features` (used for beat-sync BPM) requires no user scope — just the app token.
 - **Token storage:** access + refresh in macOS Keychain via `KeychainAccess`, keyed by account.
 - **Refresh:** `SpotifyClient` auto-refreshes on 401.
 
@@ -196,12 +199,95 @@ Defined as SQL views and queries on GRDB's value observation, so the UI subscrib
 
 All aggregations are cached in an in-memory `@Observable AggregationsCache` and recomputed incrementally when a new play arrives.
 
+### Pixel Pet (mascot subsystem)
+
+A pixel pet lives in the menubar strip and the dropdown's status rail. It hatches from an egg and grows through 6 life stages as you listen. It reacts to playback events (first listens, rediscoveries, pauses) and sleeps if you go quiet for 7+ days. Rendered as a 14×14 amber silhouette on instrument black — classic Game Boy tamagotchi, tuned to the vehicle-dashboard palette.
+
+**Life stages (by XP threshold):**
+
+| Stage | XP | Sprite signature |
+|---|---|---|
+| Egg | 0 | Closed oval |
+| Hatching | 500 | Egg cracked, two eyes peeking, shell pieces floating |
+| Hatchling | 1,000 | Small creature, 2 legs, 2 eyes, no ears |
+| Juvenile | 5,000 | One ear, learning a smile |
+| Companion | 25,000 | Full adult: two ears, eyes, smile, feet |
+| Elder | 100,000 | Eyebrows, mustache, wise silhouette |
+
+**XP formula (blend):**
+
+Every play that crosses the dedup threshold awards XP:
+
+```
+base_xp     = ms_played / 60_000                # 1 XP per minute
+variety_xp  = 50 if first_play_of_artist  else
+              25 if first_play_of_album   else 0
+streak_mult = min(1 + (streak_days - 2) * 0.25, 2.0)   # active when streak >= 3 days
+xp_awarded  = (base_xp + variety_xp) * streak_mult
+```
+
+A *streak day* is a day with at least one dedup-qualified play. Missing a day resets the streak to 0.
+
+**Retroactive XP from history import:**
+
+Imported history contributes XP up to a cap at the **Companion** threshold (25,000 XP). Elder is **locked** until at least 30 calendar days have elapsed since first install. This prevents a decade-long import from instantly maxing the pet — you get a satisfying pre-seed, but the final stage is earned in real time.
+
+**Behaviors (animation states):**
+
+| Behavior | Trigger | Animation |
+|---|---|---|
+| `idle` | Music playing, no special event | Gentle 2s bob; blink every 5–8s |
+| `beat_sync` | Music playing with known BPM (via `/audio-features`) | Bob cadence = 60/BPM seconds |
+| `first_listen` | `first_listen` aggregation fires | 400ms: exclamation mark pops above, eyes widen, ears up; settles back to idle |
+| `rediscovered` | `rediscovered` aggregation fires | 600ms: trailing thought dots, wistful half-smile; settles back |
+| `paused` | Playback paused | Sits, droopy ears, eyes closed, single Z floats |
+| `dormant` | No dedup-qualified plays for ≥ 7 days | Lies down, three fading Z's; returns to `idle` on next play |
+| `level_up` | Stage threshold crossed | 1.2s: radial amber glow + sprite cross-fades from old stage to new |
+
+**Behavior priority** (highest first): `level_up` > `first_listen` > `rediscovered` > `paused` > `dormant` > `beat_sync` > `idle`.
+
+**Sprite storage & rendering:**
+
+Sprites are compile-time Swift arrays of 14×14 ints (one per `(stage, behavior)` pair), not image assets. A `PixelSprite` SwiftUI view renders them via `Canvas`:
+
+```swift
+struct PixelSprite: View {
+  let pixels: [[Int]]        // 14×14, 0 = transparent, 1 = amber, 2 = ivory, 3 = shadow
+  let pixelSize: CGFloat     // 1 for menubar strip (~16px total), 2 for dropdown (~32px)
+  // renders via Canvas { ctx, size in ... }
+}
+```
+
+Beat sync and other animations use `withAnimation` + a `@State` offset; no Core Animation layer juggling needed at this scale.
+
+**Storage:**
+
+```sql
+CREATE TABLE pet_state (
+  id INTEGER PRIMARY KEY CHECK (id = 1),     -- singleton row
+  xp INTEGER NOT NULL DEFAULT 0,
+  stage TEXT NOT NULL DEFAULT 'egg',
+  hatched_at INTEGER,                        -- when xp first crossed 500
+  last_play_at INTEGER,
+  streak_days INTEGER NOT NULL DEFAULT 0,
+  streak_anchor_date TEXT,                   -- YYYY-MM-DD of streak start
+  elder_unlocked_at INTEGER                  -- set after 30d live use; null until then
+);
+```
+
+XP is recomputed incrementally inside the same transaction that inserts a `plays` row. Streak is evaluated by a lightweight job at 03:00 local time (checks yesterday had a play; if not, resets). Behavior state is pure-derived from playback event + last-play-at, not stored.
+
+**Accessibility:**
+
+The pet is decorative. VoiceOver reads the strip as "Dial — playing [track] by [artist]." The Settings window exposes the pet status as text: "Pet: Companion, 27,420 XP, 12-day streak."
+
 ### State / ViewModel layer
 
 - `NowPlayingViewModel` (`@Observable`) — current track + all readouts for the dropdown.
 - `MenubarStripViewModel` — current track + play count + state (playing/paused/new).
-- `SettingsViewModel` — account, import progress, polling config.
-- ViewModels are the only surface Views read from; they subscribe to `PollingService` events and `AggregationsCache` values.
+- `PetViewModel` — current stage + active behavior + XP progress; shared between menubar strip and dropdown so the pet animates in sync across both surfaces.
+- `SettingsViewModel` — account, import progress, polling config, pet stats.
+- ViewModels are the only surface Views read from; they subscribe to `PollingService` events, `AggregationsCache` values, and `PetEngine` state.
 
 ### Visual direction (mood: vehicle dashboard)
 
@@ -246,7 +332,7 @@ AppDelegate → check Keychain → no token → present onboarding → OAuth →
 User drops folder → validate filenames (`endsong_*.json`) → begin transaction → stream-parse each file → batch-insert plays → commit → collect distinct track URIs → batch-fetch metadata → upsert `tracks` + `artists` → close with `imports_log` row → dismiss Settings drag-zone, show "Imported 47,293 plays" toast.
 
 ### Normal tick
-Poll response → diff against last observed track → if same track: update progress → if different: apply dedup rule → when crossed threshold, insert `plays` row → refresh `AggregationsCache` → publish to ViewModels → views animate change.
+Poll response → diff against last observed track → if same track: update progress → if different: apply dedup rule → when crossed threshold, in a single transaction: insert `plays` row, award pet XP, update `pet_state` (including any stage transition) → refresh `AggregationsCache` → publish to ViewModels → strip/dropdown animate change, pet plays its contextual behavior (first listen, rediscovered, or beat sync).
 
 ## Edge cases & error handling
 
@@ -260,10 +346,11 @@ Poll response → diff against last observed track → if same track: update pro
 
 ## Testing strategy
 
-- **Unit tests** — pure logic: dedup rule, aggregation queries against a seeded in-memory SQLite, badge priority resolver.
-- **Integration tests** — fake Spotify server (stubbed URLProtocol) → PollingService → Store → Aggregations → ViewModel. Assert that after N poll ticks with scripted responses, the ViewModel reports the expected readouts.
-- **Import test** — a committed fixture of ~200 synthetic `endsong` rows; assert idempotent re-import, correct track/artist derivation, transaction rollback on invalid row.
-- **Snapshot tests** — SwiftUI previews captured as PNGs for each badge state, compared on CI (`swift-snapshot-testing`).
+- **Unit tests** — pure logic: dedup rule, aggregation queries against a seeded in-memory SQLite, badge priority resolver, pet XP formula (base/variety/streak math), stage-transition thresholds, behavior priority resolver.
+- **Integration tests** — fake Spotify server (stubbed URLProtocol) → PollingService → Store → Aggregations + PetEngine → ViewModel. Assert that after N poll ticks with scripted responses, the ViewModel reports the expected readouts AND the pet reports the expected stage + behavior.
+- **Import test** — a committed fixture of ~200 synthetic `endsong` rows; assert idempotent re-import, correct track/artist derivation, transaction rollback on invalid row, retroactive XP capped at Companion threshold.
+- **Streak test** — scripted calendar of synthetic play days; assert streak increments, resets on gap, multiplier applies correctly.
+- **Snapshot tests** — SwiftUI previews captured as PNGs for each badge state AND each (stage, behavior) pet sprite, compared on CI (`swift-snapshot-testing`).
 - **Manual QA checklist** — documented in `docs/qa-checklist.md` (written as part of the plan).
 
 ## Open questions
@@ -272,6 +359,8 @@ Poll response → diff against last observed track → if same track: update pro
 - **`MenuBarExtra` vs `NSStatusItem` + `NSPopover`** — `MenuBarExtra` is cleaner but has constraints on dynamic width for the strip. Plan will prototype both in v0 and pick.
 - **Artwork caching** — for `last_60_min` timeline, do we cache album art locally? Probably yes, 50MB LRU cache in `~/Library/Caches/Dial/artwork`.
 - **Dark/light mode** — Dial is dark-only (instrument aesthetic). Confirmed — no light-mode variant.
+- **Pet variant at elder stage** — does the elder form branch based on listening diversity (e.g., eclectic listener → different silhouette from genre loyalist)? Out of v1 scope but worth tracking as a v1.1 hook.
+- **Pet cosmetic earning** — unlockable accessories (tiny hat, record around neck) at XP milestones? Also v1.1.
 
 ## Out of scope (explicit)
 
