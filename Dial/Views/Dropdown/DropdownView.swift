@@ -3,6 +3,7 @@ import SwiftUI
 struct DropdownView: View {
   @Bindable var coord: AppCoordinator
   @Environment(\.openWindow) private var openWindow
+  @State private var showingGlossary = false
 
   var body: some View {
     Group {
@@ -21,23 +22,27 @@ struct DropdownView: View {
 
   private var signedInView: some View {
     VStack(spacing: 0) {
-      StatusRail(vm: coord.menubar, pet: coord.pet)
-      TrackHero(vm: coord.nowPlaying)
-      ReadoutsRow(vm: coord.nowPlaying)
-      BadgeRow(kind: activeBadge, detail: badgeDetail)
-      if let artist = coord.nowPlaying.track?.artistName {
-        ArtistContext(
-          artist: artist,
-          rank7d: coord.aggCache.artistRank7d,
-          lifetime: coord.aggCache.artistLifetimePlays
+      StatusRail(vm: coord.menubar, pet: coord.pet, showingGlossary: $showingGlossary)
+      if showingGlossary {
+        GlossaryPanel()
+      } else {
+        TrackHero(vm: coord.nowPlaying)
+        ReadoutsRow(vm: coord.nowPlaying)
+        BadgeRow(kind: activeBadge, detail: badgeDetail)
+        if let artist = coord.nowPlaying.track?.artistName {
+          ArtistContext(
+            artist: artist,
+            rank7d: coord.aggCache.artistRank7d,
+            lifetime: coord.aggCache.artistLifetimePlays
+          )
+        }
+        SessionTimeline(plays: coord.aggCache.last60Min)
+        ControlsBar(
+          client: coord.client,
+          onOpenHistory: { openWindow(id: "history") },
+          onOpenStats: { openWindow(id: "stats") }
         )
       }
-      SessionTimeline(plays: coord.aggCache.last60Min)
-      ControlsBar(
-        client: coord.client,
-        onOpenHistory: { openWindow(id: "history") },
-        onOpenStats: { openWindow(id: "stats") }
-      )
     }
   }
 
@@ -46,49 +51,53 @@ struct DropdownView: View {
   private var connectView: some View {
     VStack(spacing: 0) {
       // Same status rail so the pet egg is visible from the jump.
-      StatusRail(vm: coord.menubar, pet: coord.pet)
+      StatusRail(vm: coord.menubar, pet: coord.pet, showingGlossary: $showingGlossary)
 
-      Spacer(minLength: 12)
+      if showingGlossary {
+        GlossaryPanel()
+      } else {
+        Spacer(minLength: 12)
 
-      VStack(alignment: .leading, spacing: 8) {
-        Text("Welcome to Dial")
-          .font(Dial.Typography.sansTitle)
-          .foregroundStyle(Dial.Palette.ivory)
-        Text("""
-        A menubar companion for Spotify. Connect your account to start \
-        tracking what you play and let the pet hatch.
-        """)
-        .font(Dial.Typography.sansCaption)
-        .foregroundStyle(Dial.Palette.muted)
-        .fixedSize(horizontal: false, vertical: true)
-      }
-      .padding(.horizontal, 18)
-
-      Spacer(minLength: 14)
-
-      Button {
-        Task { try? await coord.signIn() }
-      } label: {
-        Text("CONNECT SPOTIFY")
-          .font(Dial.Typography.monoLabel)
-          .tracking(1.4)
-          .foregroundStyle(Dial.Palette.ground)
-          .padding(.vertical, 10)
-          .frame(maxWidth: .infinity)
-          .background(Dial.Palette.amber)
-          .clipShape(RoundedRectangle(cornerRadius: 4))
-      }
-      .buttonStyle(.plain)
-      .padding(.horizontal, 18)
-
-      Spacer(minLength: 12)
-
-      Text("OAuth opens in your browser. Token stays in your Keychain.")
-        .font(Dial.Typography.monoLabel)
-        .tracking(0.6)
-        .foregroundStyle(Dial.Palette.muted)
+        VStack(alignment: .leading, spacing: 8) {
+          Text("Welcome to Dial")
+            .font(Dial.Typography.sansTitle)
+            .foregroundStyle(Dial.Palette.ivory)
+          Text("""
+          A menubar companion for Spotify. Connect your account to start \
+          tracking what you play and let the pet hatch.
+          """)
+          .font(Dial.Typography.sansCaption)
+          .foregroundStyle(Dial.Palette.muted)
+          .fixedSize(horizontal: false, vertical: true)
+        }
         .padding(.horizontal, 18)
-        .padding(.bottom, 16)
+
+        Spacer(minLength: 14)
+
+        Button {
+          Task { try? await coord.signIn() }
+        } label: {
+          Text("CONNECT SPOTIFY")
+            .font(Dial.Typography.monoLabel)
+            .tracking(1.4)
+            .foregroundStyle(Dial.Palette.ground)
+            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity)
+            .background(Dial.Palette.amber)
+            .clipShape(RoundedRectangle(cornerRadius: 4))
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 18)
+
+        Spacer(minLength: 12)
+
+        Text("OAuth opens in your browser. Token stays in your Keychain.")
+          .font(Dial.Typography.monoLabel)
+          .tracking(0.6)
+          .foregroundStyle(Dial.Palette.muted)
+          .padding(.horizontal, 18)
+          .padding(.bottom, 16)
+      }
     }
   }
 

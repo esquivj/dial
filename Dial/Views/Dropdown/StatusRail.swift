@@ -3,6 +3,7 @@ import SwiftUI
 struct StatusRail: View {
   @Bindable var vm: MenubarStripViewModel
   @Bindable var pet: PetViewModel
+  @Binding var showingGlossary: Bool
 
   var body: some View {
     VStack(spacing: 0) {
@@ -27,6 +28,15 @@ struct StatusRail: View {
           .tracking(1.4)
           .foregroundStyle(Dial.Palette.amber)
         Spacer()
+        Button {
+          showingGlossary.toggle()
+        } label: {
+          Image(systemName: showingGlossary ? "xmark.circle" : "info.circle")
+            .font(.system(size: 11, weight: .regular))
+            .foregroundStyle(Dial.Palette.muted)
+        }
+        .buttonStyle(.plain)
+        .help(showingGlossary ? "Hide glossary" : "What do these badges mean?")
         Text(timing)
           .font(Dial.Typography.monoLabel)
           .tracking(0.8)
