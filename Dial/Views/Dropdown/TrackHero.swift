@@ -18,11 +18,9 @@ struct TrackHero: View {
       // Soft warm shadow gives it weight on the cream ground (Sleeve influence).
       .frame(width: 72, height: 72)
       .clipShape(RoundedRectangle(cornerRadius: 6))
-      .overlay(
-        RoundedRectangle(cornerRadius: 6)
-          .stroke(Dial.Palette.hairline, lineWidth: 0.5)
-      )
-      .shadow(color: Dial.Palette.ivory.opacity(0.16), radius: 6, x: 0, y: 3)
+      // Y2K crystal: subtle cyan halo around the album art instead of
+      // a warm drop shadow. Reads as "lit-from-within" against the dark.
+      .shadow(color: Dial.Palette.amber.opacity(0.18), radius: 10, x: 0, y: 0)
 
       VStack(alignment: .leading, spacing: 2) {
         Text(vm.track?.name ?? "Nothing playing")

@@ -1,36 +1,36 @@
 // Dial/DesignSystem/Dial+Tokens.swift
 import SwiftUI
 
-/// Editorial Wine palette — light mode, pivoted from the original
-/// "Vehicle Dashboard" amber-on-instrument-black mood. Token *names* are
-/// kept (e.g. `amber`, `ivory`) so adopting code doesn't churn; their
-/// roles now read as:
-///   amber  → primary accent (dark wine)
-///   orange → secondary accent (rose)
-///   ivory  → primary text on cream
-///   muted  → secondary text on cream
+/// Crystal Y2K palette — dark mode, cyan-glass-on-black aesthetic.
+/// Pivoted from the prior "Editorial Wine" cream + wine pass.
+/// Token *names* preserved; their roles now read as:
+///   amber  → primary accent (crystal cyan)
+///   orange → secondary accent (electric magenta — Y2K complement)
+///   ivory  → primary text on dark
+///   muted  → secondary text / labels
 enum Dial {
   enum Palette {
-    /// Warm cream / parchment — main background
-    static let ground   = Color(red: 0xFA/255, green: 0xF7/255, blue: 0xF2/255)
-    /// Pure white — elevated cards, panels, popover surfaces
-    static let surface  = Color(red: 0xFF/255, green: 0xFF/255, blue: 0xFF/255)
-    /// Dark wine — primary accent (numerals, chips, the pet sprite)
-    static let amber    = Color(red: 0x3E/255, green: 0x05/255, blue: 0x1E/255)
-    /// Rose — secondary accent, used for ON STREAK and other contextual moments
-    static let orange   = Color(red: 0xA1/255, green: 0x30/255, blue: 0x6A/255)
-    /// Warm charcoal — primary text on cream/white
-    static let ivory    = Color(red: 0x1A/255, green: 0x14/255, blue: 0x19/255)
-    /// Warm gray — secondary text, labels
-    static let muted    = Color(red: 0x7A/255, green: 0x74/255, blue: 0x70/255)
+    /// Near-black with a hint of blue — main background. Pure #000 reads
+    /// too harsh, this gives the cyan glows somewhere to bleed into.
+    static let ground   = Color(red: 0x0A/255, green: 0x0D/255, blue: 0x11/255)
+    /// Slightly elevated surface for cards, inset panels.
+    static let surface  = Color(red: 0x12/255, green: 0x16/255, blue: 0x1B/255)
+    /// Crystal cyan — primary accent. Numerals, chips, the pet sprite.
+    static let amber    = Color(red: 0x1A/255, green: 0xC5/255, blue: 0xBC/255)
+    /// Electric magenta — secondary, classic Y2K complement to cyan.
+    /// Used for ON STREAK and other secondary moments.
+    static let orange   = Color(red: 0xE8/255, green: 0x4B/255, blue: 0x98/255)
+    /// Cool off-white — primary text on dark.
+    static let ivory    = Color(red: 0xE8/255, green: 0xEB/255, blue: 0xED/255)
+    /// Cool gray — secondary text, labels.
+    static let muted    = Color(red: 0x6B/255, green: 0x71/255, blue: 0x78/255)
 
-    /// Hairline divider — replaces `Color.white.opacity(...)` from the dark era.
-    /// Sits between ground and surface in tone.
-    static let hairline = Color(red: 0xE5/255, green: 0xDF/255, blue: 0xD6/255)
+    /// Hairline divider — subtle dark line on the dark ground.
+    static let hairline = Color(red: 0x25/255, green: 0x2A/255, blue: 0x30/255)
 
-    /// Slightly tinted cream for nested cards. Subtle — used inside Stats panel
-    /// so blocks separate without adding visual weight.
-    static let subtle   = Color(red: 0xF5/255, green: 0xF1/255, blue: 0xEA/255)
+    /// Slightly tinted card surface for inner panels (Stats pet panel, etc.).
+    /// Sits between ground and surface.
+    static let subtle   = Color(red: 0x0F/255, green: 0x13/255, blue: 0x16/255)
   }
 
   enum Typography {

@@ -62,6 +62,7 @@ struct StatsView: View {
         .foregroundStyle(Dial.Palette.amber)
         .lineLimit(1)
         .minimumScaleFactor(0.6)
+        .shadow(color: Dial.Palette.amber.opacity(0.6), radius: 10, x: 0, y: 0)
       Text("across \(totals.plays) \(totals.plays == 1 ? "play" : "plays")")
         .font(.system(size: 10))
         .foregroundStyle(Dial.Palette.muted)

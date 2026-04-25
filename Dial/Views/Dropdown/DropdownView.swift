@@ -117,6 +117,7 @@ struct DropdownView: View {
             .frame(maxWidth: .infinity)
             .background(Dial.Palette.amber)
             .clipShape(RoundedRectangle(cornerRadius: 4))
+            .shadow(color: Dial.Palette.amber.opacity(0.4), radius: 8, x: 0, y: 0)
         }
         .buttonStyle(.plain)
         .padding(.horizontal, 18)
