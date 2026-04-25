@@ -1,20 +1,34 @@
+// Dial/App/DialApp.swift
 import SwiftUI
 
-/// Bootstrap entry point. Replaced in Task 43 with the
-/// `NSStatusItem` + `NSPopover` wiring driven by `AppCoordinator`.
 @main
 struct DialApp: App {
+  @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+
   var body: some Scene {
     Settings {
-      VStack(spacing: 12) {
-        Text("Dial")
-          .font(.title)
-        Text("Bootstrap build — menubar wiring lands in Task 43.")
-          .font(.callout)
-          .foregroundStyle(.secondary)
+      if let coord = appDelegate.coordinator {
+        SettingsView(vm: coord.settings) { folder in
+          Task { await runImport(coord: coord, from: folder) }
+        }
+      } else {
+        Text("Dial — initializing…")
+          .padding(40)
       }
-      .padding(32)
-      .frame(width: 360, height: 160)
+    }
+  }
+
+  private func runImport(coord: AppCoordinator, from folder: URL) async {
+    let urls = (try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)) ?? []
+    let endsongs = urls.filter {
+      let n = $0.lastPathComponent
+      return n.hasPrefix("endsong_") || n.hasPrefix("Streaming_History_Audio_")
+    }
+    let importer = Importer(dbq: coord.dbq, engine: coord.engine)
+    for f in endsongs {
+      if let rows = try? EndsongFile.parse(at: f) {
+        _ = try? importer.importBatch(rows, sourcePath: f.path)
+      }
     }
   }
 }
