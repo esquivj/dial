@@ -16,5 +16,17 @@ struct PetState: Codable, FetchableRecord, PersistableRecord, Equatable {
   var elderUnlockedAt: Int64?
   var installedAt: Int64
 
+  enum CodingKeys: String, CodingKey {
+    case id
+    case xp
+    case stage
+    case hatchedAt        = "hatched_at"
+    case lastPlayAt       = "last_play_at"
+    case streakDays       = "streak_days"
+    case streakAnchorDate = "streak_anchor_date"
+    case elderUnlockedAt  = "elder_unlocked_at"
+    case installedAt      = "installed_at"
+  }
+
   static let databaseTableName = "pet_state"
 }

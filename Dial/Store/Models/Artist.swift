@@ -7,5 +7,12 @@ struct Artist: Codable, FetchableRecord, PersistableRecord, Equatable {
   var genresJson: String?
   var imageUrl: String?
 
+  enum CodingKeys: String, CodingKey {
+    case uri
+    case name
+    case genresJson = "genres_json"
+    case imageUrl   = "image_url"
+  }
+
   static let databaseTableName = "artists"
 }
