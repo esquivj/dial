@@ -15,10 +15,11 @@ struct DropdownView: View {
         connectView
       }
     }
-    .frame(width: 320, height: 360)
-    // Solid cream — no wallpaper bleed. Liquid Glass added more visual
-    // noise than refinement for an info-dense HUD; the Sleeve homage
-    // lives in the palette + album-art reverence, not the chrome.
+    // 400 (was 360): gives the HUD breathing room when both BadgeRow and
+    // ArtistContext are visible. Prevents the layout shift on transition
+    // back from History/Stats where the HUD was butting hard against the
+    // frame and SwiftUI re-laid it inconsistently.
+    .frame(width: 320, height: 400)
     .background(Dial.Palette.ground)
     .clipShape(RoundedRectangle(cornerRadius: 14))
     .overlay(
@@ -70,6 +71,10 @@ struct DropdownView: View {
         )
       }
       SessionTimeline(plays: coord.aggCache.last60Min)
+      // Flex spacer absorbs any leftover vertical room so ControlsBar
+      // is always pinned to the bottom — independent of how many
+      // optional rows above (BadgeRow / ArtistContext) are mounted.
+      Spacer(minLength: 0)
       ControlsBar(
         menubar: coord.menubar,
         client: coord.client,
@@ -77,6 +82,10 @@ struct DropdownView: View {
         onOpenStats:   { withAnimation(.easeInOut(duration: 0.18)) { screen = .stats } }
       )
     }
+    // Force the body to claim the entire space below the StatusRail so the
+    // Spacer above behaves predictably and SwiftUI doesn't re-allocate
+    // children when the screen swaps.
+    .frame(maxHeight: .infinity, alignment: .top)
   }
 
   // MARK: - Pre-auth (Connect button)

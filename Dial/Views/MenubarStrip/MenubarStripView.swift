@@ -27,7 +27,10 @@ struct MenubarStripView: View {
 
   @ViewBuilder
   private var sprite: some View {
-    BulldogSprite(stage: pet.stage, behavior: pet.behavior, height: 20)
-      .frame(width: 22, height: 22)
+    // Bigger than before (was h:20 in a 22×22 box). Pushes to the menubar
+    // height ceiling and gives the bulldog more horizontal room — the
+    // 1:1.93 portrait aspect means this lands at ~14×26 on screen.
+    BulldogSprite(stage: pet.stage, behavior: pet.behavior, height: 26)
+      .frame(width: 28, height: 26)
   }
 }
