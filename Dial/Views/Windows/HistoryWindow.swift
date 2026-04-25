@@ -20,7 +20,17 @@ struct HistoryWindow: View {
     }
     .frame(minWidth: 480, minHeight: 600)
     .background(Dial.Palette.ground)
-    .task { reload() }
+    .task(id: ObjectIdentifier(dbq)) {
+      let observation = StatsQueries(dbq: dbq).observePlaysChanges()
+      do {
+        for try await _ in observation.values(in: dbq) {
+          reload()
+        }
+      } catch {
+        // Initial load fallback if the stream errors.
+        reload()
+      }
+    }
   }
 
   private var header: some View {

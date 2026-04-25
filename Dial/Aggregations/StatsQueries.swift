@@ -50,6 +50,8 @@ struct StatsQueries {
     let uri: String
     let name: String
     let count: Int
+    let artUrl: String?     // only populated by topTracks; nil for topArtists
+    let subtitle: String?   // artist name for tracks; nil for artists
     var id: String { uri }
   }
 
@@ -58,6 +60,8 @@ struct StatsQueries {
       try Row.fetchAll(db, sql: """
         SELECT p.track_uri AS uri,
                COALESCE(t.name, p.track_uri) AS name,
+               t.album_art_url AS art_url,
+               json_extract(t.artists_json, '$[0].name') AS artist_name,
                COUNT(*) AS c
         FROM plays p
         LEFT JOIN tracks t ON t.uri = p.track_uri
@@ -65,7 +69,10 @@ struct StatsQueries {
         ORDER BY c DESC, MAX(p.played_at) DESC
         LIMIT ?
       """, arguments: [limit]).map { row in
-        TopRow(uri: row["uri"], name: row["name"], count: row["c"])
+        TopRow(
+          uri: row["uri"], name: row["name"], count: row["c"],
+          artUrl: row["art_url"], subtitle: row["artist_name"]
+        )
       }
     }
   }
@@ -83,7 +90,8 @@ struct StatsQueries {
         ORDER BY c DESC, MAX(p.played_at) DESC
         LIMIT ?
       """, arguments: [limit]).map { row in
-        TopRow(uri: row["uri"] ?? "", name: row["name"] ?? "Unknown", count: row["c"])
+        TopRow(uri: row["uri"] ?? "", name: row["name"] ?? "Unknown", count: row["c"],
+               artUrl: nil, subtitle: nil)
       }
     }
   }
@@ -107,6 +115,15 @@ struct StatsQueries {
         FROM tracks WHERE artists_json IS NOT NULL
       """) ?? 0
       return Totals(plays: plays, listeningMs: ms, uniqueTracks: tracks, uniqueArtists: artists)
+    }
+  }
+
+  // MARK: - Live observation
+
+  /// Fires whenever the `plays` table changes. Window views observe this to refresh.
+  func observePlaysChanges() -> ValueObservation<ValueReducers.Fetch<Int>> {
+    ValueObservation.tracking { db in
+      try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM plays") ?? 0
     }
   }
 }
