@@ -12,6 +12,7 @@ final class AggregationsCache {
   var rediscovered: Bool = false
   var onStreak: Bool = false
   var artistRank7d: Int? = nil
+  var artistLifetimePlays: Int = 0
   var last60Min: [PlayAggregations.SessionPlay] = []
 
   private let agg: PlayAggregations
@@ -28,6 +29,7 @@ final class AggregationsCache {
       rediscovered = try trackUri.flatMap { try agg.rediscovered(trackUri: $0) } ?? false
       onStreak     = try trackUri.flatMap { try agg.onStreak(trackUri: $0) } ?? false
       artistRank7d = try artistUri.flatMap { try agg.artistRank7d(artistUri: $0) }
+      artistLifetimePlays = try artistUri.flatMap { try agg.artistLifetimePlays(artistUri: $0) } ?? 0
       last60Min    = try agg.last60MinTracks()
     } catch {
       print("[AggregationsCache] refresh failed: \(error)")

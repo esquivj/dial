@@ -84,6 +84,17 @@ extension PlayAggregations {
     }
   }
 
+  /// Total all-time plays for an artist (live + import combined).
+  /// Joins via `tracks.artists_json[0].uri`; tracks without artist metadata are skipped.
+  func artistLifetimePlays(artistUri: String) throws -> Int {
+    try dbq.read { db in
+      try Int.fetchOne(db, sql: """
+        SELECT COUNT(*) FROM plays p JOIN tracks t ON t.uri = p.track_uri
+        WHERE json_extract(t.artists_json, '$[0].uri') = ?
+      """, arguments: [artistUri]) ?? 0
+    }
+  }
+
   /// Ranks artists by play count in the last 7d via `tracks.artists_json[0].uri`.
   /// Ties broken by recent play.
   func artistRank7d(artistUri: String) throws -> Int? {

@@ -25,7 +25,11 @@ struct DropdownView: View {
       ReadoutsRow(vm: coord.nowPlaying)
       BadgeRow(kind: activeBadge, detail: badgeDetail)
       if let artist = coord.nowPlaying.track?.artistName {
-        ArtistContext(artist: artist, rank7d: coord.aggCache.artistRank7d, lifetime: 0)
+        ArtistContext(
+          artist: artist,
+          rank7d: coord.aggCache.artistRank7d,
+          lifetime: coord.aggCache.artistLifetimePlays
+        )
       }
       SessionTimeline(plays: coord.aggCache.last60Min)
       ControlsBar(client: coord.client)

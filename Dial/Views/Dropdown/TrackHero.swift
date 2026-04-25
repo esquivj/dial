@@ -16,15 +16,23 @@ struct TrackHero: View {
       .frame(width: 52, height: 52)
       .clipShape(RoundedRectangle(cornerRadius: 4))
 
-      VStack(alignment: .leading, spacing: 3) {
+      VStack(alignment: .leading, spacing: 2) {
         Text(vm.track?.name ?? "Nothing playing")
           .font(Dial.Typography.sansTitle)
           .foregroundStyle(Dial.Palette.ivory)
           .lineLimit(1)
-        Text([vm.track?.artistName, vm.track?.albumName].compactMap { $0 }.joined(separator: " · "))
-          .font(Dial.Typography.sansCaption)
-          .foregroundStyle(Color(red: 0.54, green: 0.55, blue: 0.57))
-          .lineLimit(1)
+        if let artist = vm.track?.artistName {
+          Text(artist)
+            .font(Dial.Typography.sansCaption)
+            .foregroundStyle(Color(red: 0.54, green: 0.55, blue: 0.57))
+            .lineLimit(1)
+        }
+        if let album = vm.track?.albumName {
+          Text(album)
+            .font(Dial.Typography.sansCaption)
+            .foregroundStyle(Color(red: 0.42, green: 0.43, blue: 0.45))
+            .lineLimit(1)
+        }
       }
       Spacer(minLength: 0)
     }
