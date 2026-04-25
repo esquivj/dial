@@ -8,9 +8,13 @@ struct DialApp: App {
   var body: some Scene {
     Settings {
       if let coord = appDelegate.coordinator {
-        SettingsView(vm: coord.settings) { folder in
-          Task { await runImport(coord: coord, from: folder) }
-        }
+        SettingsView(
+          vm: coord.settings,
+          onSignIn: { try? await coord.signIn() },
+          onImport: { folder in
+            Task { await runImport(coord: coord, from: folder) }
+          }
+        )
       } else {
         Text("Dial — initializing…")
           .padding(40)

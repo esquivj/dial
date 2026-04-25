@@ -15,7 +15,11 @@ final class AppCoordinator {
   let pet: PetViewModel
   let settings: SettingsViewModel
 
-  init(dbq: DatabaseQueue, client: SpotifyClient, auth: SpotifyAuthService) {
+  /// Idempotent guard so `start()` can be called from launch (when already signed in)
+  /// or from `signIn()` (after auth completes) without double-tasking the polling loop.
+  private var pollingStarted = false
+
+  init(dbq: DatabaseQueue, client: SpotifyClient, auth: SpotifyAuthService, tokenStore: TokenStore) {
     self.dbq = dbq
     self.client = client
     self.engine = PetEngine(dbq: dbq)
@@ -24,12 +28,15 @@ final class AppCoordinator {
     self.nowPlaying = NowPlayingViewModel(agg: aggCache)
     self.menubar = MenubarStripViewModel()
     self.pet = PetViewModel()
-    self.settings = SettingsViewModel(auth: auth, dbq: dbq)
+    self.settings = SettingsViewModel(auth: auth, dbq: dbq, tokenStore: tokenStore)
     self.pet.syncFromStore(dbq: dbq)
   }
 
-  /// Starts the polling loop. Call once on app launch (after auth is ready).
+  /// Starts the polling loop. Idempotent — second call is a no-op.
+  /// Caller must ensure a Spotify token exists in the keychain before calling.
   func start() {
+    guard !pollingStarted else { return }
+    pollingStarted = true
     Task {
       do {
         for try await event in poller.stream() {
@@ -39,6 +46,15 @@ final class AppCoordinator {
         print("[AppCoordinator] polling error: \(error)")
       }
     }
+  }
+
+  /// Composes the full sign-in flow: OAuth → mark signed in → start polling.
+  /// Called from the Settings "Connect Spotify" button.
+  @MainActor
+  func signIn() async throws {
+    _ = try await settings.auth.signIn()
+    settings.markSignedIn()
+    start()
   }
 
   private func handle(_ event: PlaybackEvent) async {

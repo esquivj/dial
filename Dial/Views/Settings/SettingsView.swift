@@ -1,20 +1,22 @@
+// Dial/Views/Settings/SettingsView.swift
 import SwiftUI
 import AppKit
 
-/// Hosted by the SwiftUI `Settings` scene in `DialApp` (added in Task 43).
-/// `onImport` is invoked after the user picks a folder via `NSOpenPanel`;
-/// the caller (DialApp) does the actual EndsongFile parsing + Importer call.
+/// Hosted by the SwiftUI `Settings` scene in `DialApp`.
+/// `onSignIn` runs the full coordinator-level sign-in (auth → mark signed in → start polling).
+/// `onImport` is invoked after the user picks a folder via `NSOpenPanel`.
 struct SettingsView: View {
   @Bindable var vm: SettingsViewModel
+  let onSignIn: () async -> Void
   let onImport: (URL) -> Void
 
   var body: some View {
     Form {
       Section("Spotify account") {
         if vm.signedIn {
-          Button("Disconnect") { /* hooked up in Task 43 — wires KeychainTokenStore.clear */ }
+          Button("Disconnect") { vm.markSignedOut() }
         } else {
-          Button("Connect Spotify") { Task { try? await vm.auth.signIn() } }
+          Button("Connect Spotify") { Task { await onSignIn() } }
         }
       }
       Section("History import") {
