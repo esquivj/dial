@@ -3,6 +3,11 @@ import SwiftUI
 struct TrackHero: View {
   @Bindable var vm: NowPlayingViewModel
 
+  /// Identity for the crossfade transition — when the URI changes,
+  /// SwiftUI swaps the entire row and animates the swap. Without this,
+  /// album art and text would snap-cut on every track change.
+  private var transitionID: String { vm.track?.uri ?? "empty" }
+
   var body: some View {
     HStack(alignment: .center, spacing: 12) {
       AsyncImage(url: vm.track?.artUrl.flatMap(URL.init(string:))) { img in
@@ -43,5 +48,8 @@ struct TrackHero: View {
       Spacer(minLength: 0)
     }
     .padding(EdgeInsets(top: 12, leading: 14, bottom: 14, trailing: 14))
+    .id(transitionID)
+    .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .leading)))
+    .animation(.easeOut(duration: 0.28), value: transitionID)
   }
 }

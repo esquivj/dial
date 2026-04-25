@@ -33,6 +33,9 @@ struct ControlsBar: View {
           }
         } label: {
           Image(systemName: menubar.state == .playing ? "pause.fill" : "play.fill")
+            // Smooth SF-Symbol replace transition — scales / fades the
+            // glyph between play↔pause instead of snap-cutting.
+            .contentTransition(.symbolEffect(.replace))
         }
         .buttonStyle(HoverableTransportButtonStyle())
         .modifier(HoverDimModifier())
@@ -73,8 +76,15 @@ struct ControlsBar: View {
 private struct HoverableTransportButtonStyle: ButtonStyle {
   func makeBody(configuration: Configuration) -> some View {
     configuration.label
+      // Pad up to a 32×32 hit area so the tiny SF-Symbol glyphs aren't
+      // pixel-hunting targets. Visible glyph stays the same size; the
+      // surrounding padding catches the click.
+      .frame(minWidth: 32, minHeight: 32)
+      .contentShape(Rectangle())
       .opacity(configuration.isPressed ? 0.55 : 1)
-      .scaleEffect(configuration.isPressed ? 0.92 : 1)
+      // 0.96 (was 0.92): 0.92 reads as exaggerated; 0.96 is just enough
+      // tactile feedback without feeling collapsed.
+      .scaleEffect(configuration.isPressed ? 0.96 : 1)
       .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
   }
 }

@@ -34,8 +34,9 @@ private struct Readout: View {
       HStack(alignment: .lastTextBaseline, spacing: 6) {
         Text(value)
           .font(Dial.Typography.monoValue)
+          .monospacedDigit()           // tabular nums — prevents jitter when 9 → 10
+          .contentTransition(.numericText())
           .foregroundStyle(Dial.Palette.amber)
-          // Crystal-cyan glow on the big numerals — the Y2K signature move.
           .shadow(color: Dial.Palette.amber.opacity(0.55), radius: 6, x: 0, y: 0)
         Text(delta)
           .font(Dial.Typography.monoLabel)

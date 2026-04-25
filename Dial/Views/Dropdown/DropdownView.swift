@@ -60,17 +60,25 @@ struct DropdownView: View {
 
   private var hudBody: some View {
     VStack(spacing: 0) {
+      // Staggered entrance: each section fades + lifts in with a 50ms cascade.
+      // Reads as deliberate composition rather than "everything appears at once,"
+      // and is short enough (~250ms total) not to feel like a loading sequence.
       TrackHero(vm: coord.nowPlaying)
+        .modifier(StaggeredAppear(delay: 0.00))
       ReadoutsRow(vm: coord.nowPlaying)
+        .modifier(StaggeredAppear(delay: 0.05))
       BadgeRow(kind: activeBadge, detail: badgeDetail)
+        .modifier(StaggeredAppear(delay: 0.10))
       if let artist = coord.nowPlaying.track?.artistName {
         ArtistContext(
           artist: artist,
           rank7d: coord.aggCache.artistRank7d,
           lifetime: coord.aggCache.artistLifetimePlays
         )
+        .modifier(StaggeredAppear(delay: 0.15))
       }
       SessionTimeline(plays: coord.aggCache.last60Min)
+        .modifier(StaggeredAppear(delay: 0.20))
       // Flex spacer absorbs any leftover vertical room so ControlsBar
       // is always pinned to the bottom — independent of how many
       // optional rows above (BadgeRow / ArtistContext) are mounted.
@@ -81,6 +89,7 @@ struct DropdownView: View {
         onOpenHistory: { withAnimation(.easeInOut(duration: 0.18)) { screen = .history } },
         onOpenStats:   { withAnimation(.easeInOut(duration: 0.18)) { screen = .stats } }
       )
+      .modifier(StaggeredAppear(delay: 0.25))
     }
     // Force the body to claim the entire space below the StatusRail so the
     // Spacer above behaves predictably and SwiftUI doesn't re-allocate
@@ -159,5 +168,25 @@ struct DropdownView: View {
     case .onStreak:     "Most-played track this week"
     case .none:         ""
     }
+  }
+}
+
+/// Subtle entrance animation for stacked HUD sections. Each section fades
+/// from 0→1 opacity and lifts 6pt while it does, with a per-section delay
+/// so the rows cascade rather than appearing simultaneously.
+///
+/// State lives at the modifier level (outside the wrapped view) so internal
+/// id/transition swaps inside a section — e.g. TrackHero's track-change
+/// crossfade — don't reset the cascade.
+private struct StaggeredAppear: ViewModifier {
+  let delay: Double
+  @State private var appeared = false
+
+  func body(content: Content) -> some View {
+    content
+      .opacity(appeared ? 1 : 0)
+      .offset(y: appeared ? 0 : 6)
+      .animation(.easeOut(duration: 0.28).delay(delay), value: appeared)
+      .onAppear { appeared = true }
   }
 }

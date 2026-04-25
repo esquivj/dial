@@ -27,6 +27,11 @@ struct StatusRail: View {
           Image(systemName: showingGlossary ? "xmark.circle" : "info.circle")
             .font(.system(size: 11, weight: .regular))
             .foregroundStyle(Dial.Palette.muted)
+            .contentTransition(.symbolEffect(.replace))
+            // Pad to a 28×28 hit slot — the visible glyph is 11pt, but
+            // padding makes the tap target survive less precise mousing.
+            .frame(width: 28, height: 28)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .help(showingGlossary ? "Hide glossary" : "What do these badges mean?")
