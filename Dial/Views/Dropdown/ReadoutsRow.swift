@@ -8,14 +8,14 @@ struct ReadoutsRow: View {
       Readout(label: "PLAYS · 30D",
               value: "\(vm.plays30d)",
               delta: vm.agg.firstListen ? "NEW" : "")
-      Divider().background(Color.white.opacity(0.1))
+      Divider().background(Dial.Palette.hairline)
       Readout(label: "RANK · 7D",
               value: vm.agg.rank7d.map { "#\($0)" } ?? "—",
               delta: vm.agg.firstListen ? "DEBUT" : "")
     }
-    .background(Color(red: 0.055, green: 0.059, blue: 0.071))
+    .background(Dial.Palette.subtle)
     .overlay(alignment: .top) {
-      Rectangle().fill(Color.white.opacity(0.1)).frame(height: 1)
+      Rectangle().fill(Dial.Palette.hairline).frame(height: 1)
     }
   }
 }

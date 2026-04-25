@@ -14,7 +14,7 @@ struct HistoryView: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
       header
-      Rectangle().fill(Color.white.opacity(0.08)).frame(height: 1)
+      Rectangle().fill(Dial.Palette.hairline).frame(height: 1)
       if rows.isEmpty && loaded {
         empty
       } else {
@@ -68,7 +68,7 @@ struct HistoryView: View {
       LazyVStack(spacing: 0) {
         ForEach(rows) { row in
           HistoryRowView(row: row)
-          Rectangle().fill(Color.white.opacity(0.04)).frame(height: 1)
+          Rectangle().fill(Dial.Palette.hairline.opacity(0.6)).frame(height: 1)
         }
       }
     }

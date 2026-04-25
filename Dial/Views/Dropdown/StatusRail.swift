@@ -7,7 +7,8 @@ struct StatusRail: View {
 
   var body: some View {
     VStack(spacing: 0) {
-      Rectangle().fill(Dial.Palette.amber.opacity(0.85)).frame(height: 1)
+      // Faint wine accent line where the amber LED used to be.
+      Rectangle().fill(Dial.Palette.amber.opacity(0.4)).frame(height: 1)
       HStack(spacing: 8) {
         Group {
           if case .beatSync(let bpm) = pet.behavior {

@@ -21,7 +21,7 @@ struct BadgeRow: View {
       .frame(maxWidth: .infinity, alignment: .leading)
       .background(Dial.Palette.ground)
       .overlay(alignment: .top) {
-        Rectangle().fill(Color.white.opacity(0.1)).frame(height: 1)
+        Rectangle().fill(Dial.Palette.hairline).frame(height: 1)
       }
     }
   }
@@ -31,13 +31,13 @@ struct BadgeRow: View {
       switch kind {
       case .firstListen:
         return (Dial.Palette.amber,
-                Dial.Palette.amber.opacity(0.10),
-                Dial.Palette.amber.opacity(0.40),
+                Dial.Palette.amber.opacity(0.08),
+                Dial.Palette.amber.opacity(0.35),
                 "FIRST LISTEN")
       case .rediscovered:
-        return (Dial.Palette.ivory,
-                Dial.Palette.ivory.opacity(0.06),
-                Dial.Palette.ivory.opacity(0.28),
+        return (Dial.Palette.muted,
+                Dial.Palette.muted.opacity(0.10),
+                Dial.Palette.muted.opacity(0.40),
                 "REDISCOVERED")
       case .onStreak:
         return (Dial.Palette.orange,

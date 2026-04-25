@@ -15,7 +15,7 @@ struct StatsView: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
       header
-      Rectangle().fill(Color.white.opacity(0.08)).frame(height: 1)
+      Rectangle().fill(Dial.Palette.hairline).frame(height: 1)
       ScrollView {
         VStack(alignment: .leading, spacing: 18) {
           hero
@@ -103,7 +103,7 @@ struct StatsView: View {
           ForEach(Array(topTracks.prefix(5).enumerated()), id: \.element.id) { idx, row in
             TopTrackRow(rank: idx + 1, row: row)
             if idx < min(topTracks.count, 5) - 1 {
-              Rectangle().fill(Color.white.opacity(0.05)).frame(height: 1)
+              Rectangle().fill(Dial.Palette.hairline.opacity(0.7)).frame(height: 1)
             }
           }
         }
@@ -137,7 +137,7 @@ struct StatsView: View {
             }
             .padding(.vertical, 5)
             if idx < min(topArtists.count, 5) - 1 {
-              Rectangle().fill(Color.white.opacity(0.05)).frame(height: 1)
+              Rectangle().fill(Dial.Palette.hairline.opacity(0.7)).frame(height: 1)
             }
           }
         }

@@ -8,13 +8,18 @@ struct TrackHero: View {
       AsyncImage(url: vm.track?.artUrl.flatMap(URL.init(string:))) { img in
         img.resizable()
       } placeholder: {
+        // Soft cream-toned placeholder so an empty track doesn't punch a
+        // dark hole in the light layout.
         LinearGradient(
-          colors: [Color(red: 0.22, green: 0.14, blue: 0.09),
-                   Color(red: 0.96, green: 0.72, blue: 0.47)],
+          colors: [Dial.Palette.subtle, Dial.Palette.hairline],
           startPoint: .topLeading, endPoint: .bottomTrailing)
       }
       .frame(width: 52, height: 52)
       .clipShape(RoundedRectangle(cornerRadius: 4))
+      .overlay(
+        RoundedRectangle(cornerRadius: 4)
+          .stroke(Dial.Palette.hairline, lineWidth: 1)
+      )
 
       VStack(alignment: .leading, spacing: 2) {
         Text(vm.track?.name ?? "Nothing playing")
@@ -24,13 +29,13 @@ struct TrackHero: View {
         if let artist = vm.track?.artistName {
           Text(artist)
             .font(Dial.Typography.sansCaption)
-            .foregroundStyle(Color(red: 0.54, green: 0.55, blue: 0.57))
+            .foregroundStyle(Dial.Palette.muted)
             .lineLimit(1)
         }
         if let album = vm.track?.albumName {
           Text(album)
             .font(Dial.Typography.sansCaption)
-            .foregroundStyle(Color(red: 0.42, green: 0.43, blue: 0.45))
+            .foregroundStyle(Dial.Palette.muted.opacity(0.75))
             .lineLimit(1)
         }
       }

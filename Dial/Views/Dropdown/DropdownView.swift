@@ -16,8 +16,16 @@ struct DropdownView: View {
       }
     }
     .frame(width: 320, height: 360)
-    .background(Dial.Palette.ground)
-    .clipShape(RoundedRectangle(cornerRadius: 12))
+    // Liquid Glass: regular material picks up the wallpaper behind the
+    // popover (warm-tinted). Dial.Palette.ground sits atop at low opacity
+    // so the cream identity shows through without going opaque.
+    .background(.regularMaterial)
+    .background(Dial.Palette.ground.opacity(0.55))
+    .clipShape(RoundedRectangle(cornerRadius: 14))
+    .overlay(
+      RoundedRectangle(cornerRadius: 14)
+        .stroke(Dial.Palette.hairline.opacity(0.8), lineWidth: 1)
+    )
   }
 
   // MARK: - Signed-in body (HUD / History / Stats / Glossary)

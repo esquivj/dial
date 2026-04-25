@@ -24,7 +24,7 @@ struct BackButton: View {
       .contentShape(Rectangle())
       .background(
         RoundedRectangle(cornerRadius: 4)
-          .fill(Color.white.opacity(hover ? 0.06 : 0))
+          .fill(Dial.Palette.amber.opacity(hover ? 0.08 : 0))
       )
     }
     .buttonStyle(.plain)

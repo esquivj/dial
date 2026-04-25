@@ -24,12 +24,12 @@ struct ArtistContext: View {
         Spacer()
         Text(lifetime > 0 ? "\(lifetime) lifetime" : "—")
           .font(Dial.Typography.monoSmall)
-          .foregroundStyle(Color(white: 0.54))
+          .foregroundStyle(Dial.Palette.muted)
       }
     }
     .padding(EdgeInsets(top: 10, leading: 14, bottom: 12, trailing: 14))
     .overlay(alignment: .top) {
-      Rectangle().fill(Color.white.opacity(0.07)).frame(height: 1)
+      Rectangle().fill(Dial.Palette.hairline).frame(height: 1)
     }
   }
 }

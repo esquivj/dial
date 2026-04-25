@@ -34,7 +34,7 @@ struct ControlsBar: View {
             .foregroundStyle(Dial.Palette.muted)
         }
         .buttonStyle(.plain)
-        Rectangle().fill(Color.white.opacity(0.25)).frame(width: 1, height: 10)
+        Rectangle().fill(Dial.Palette.muted.opacity(0.4)).frame(width: 1, height: 10)
         Button(action: onOpenStats) {
           Text("STATS")
             .font(Dial.Typography.monoLabel)
@@ -45,9 +45,9 @@ struct ControlsBar: View {
       }
     }
     .padding(EdgeInsets(top: 10, leading: 14, bottom: 12, trailing: 14))
-    .background(Color(red: 0.055, green: 0.059, blue: 0.071))
+    .background(Dial.Palette.subtle)
     .overlay(alignment: .top) {
-      Rectangle().fill(Color.white.opacity(0.1)).frame(height: 1)
+      Rectangle().fill(Dial.Palette.hairline).frame(height: 1)
     }
   }
 }
