@@ -14,12 +14,15 @@ struct TrackHero: View {
           colors: [Dial.Palette.subtle, Dial.Palette.hairline],
           startPoint: .topLeading, endPoint: .bottomTrailing)
       }
-      .frame(width: 52, height: 52)
-      .clipShape(RoundedRectangle(cornerRadius: 4))
+      // Album art bumped from 52→72: the artwork *is* the hero of the row.
+      // Soft warm shadow gives it weight on the cream ground (Sleeve influence).
+      .frame(width: 72, height: 72)
+      .clipShape(RoundedRectangle(cornerRadius: 6))
       .overlay(
-        RoundedRectangle(cornerRadius: 4)
-          .stroke(Dial.Palette.hairline, lineWidth: 1)
+        RoundedRectangle(cornerRadius: 6)
+          .stroke(Dial.Palette.hairline, lineWidth: 0.5)
       )
+      .shadow(color: Dial.Palette.ivory.opacity(0.16), radius: 6, x: 0, y: 3)
 
       VStack(alignment: .leading, spacing: 2) {
         Text(vm.track?.name ?? "Nothing playing")
