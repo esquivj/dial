@@ -71,6 +71,7 @@ struct DropdownView: View {
       }
       SessionTimeline(plays: coord.aggCache.last60Min)
       ControlsBar(
+        menubar: coord.menubar,
         client: coord.client,
         onOpenHistory: { withAnimation(.easeInOut(duration: 0.18)) { screen = .history } },
         onOpenStats:   { withAnimation(.easeInOut(duration: 0.18)) { screen = .stats } }

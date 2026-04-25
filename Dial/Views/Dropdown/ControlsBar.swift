@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct ControlsBar: View {
+  @Bindable var menubar: MenubarStripViewModel
   let client: SpotifyClient
   let onOpenHistory: () -> Void
   let onOpenStats: () -> Void
@@ -13,8 +14,16 @@ struct ControlsBar: View {
         }
         .buttonStyle(HoverableTransportButtonStyle())
         .modifier(HoverDimModifier())
-        Button { Task { try? await client.pause() } } label: {
-          Image(systemName: "pause.fill")
+        Button {
+          Task {
+            if menubar.state == .playing {
+              try? await client.pause()
+            } else {
+              try? await client.play()
+            }
+          }
+        } label: {
+          Image(systemName: menubar.state == .playing ? "pause.fill" : "play.fill")
         }
         .buttonStyle(HoverableTransportButtonStyle())
         .modifier(HoverDimModifier())
