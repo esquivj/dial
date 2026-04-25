@@ -61,6 +61,15 @@ final class AudioCaptureEngine: NSObject, SCStreamOutput, SCStreamDelegate, @unc
 
     let s = SCStream(filter: filter, configuration: config, delegate: self)
     try s.addStreamOutput(self, type: .audio, sampleHandlerQueue: queue)
+    // Register a no-op `.screen` output too. SCStream's video subsystem
+    // produces frames regardless of intent — if no handler is registered
+    // for `.screen`, the runtime floods the console with
+    //   _SCStream_RemoteVideoQueueOperationHandlerWithError:1459
+    //   stream output NOT found. Dropping frame
+    // every frame. The 2×2 @ 1fps config above keeps this cost trivial,
+    // and `didOutputSampleBuffer`'s `type == .audio` guard discards the
+    // frames as soon as they arrive.
+    try s.addStreamOutput(self, type: .screen, sampleHandlerQueue: queue)
     try await s.startCapture()
     self.stream = s
   }
