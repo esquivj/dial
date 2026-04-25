@@ -4,12 +4,13 @@ import SwiftUI
 /// Image-based pet renderer. Replaces `PixelSprite` for the new mint-teal
 /// French bulldog character. Renders the right asset (or 2-frame loop)
 /// for a given `(stage, behavior)`. Handles the BPM-driven bob internally
-/// when the behavior is `.beatSync`, so callers don't need a separate
-/// `BeatSyncSprite` wrapper anymore.
+/// when the behavior is `.beatSync`.
 ///
-/// Asset bundling: PNGs live at `Dial/Resources/Pets/<name>.png` and are
-/// declared in `project.yml` so they ship in the app bundle. Lookup is
-/// `Image("companion-idle")`.
+/// Asset bundling: PNGs ship inside the `Pets/` folder reference declared
+/// in `project.yml`, which means SwiftUI's plain `Image(name)` (only
+/// searches Asset Catalogs + bundle root) won't find them. The nested
+/// `BulldogSpriteImage` helper does an explicit `Bundle.main.url(...)`
+/// lookup with `subdirectory: "Pets"`.
 ///
 /// Pixel-art note: every render uses `.interpolation(.none)` so downscaling
 /// to menubar size stays crisp instead of getting blurry from bilinear filtering.
@@ -36,19 +37,11 @@ struct BulldogSprite: View {
     if assets.count > 1, let interval = Self.frameInterval(for: behavior) {
       TimelineView(.periodic(from: .now, by: interval)) { ctx in
         let frame = Int(ctx.date.timeIntervalSinceReferenceDate / interval) % assets.count
-        sprite(named: assets[frame])
+        BulldogSpriteImage(assetName: assets[frame], height: height)
       }
     } else {
-      sprite(named: assets[0])
+      BulldogSpriteImage(assetName: assets[0], height: height)
     }
-  }
-
-  private func sprite(named name: String) -> some View {
-    Image(name)
-      .interpolation(.none)
-      .resizable()
-      .scaledToFit()
-      .frame(height: height)
   }
 
   // MARK: - BPM bob
@@ -95,7 +88,7 @@ struct BulldogSprite: View {
       case .eating:       return ["companion-eating-a", "companion-eating-b"]
       case .paused:       return ["companion-paused"]
       case .dormant:      return ["companion-sleeping-a", "companion-sleeping-b"]
-      case .levelUp:      return ["companion-idle"]   // glow effect layered at view level
+      case .levelUp:      return ["companion-idle"]
       }
     }
   }
@@ -112,5 +105,43 @@ struct BulldogSprite: View {
     case .dormant:  return 0.75
     default:        return nil
     }
+  }
+}
+
+/// Subdirectory-aware loader for the `Pets/<name>.png` assets. Renders a
+/// tinted "?" placeholder if the asset can't be resolved so missing files
+/// don't ship as transparent voids.
+private struct BulldogSpriteImage: View {
+  let assetName: String
+  let height: CGFloat
+
+  var body: some View {
+    if let nsImage = Self.load(named: assetName) {
+      Image(nsImage: nsImage)
+        .interpolation(.none)
+        .resizable()
+        .scaledToFit()
+        .frame(height: height)
+    } else {
+      RoundedRectangle(cornerRadius: 2)
+        .fill(Dial.Palette.amber.opacity(0.4))
+        .frame(width: height * 0.5, height: height)
+        .overlay(
+          Text("?")
+            .font(.system(size: max(height * 0.5, 8), weight: .bold))
+            .foregroundStyle(Dial.Palette.amber)
+        )
+    }
+  }
+
+  private static func load(named name: String) -> NSImage? {
+    if let url = Bundle.main.url(forResource: name, withExtension: "png", subdirectory: "Pets") {
+      return NSImage(contentsOf: url)
+    }
+    // Fall back to root resources in case the bundling strategy ever changes.
+    if let url = Bundle.main.url(forResource: name, withExtension: "png") {
+      return NSImage(contentsOf: url)
+    }
+    return nil
   }
 }

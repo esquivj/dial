@@ -34,10 +34,15 @@ targets:
         excludes:
           - "Resources/Fonts/**"
           - "Resources/Pets/**"
-    resources:
+      # Resources are added back via the explicit `sources` entries below
+      # with `buildPhase: resources`. The earlier `resources:` key was a
+      # no-op with this xcodegen version — files were registered in the
+      # navigator but never added to the target's Resources build phase,
+      # so the app shipped without fonts or pet sprites.
       - path: Dial/Resources/Fonts
-        type: folder
+        buildPhase: resources
       - path: Dial/Resources/Pets
+        buildPhase: resources
     info:
       path: Dial/App/Info.plist
       properties:
