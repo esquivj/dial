@@ -20,6 +20,22 @@ struct DialApp: App {
           .padding(40)
       }
     }
+
+    Window("History", id: "history") {
+      if let coord = appDelegate.coordinator {
+        HistoryWindow(dbq: coord.dbq)
+      }
+    }
+    .defaultSize(width: 480, height: 600)
+    .windowResizability(.contentMinSize)
+
+    Window("Stats", id: "stats") {
+      if let coord = appDelegate.coordinator {
+        StatsWindow(dbq: coord.dbq)
+      }
+    }
+    .defaultSize(width: 480, height: 600)
+    .windowResizability(.contentMinSize)
   }
 
   private func runImport(coord: AppCoordinator, from folder: URL) async {

@@ -59,7 +59,22 @@ final class AppCoordinator {
 
   private func handle(_ event: PlaybackEvent) async {
     switch event {
-    case let .started(uri, name, artistName, artistUri, albumName, artUrl, _, _):
+    case let .started(uri, name, artistName, artistUri, albumName, artUrl, durationMs, _):
+      // Persist track metadata so the SQL joins in `artistRank7d`,
+      // `artistLifetimePlays`, and the PetEngine variety detection work.
+      // Without this, the `tracks` table stays empty for live-only sessions.
+      let artistsJson: String? = {
+        guard let aUri = artistUri else { return nil }
+        let safeName = artistName
+          .replacingOccurrences(of: "\\", with: "\\\\")
+          .replacingOccurrences(of: "\"", with: "\\\"")
+        return "[{\"name\":\"\(safeName)\",\"uri\":\"\(aUri)\"}]"
+      }()
+      try? TracksDAO(dbq: dbq).upsert(.init(
+        uri: uri, name: name, albumName: albumName,
+        albumArtUrl: artUrl, durationMs: Int64(durationMs),
+        artistsJson: artistsJson))
+
       let track = NowPlayingViewModel.Track(
         uri: uri, name: name, artistName: artistName, artistUri: artistUri,
         albumName: albumName, artUrl: artUrl)
