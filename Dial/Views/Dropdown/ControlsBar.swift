@@ -10,13 +10,19 @@ struct ControlsBar: View {
       HStack(spacing: 14) {
         Button { Task { try? await client.prev() } } label: {
           Image(systemName: "backward.fill")
-        }.buttonStyle(.plain)
+        }
+        .buttonStyle(HoverableTransportButtonStyle())
+        .modifier(HoverDimModifier())
         Button { Task { try? await client.pause() } } label: {
           Image(systemName: "pause.fill")
-        }.buttonStyle(.plain)
+        }
+        .buttonStyle(HoverableTransportButtonStyle())
+        .modifier(HoverDimModifier())
         Button { Task { try? await client.next() } } label: {
           Image(systemName: "forward.fill")
-        }.buttonStyle(.plain)
+        }
+        .buttonStyle(HoverableTransportButtonStyle())
+        .modifier(HoverDimModifier())
       }
       .foregroundStyle(Dial.Palette.ivory)
       Spacer()
@@ -43,5 +49,23 @@ struct ControlsBar: View {
     .overlay(alignment: .top) {
       Rectangle().fill(Color.white.opacity(0.1)).frame(height: 1)
     }
+  }
+}
+
+private struct HoverableTransportButtonStyle: ButtonStyle {
+  func makeBody(configuration: Configuration) -> some View {
+    configuration.label
+      .opacity(configuration.isPressed ? 0.55 : 1)
+      .scaleEffect(configuration.isPressed ? 0.92 : 1)
+      .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+  }
+}
+
+private struct HoverDimModifier: ViewModifier {
+  @State private var hover = false
+  func body(content: Content) -> some View {
+    content
+      .opacity(hover ? 1 : 0.78)
+      .onHover { hover = $0 }
   }
 }

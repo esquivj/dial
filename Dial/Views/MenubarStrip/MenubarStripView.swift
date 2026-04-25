@@ -30,11 +30,11 @@ struct MenubarStripView: View {
     let grid = PetSprites.grid(for: pet.stage, behavior: pet.behavior)
     Group {
       if case .beatSync(let bpm) = pet.behavior {
-        BeatSyncSprite(grid: grid, pixelSize: 1, bpm: bpm)
+        BeatSyncSprite(grid: grid, pixelSize: 1.5, bpm: bpm)
       } else {
-        PixelSprite(grid: grid, pixelSize: 1)
+        PixelSprite(grid: grid, pixelSize: 1.5)
       }
     }
-    .frame(width: 14, height: 14)
+    .frame(width: 21, height: 21)
   }
 }

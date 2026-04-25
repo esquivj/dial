@@ -10,11 +10,19 @@ struct SettingsView: View {
   let onSignIn: () async -> Void
   let onImport: (URL) -> Void
 
+  @State private var showDisconnectAlert = false
+
   var body: some View {
     Form {
       Section("Spotify account") {
         if vm.signedIn {
-          Button("Disconnect") { vm.markSignedOut() }
+          Button("Disconnect") { showDisconnectAlert = true }
+            .alert("Disconnect from Spotify?", isPresented: $showDisconnectAlert) {
+              Button("Cancel", role: .cancel) {}
+              Button("Disconnect", role: .destructive) { vm.markSignedOut() }
+            } message: {
+              Text("You'll need to reconnect to keep tracking listens. Your local history stays.")
+            }
         } else {
           Button("Connect Spotify") { Task { await onSignIn() } }
         }

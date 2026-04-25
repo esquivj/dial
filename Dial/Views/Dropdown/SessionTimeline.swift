@@ -15,18 +15,22 @@ struct SessionTimeline: View {
           .font(Dial.Typography.monoLabel)
           .foregroundStyle(Dial.Palette.muted)
       }
-      HStack(alignment: .bottom, spacing: 3) {
-        // `plays` from the aggregation is newest-first; reverse so the newest is the
-        // rightmost (current) bar in the timeline.
-        ForEach(Array(plays.reversed().enumerated()), id: \.offset) { idx, p in
-          let isCurrent = idx == plays.count - 1
-          Rectangle()
-            .fill(Dial.Palette.amber.opacity(isCurrent ? 1.0 : 0.22 + Double(idx) * 0.06))
-            .frame(width: max(CGFloat(p.msPlayed) / 5000.0, 30),
-                   height: isCurrent ? 22 : CGFloat(10 + idx * 2))
+      GeometryReader { proxy in
+        let totalMs = max(plays.reduce(0) { $0 + Int($1.msPlayed) }, 1)
+        let spacing: CGFloat = 3
+        let usable = proxy.size.width - spacing * CGFloat(max(plays.count - 1, 0))
+        HStack(alignment: .bottom, spacing: spacing) {
+          ForEach(Array(plays.reversed().enumerated()), id: \.offset) { idx, p in
+            let isCurrent = idx == plays.count - 1
+            let share = usable * CGFloat(Int(p.msPlayed)) / CGFloat(totalMs)
+            Rectangle()
+              .fill(Dial.Palette.amber.opacity(isCurrent ? 1.0 : 0.22 + Double(idx) * 0.04))
+              .frame(width: max(share, 2),
+                     height: isCurrent ? 22 : CGFloat(10 + min(idx, 6) * 2))
+          }
         }
       }
-      .frame(height: 22, alignment: .bottom)
+      .frame(height: 22)
     }
     .padding(EdgeInsets(top: 0, leading: 14, bottom: 12, trailing: 14))
   }

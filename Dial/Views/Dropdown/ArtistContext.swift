@@ -22,7 +22,7 @@ struct ArtistContext: View {
           .font(Dial.Typography.sansTitle)
           .foregroundStyle(Dial.Palette.ivory)
         Spacer()
-        Text("\(lifetime) lifetime")
+        Text(lifetime > 0 ? "\(lifetime) lifetime" : "—")
           .font(Dial.Typography.monoSmall)
           .foregroundStyle(Color(white: 0.54))
       }
