@@ -9,6 +9,14 @@ struct Play: Codable, FetchableRecord, MutablePersistableRecord, Equatable {
   var msPlayed: Int64
   var source: String       // "live" | "import"
 
+  enum CodingKeys: String, CodingKey {
+    case id
+    case playedAt  = "played_at"
+    case trackUri  = "track_uri"
+    case msPlayed  = "ms_played"
+    case source
+  }
+
   enum Columns {
     static let id        = Column("id")
     static let playedAt  = Column("played_at")
