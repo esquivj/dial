@@ -60,14 +60,13 @@ final class SpotifyAuthService: NSObject {
     var req = URLRequest(url: URL(string: "https://accounts.spotify.com/api/token")!)
     req.httpMethod = "POST"
     req.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-    let body = [
-      "grant_type=authorization_code",
-      "code=\(code)",
-      "redirect_uri=\(redirectURI)",
-      "client_id=\(clientID)",
-      "code_verifier=\(verifier)"
-    ].joined(separator: "&")
-    req.httpBody = body.data(using: .utf8)
+    req.httpBody = Self.formEncode([
+      "grant_type":   "authorization_code",
+      "code":         code,
+      "redirect_uri": redirectURI,
+      "client_id":    clientID,
+      "code_verifier": verifier
+    ]).data(using: .utf8)
     let (data, _) = try await URLSession.shared.data(for: req)
     struct R: Decodable {
       let access_token: String
@@ -89,8 +88,11 @@ final class SpotifyAuthService: NSObject {
     var req = URLRequest(url: URL(string: "https://accounts.spotify.com/api/token")!)
     req.httpMethod = "POST"
     req.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-    let body = "grant_type=refresh_token&refresh_token=\(current.refreshToken)&client_id=\(clientID)"
-    req.httpBody = body.data(using: .utf8)
+    req.httpBody = Self.formEncode([
+      "grant_type":    "refresh_token",
+      "refresh_token": current.refreshToken,
+      "client_id":     clientID
+    ]).data(using: .utf8)
     let (data, _) = try await URLSession.shared.data(for: req)
     struct R: Decodable {
       let access_token: String
@@ -111,5 +113,18 @@ final class SpotifyAuthService: NSObject {
 extension SpotifyAuthService: ASWebAuthenticationPresentationContextProviding {
   func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
     NSApplication.shared.windows.first ?? ASPresentationAnchor()
+  }
+}
+
+private extension SpotifyAuthService {
+  /// `application/x-www-form-urlencoded` body. Each value is percent-escaped per
+  /// the form-url-encoded charset (RFC 3986 unreserved + `*-._`), so server-supplied
+  /// tokens with `+`, `/`, or `=` survive the round-trip unchanged.
+  static func formEncode(_ pairs: [String: String]) -> String {
+    var allowed = CharacterSet.urlQueryAllowed
+    allowed.remove(charactersIn: "+&=")
+    return pairs
+      .map { k, v in "\(k)=\(v.addingPercentEncoding(withAllowedCharacters: allowed) ?? v)" }
+      .joined(separator: "&")
   }
 }
