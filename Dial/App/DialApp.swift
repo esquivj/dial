@@ -21,21 +21,10 @@ struct DialApp: App {
       }
     }
 
-    Window("History", id: "history") {
-      if let coord = appDelegate.coordinator {
-        HistoryWindow(dbq: coord.dbq)
-      }
-    }
-    .defaultSize(width: 480, height: 600)
-    .windowResizability(.contentMinSize)
-
-    Window("Stats", id: "stats") {
-      if let coord = appDelegate.coordinator {
-        StatsWindow(dbq: coord.dbq)
-      }
-    }
-    .defaultSize(width: 480, height: 600)
-    .windowResizability(.contentMinSize)
+    // History and Stats are opened programmatically via WindowsManager
+    // (see AppCoordinator.windows). They can't be SwiftUI `Window` scenes
+    // because the dropdown lives in an NSPopover, outside the scene tree
+    // where `@Environment(\.openWindow)` resolves.
   }
 
   private func runImport(coord: AppCoordinator, from folder: URL) async {

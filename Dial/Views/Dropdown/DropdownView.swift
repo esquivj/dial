@@ -2,7 +2,6 @@ import SwiftUI
 
 struct DropdownView: View {
   @Bindable var coord: AppCoordinator
-  @Environment(\.openWindow) private var openWindow
   @State private var showingGlossary = false
 
   var body: some View {
@@ -39,8 +38,8 @@ struct DropdownView: View {
         SessionTimeline(plays: coord.aggCache.last60Min)
         ControlsBar(
           client: coord.client,
-          onOpenHistory: { openWindow(id: "history") },
-          onOpenStats: { openWindow(id: "stats") }
+          onOpenHistory: { coord.windows.openHistory() },
+          onOpenStats: { coord.windows.openStats() }
         )
       }
     }

@@ -37,10 +37,15 @@ struct StatusRail: View {
         }
         .buttonStyle(.plain)
         .help(showingGlossary ? "Hide glossary" : "What do these badges mean?")
-        Text(timing)
-          .font(Dial.Typography.monoLabel)
-          .tracking(0.8)
-          .foregroundStyle(Dial.Palette.muted)
+        // Tick once a second while the dropdown is open so the timer reads
+        // realtime even though we only poll Spotify every 3s.
+        TimelineView(.periodic(from: .now, by: 1)) { ctx in
+          Text(timing(at: ctx.date))
+            .font(Dial.Typography.monoLabel)
+            .tracking(0.8)
+            .foregroundStyle(Dial.Palette.muted)
+            .monospacedDigit()
+        }
       }
       .padding(.horizontal, 14)
       .padding(.vertical, 7)
@@ -49,8 +54,15 @@ struct StatusRail: View {
                                startPoint: .top, endPoint: .bottom))
   }
 
-  private var timing: String {
-    let s = vm.progressMs / 1000
+  /// Realtime-interpolated track progress.
+  /// Adds (now − lastPoll) to the polled progressMs while playing, so the
+  /// `MM:SS` reads continuously between 3-second poll cycles.
+  private func timing(at now: Date) -> String {
+    var ms = vm.progressMs
+    if vm.state == .playing, let lastPoll = vm.lastProgressUpdate {
+      ms += max(0, Int(now.timeIntervalSince(lastPoll) * 1000))
+    }
+    let s = max(ms, 0) / 1000
     return String(format: "%02d:%02d", s / 60, s % 60)
   }
 }
