@@ -116,10 +116,15 @@ struct DropdownView: View {
       // height, opacity) and didn't represent the song. The visualizer
       // shows the actual audio in real time via ScreenCaptureKit + FFT.
       // The 60-min play log still lives in HistoryView for users who want it.
+      //
+      // Long-lived engine: `.task` fires start() every appear, but the engine
+      // is idempotent and keeps the SCStream running across dropdown closes.
+      // Avoids re-prompting for Screen Recording permission on every open
+      // (TCC under ad-hoc signing is fussy enough as it is — see
+      // VisualizerEngine docs).
       PixelGridVisualizer(engine: coord.visualizer)
         .modifier(StaggeredAppear(delay: 0.20))
         .task { await coord.visualizer.start() }
-        .onDisappear { Task { await coord.visualizer.stop() } }
       // Flex spacer absorbs any leftover vertical room so the LCD content
       // stays top-aligned and the screen area fills the bezel cleanly,
       // regardless of how many optional rows above (BadgeRow / ArtistContext)
