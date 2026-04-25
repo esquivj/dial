@@ -2,9 +2,10 @@
 import GRDB
 import Foundation
 
-/// After import, walks tracks that have no `album_art_url` and fetches metadata
-/// from Spotify's `/v1/tracks` endpoint in batches of 50, rate-limited to 5 req/s.
-/// Idempotent — running again is a no-op once everything is enriched.
+/// Walks every track URI referenced from `plays` whose metadata is incomplete
+/// (no row in `tracks` at all, or row exists but `album_art_url` is null) and
+/// fetches it from Spotify's `/v1/tracks` endpoint in batches of 50, rate-limited
+/// to 5 req/s. Idempotent — running again is a no-op once everything is enriched.
 final class MetadataEnricher {
   private let dbq: DatabaseQueue
   private let client: SpotifyClient
@@ -16,8 +17,19 @@ final class MetadataEnricher {
 
   func enrichMissing(batchSize: Int = 50, rateLimitPerSec: Double = 5) async throws {
     let missing: [String] = try await dbq.read { db in
-      try String.fetchAll(db,
-        sql: "SELECT t.uri FROM tracks t WHERE t.album_art_url IS NULL")
+      // Backfill includes:
+      // - Tracks referenced in `plays` with no row in `tracks` at all
+      //   (plays recorded before the AppCoordinator track-upsert fix landed)
+      // - Tracks with rows but missing `album_art_url`
+      // Filter to spotify track URIs only — local files / podcast URIs aren't
+      // resolvable via /v1/tracks and would fail the batch.
+      try String.fetchAll(db, sql: """
+        SELECT DISTINCT p.track_uri
+        FROM plays p
+        LEFT JOIN tracks t ON t.uri = p.track_uri
+        WHERE p.track_uri LIKE 'spotify:track:%'
+          AND (t.uri IS NULL OR t.album_art_url IS NULL)
+      """)
     }
     for chunk in missing.chunked(into: batchSize) {
       let metas = try await client.tracks(uris: chunk)

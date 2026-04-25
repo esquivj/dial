@@ -1,7 +1,10 @@
 import SwiftUI
 
+enum DropdownScreen: Equatable { case hud, history, stats }
+
 struct DropdownView: View {
   @Bindable var coord: AppCoordinator
+  @State private var screen: DropdownScreen = .hud
   @State private var showingGlossary = false
 
   var body: some View {
@@ -17,31 +20,54 @@ struct DropdownView: View {
     .clipShape(RoundedRectangle(cornerRadius: 12))
   }
 
-  // MARK: - Signed-in (full HUD)
+  // MARK: - Signed-in body (HUD / History / Stats / Glossary)
 
   private var signedInView: some View {
     VStack(spacing: 0) {
-      StatusRail(vm: coord.menubar, pet: coord.pet, showingGlossary: $showingGlossary)
-      if showingGlossary {
+      // Status rail stays mounted ONLY on the HUD screen — History and Stats
+      // own their own header (with a back chevron). Glossary keeps the rail
+      // because it's a transient overlay.
+      if screen == .hud {
+        StatusRail(vm: coord.menubar, pet: coord.pet, showingGlossary: $showingGlossary)
+      }
+
+      if showingGlossary && screen == .hud {
         GlossaryPanel()
+          .transition(.opacity.combined(with: .move(edge: .leading)))
       } else {
-        TrackHero(vm: coord.nowPlaying)
-        ReadoutsRow(vm: coord.nowPlaying)
-        BadgeRow(kind: activeBadge, detail: badgeDetail)
-        if let artist = coord.nowPlaying.track?.artistName {
-          ArtistContext(
-            artist: artist,
-            rank7d: coord.aggCache.artistRank7d,
-            lifetime: coord.aggCache.artistLifetimePlays
-          )
+        switch screen {
+        case .hud:
+          hudBody
+            .transition(.opacity)
+        case .history:
+          HistoryView(dbq: coord.dbq, onBack: { withAnimation(.easeInOut(duration: 0.18)) { screen = .hud } })
+            .transition(.move(edge: .trailing).combined(with: .opacity))
+        case .stats:
+          StatsView(dbq: coord.dbq, onBack: { withAnimation(.easeInOut(duration: 0.18)) { screen = .hud } })
+            .transition(.move(edge: .trailing).combined(with: .opacity))
         }
-        SessionTimeline(plays: coord.aggCache.last60Min)
-        ControlsBar(
-          client: coord.client,
-          onOpenHistory: { coord.windows.openHistory() },
-          onOpenStats: { coord.windows.openStats() }
+      }
+    }
+  }
+
+  private var hudBody: some View {
+    VStack(spacing: 0) {
+      TrackHero(vm: coord.nowPlaying)
+      ReadoutsRow(vm: coord.nowPlaying)
+      BadgeRow(kind: activeBadge, detail: badgeDetail)
+      if let artist = coord.nowPlaying.track?.artistName {
+        ArtistContext(
+          artist: artist,
+          rank7d: coord.aggCache.artistRank7d,
+          lifetime: coord.aggCache.artistLifetimePlays
         )
       }
+      SessionTimeline(plays: coord.aggCache.last60Min)
+      ControlsBar(
+        client: coord.client,
+        onOpenHistory: { withAnimation(.easeInOut(duration: 0.18)) { screen = .history } },
+        onOpenStats:   { withAnimation(.easeInOut(duration: 0.18)) { screen = .stats } }
+      )
     }
   }
 
@@ -49,7 +75,6 @@ struct DropdownView: View {
 
   private var connectView: some View {
     VStack(spacing: 0) {
-      // Same status rail so the pet egg is visible from the jump.
       StatusRail(vm: coord.menubar, pet: coord.pet, showingGlossary: $showingGlossary)
 
       if showingGlossary {

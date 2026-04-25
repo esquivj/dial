@@ -14,19 +14,6 @@ final class AppCoordinator {
   let menubar: MenubarStripViewModel
   let pet: PetViewModel
   let settings: SettingsViewModel
-  /// Owns the History and Stats NSWindows. The dropdown talks to this
-  /// instead of `@Environment(\.openWindow)` because the dropdown is hosted
-  /// in an NSPopover, which sits outside SwiftUI's scene hierarchy.
-  /// `@ObservationIgnored` keeps the @Observable macro from rewriting it
-  /// (which conflicts with `lazy` and with the `@MainActor` isolation).
-  @ObservationIgnored
-  private var _windows: WindowsManager?
-  @MainActor var windows: WindowsManager {
-    if let _windows { return _windows }
-    let w = WindowsManager(dbq: dbq)
-    _windows = w
-    return w
-  }
 
   /// Idempotent guard so `start()` can be called from launch (when already signed in)
   /// or from `signIn()` (after auth completes) without double-tasking the polling loop.
@@ -57,6 +44,16 @@ final class AppCoordinator {
         }
       } catch {
         print("[AppCoordinator] polling error: \(error)")
+      }
+    }
+    // Backfill any track URIs that are referenced from `plays` but have no
+    // metadata in `tracks`. Runs in the background, low priority — the
+    // dropdown stays usable while it works through the queue.
+    Task(priority: .background) {
+      do {
+        try await MetadataEnricher(dbq: dbq, client: client).enrichMissing()
+      } catch {
+        print("[AppCoordinator] metadata backfill error: \(error)")
       }
     }
   }

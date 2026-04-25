@@ -1,93 +1,112 @@
-// Dial/Views/Windows/StatsWindow.swift
+// Dial/Views/Dropdown/StatsView.swift
 import SwiftUI
 import GRDB
 
-struct StatsWindow: View {
+/// Inline Stats panel — replaces the dropdown body when the user taps STATS
+/// in the controls bar. Compact editorial layout designed for ~320 wide.
+struct StatsView: View {
   let dbq: DatabaseQueue
+  let onBack: () -> Void
   @State private var totals = StatsQueries.Totals(plays: 0, listeningMs: 0, uniqueTracks: 0, uniqueArtists: 0)
   @State private var topTracks: [StatsQueries.TopRow] = []
   @State private var topArtists: [StatsQueries.TopRow] = []
   @State private var pet: PetState? = nil
 
   var body: some View {
-    ScrollView {
-      VStack(alignment: .leading, spacing: 32) {
-        hero
-        secondaryStats
-        topTracksSection
-        topArtistsSection
-        if let pet { petPanel(pet) }
+    VStack(alignment: .leading, spacing: 0) {
+      header
+      Rectangle().fill(Color.white.opacity(0.08)).frame(height: 1)
+      ScrollView {
+        VStack(alignment: .leading, spacing: 18) {
+          hero
+          secondaryStats
+          topTracksSection
+          topArtistsSection
+          if let pet { petPanel(pet) }
+        }
+        .padding(EdgeInsets(top: 14, leading: 14, bottom: 16, trailing: 14))
       }
-      .padding(EdgeInsets(top: 32, leading: 28, bottom: 32, trailing: 28))
     }
-    .frame(minWidth: 540, minHeight: 640)
-    .background(Dial.Palette.ground)
     .task(id: ObjectIdentifier(dbq)) {
       let observation = StatsQueries(dbq: dbq).observePlaysChanges()
       do {
-        for try await _ in observation.values(in: dbq) {
-          reload()
-        }
+        for try await _ in observation.values(in: dbq) { reload() }
       } catch {
         reload()
       }
     }
   }
 
+  private var header: some View {
+    HStack(spacing: 8) {
+      Button(action: onBack) {
+        Image(systemName: "chevron.left")
+          .font(.system(size: 11, weight: .semibold))
+          .foregroundStyle(Dial.Palette.muted)
+      }.buttonStyle(.plain)
+      Text("STATS")
+        .font(Dial.Typography.monoLabel)
+        .tracking(1.6)
+        .foregroundStyle(Dial.Palette.amber)
+      Spacer()
+    }
+    .padding(EdgeInsets(top: 11, leading: 14, bottom: 11, trailing: 14))
+  }
+
   // MARK: Hero
 
   private var hero: some View {
-    VStack(alignment: .leading, spacing: 4) {
+    VStack(alignment: .leading, spacing: 2) {
       Text("TOTAL TIME")
         .font(Dial.Typography.monoLabel)
-        .tracking(1.8)
+        .tracking(1.6)
         .foregroundStyle(Dial.Palette.muted)
       Text(hoursFormatted(totals.listeningMs))
-        .font(.custom("IBMPlexMono-Medium", size: 64))
+        .font(.custom("IBMPlexMono-Medium", size: 40))
         .foregroundStyle(Dial.Palette.amber)
         .lineLimit(1)
         .minimumScaleFactor(0.6)
-      Text("listening across \(totals.plays) plays")
-        .font(Dial.Typography.sansCaption)
+      Text("across \(totals.plays) \(totals.plays == 1 ? "play" : "plays")")
+        .font(.system(size: 10))
         .foregroundStyle(Dial.Palette.muted)
     }
   }
 
-  // MARK: Secondary stats row
+  // MARK: Secondary stats — single row
 
   private var secondaryStats: some View {
-    HStack(spacing: 32) {
-      stat("UNIQUE TRACKS", "\(totals.uniqueTracks)")
-      stat("UNIQUE ARTISTS", "\(totals.uniqueArtists)")
-      stat("AVG / TRACK", avgPerTrack())
+    HStack(spacing: 16) {
+      stat("TRACKS", "\(totals.uniqueTracks)")
+      stat("ARTISTS", "\(totals.uniqueArtists)")
+      stat("AVG", avgPerTrack())
       Spacer()
     }
   }
 
   private func stat(_ label: String, _ value: String) -> some View {
-    VStack(alignment: .leading, spacing: 2) {
+    VStack(alignment: .leading, spacing: 1) {
       Text(label)
-        .font(Dial.Typography.monoLabel)
-        .tracking(1.4)
+        .font(Dial.Typography.monoTiny)
+        .tracking(1.2)
         .foregroundStyle(Dial.Palette.muted)
       Text(value)
-        .font(Dial.Typography.monoValue)        // 28 pt amber numeral
+        .font(.custom("IBMPlexMono-Medium", size: 18))
         .foregroundStyle(Dial.Palette.ivory)
     }
   }
 
-  // MARK: Top tracks (with album art)
+  // MARK: Top tracks (compact, with album art)
 
   private var topTracksSection: some View {
-    VStack(alignment: .leading, spacing: 12) {
+    VStack(alignment: .leading, spacing: 6) {
       sectionHeader("TOP TRACKS", count: topTracks.count)
       if topTracks.isEmpty {
         emptyHint()
       } else {
         VStack(spacing: 0) {
-          ForEach(Array(topTracks.enumerated()), id: \.element.id) { idx, row in
+          ForEach(Array(topTracks.prefix(5).enumerated()), id: \.element.id) { idx, row in
             TopTrackRow(rank: idx + 1, row: row)
-            if idx < topTracks.count - 1 {
+            if idx < min(topTracks.count, 5) - 1 {
               Rectangle().fill(Color.white.opacity(0.05)).frame(height: 1)
             }
           }
@@ -96,32 +115,32 @@ struct StatsWindow: View {
     }
   }
 
-  // MARK: Top artists (compact)
+  // MARK: Top artists
 
   private var topArtistsSection: some View {
-    VStack(alignment: .leading, spacing: 12) {
+    VStack(alignment: .leading, spacing: 6) {
       sectionHeader("TOP ARTISTS", count: topArtists.count)
       if topArtists.isEmpty {
         emptyHint()
       } else {
         VStack(spacing: 0) {
-          ForEach(Array(topArtists.enumerated()), id: \.element.id) { idx, row in
-            HStack(spacing: 12) {
+          ForEach(Array(topArtists.prefix(5).enumerated()), id: \.element.id) { idx, row in
+            HStack(spacing: 10) {
               Text(String(format: "%02d", idx + 1))
-                .font(Dial.Typography.monoLabel)
+                .font(Dial.Typography.monoTiny)
                 .foregroundStyle(Dial.Palette.muted)
-                .frame(width: 24, alignment: .leading)
+                .frame(width: 18, alignment: .leading)
               Text(row.name)
-                .font(Dial.Typography.sansBody)
+                .font(Dial.Typography.sansCaption)
                 .foregroundStyle(Dial.Palette.ivory)
                 .lineLimit(1)
               Spacer()
               Text("\(row.count)")
-                .font(Dial.Typography.monoSmall)
+                .font(Dial.Typography.monoTiny)
                 .foregroundStyle(Dial.Palette.amber)
             }
-            .padding(.vertical, 8)
-            if idx < topArtists.count - 1 {
+            .padding(.vertical, 5)
+            if idx < min(topArtists.count, 5) - 1 {
               Rectangle().fill(Color.white.opacity(0.05)).frame(height: 1)
             }
           }
@@ -133,38 +152,36 @@ struct StatsWindow: View {
   // MARK: Pet panel
 
   private func petPanel(_ p: PetState) -> some View {
-    VStack(alignment: .leading, spacing: 12) {
+    VStack(alignment: .leading, spacing: 6) {
       sectionHeader("YOUR PET", count: nil)
-      HStack(spacing: 20) {
-        // Sprite at 4× scale (56 px). Uses the static sprite, not animated, since this is a stats panel.
-        PixelSprite(grid: PetSprites.grid(for: p.stage, behavior: .idle), pixelSize: 4)
-          .frame(width: 56, height: 56)
-        VStack(alignment: .leading, spacing: 4) {
+      HStack(spacing: 12) {
+        PixelSprite(grid: PetSprites.grid(for: p.stage, behavior: .idle), pixelSize: 3)
+          .frame(width: 42, height: 42)
+        VStack(alignment: .leading, spacing: 2) {
           Text(p.stage.rawValue.uppercased())
-            .font(Dial.Typography.sansTitle)
+            .font(Dial.Typography.sansCaption)
             .foregroundStyle(Dial.Palette.amber)
-          HStack(spacing: 14) {
+          HStack(spacing: 10) {
             label("XP", value: "\(p.xp)")
             label("STREAK", value: "\(p.streakDays)d")
-            label("ELDER", value: p.elderUnlockedAt == nil ? "LOCKED" : "UNLOCKED")
           }
         }
         Spacer()
       }
-      .padding(EdgeInsets(top: 16, leading: 18, bottom: 16, trailing: 18))
+      .padding(EdgeInsets(top: 10, leading: 12, bottom: 10, trailing: 12))
       .background(Dial.Palette.surface)
-      .clipShape(RoundedRectangle(cornerRadius: 6))
+      .clipShape(RoundedRectangle(cornerRadius: 4))
     }
   }
 
   private func label(_ key: String, value: String) -> some View {
-    VStack(alignment: .leading, spacing: 2) {
+    VStack(alignment: .leading, spacing: 0) {
       Text(key)
-        .font(Dial.Typography.monoLabel)
-        .tracking(1.2)
+        .font(Dial.Typography.monoTiny)
+        .tracking(1.0)
         .foregroundStyle(Dial.Palette.muted)
       Text(value)
-        .font(Dial.Typography.monoSmall)
+        .font(Dial.Typography.monoTiny)
         .foregroundStyle(Dial.Palette.ivory)
     }
   }
@@ -172,7 +189,7 @@ struct StatsWindow: View {
   // MARK: Helpers
 
   private func sectionHeader(_ title: String, count: Int?) -> some View {
-    HStack {
+    HStack(spacing: 6) {
       Text(title)
         .font(Dial.Typography.monoLabel)
         .tracking(1.6)
@@ -180,7 +197,6 @@ struct StatsWindow: View {
       if let count, count > 0 {
         Text("· \(count)")
           .font(Dial.Typography.monoLabel)
-          .tracking(1.0)
           .foregroundStyle(Dial.Palette.muted.opacity(0.6))
       }
       Spacer()
@@ -188,8 +204,8 @@ struct StatsWindow: View {
   }
 
   private func emptyHint() -> some View {
-    Text("Not enough data yet. Keep listening.")
-      .font(Dial.Typography.sansCaption)
+    Text("Not enough data yet")
+      .font(.system(size: 10))
       .foregroundStyle(Dial.Palette.muted.opacity(0.7))
       .padding(.vertical, 4)
   }
@@ -217,42 +233,40 @@ struct StatsWindow: View {
   }
 }
 
-// MARK: - Top track row (album art + track + artist + count)
-
 private struct TopTrackRow: View {
   let rank: Int
   let row: StatsQueries.TopRow
 
   var body: some View {
-    HStack(spacing: 14) {
+    HStack(spacing: 10) {
       Text(String(format: "%02d", rank))
-        .font(Dial.Typography.monoLabel)
+        .font(Dial.Typography.monoTiny)
         .foregroundStyle(Dial.Palette.muted)
-        .frame(width: 24, alignment: .leading)
+        .frame(width: 18, alignment: .leading)
       AsyncImage(url: row.artUrl.flatMap(URL.init(string:))) { img in
         img.resizable()
       } placeholder: {
         Rectangle().fill(Dial.Palette.surface)
       }
-      .frame(width: 40, height: 40)
+      .frame(width: 28, height: 28)
       .clipShape(RoundedRectangle(cornerRadius: 3))
-      VStack(alignment: .leading, spacing: 2) {
+      VStack(alignment: .leading, spacing: 1) {
         Text(row.name)
-          .font(Dial.Typography.sansBody)
+          .font(Dial.Typography.sansCaption)
           .foregroundStyle(Dial.Palette.ivory)
           .lineLimit(1)
         if let subtitle = row.subtitle, !subtitle.isEmpty {
           Text(subtitle)
-            .font(Dial.Typography.sansCaption)
+            .font(.system(size: 10))
             .foregroundStyle(Dial.Palette.muted)
             .lineLimit(1)
         }
       }
       Spacer()
       Text("\(row.count)")
-        .font(Dial.Typography.monoValue)        // 28 pt amber
+        .font(.custom("IBMPlexMono-Medium", size: 16))
         .foregroundStyle(Dial.Palette.amber)
     }
-    .padding(.vertical, 10)
+    .padding(.vertical, 6)
   }
 }
