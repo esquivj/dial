@@ -93,6 +93,22 @@ final class FFTProcessor {
     let logMax = log10(maxFreq)
     let logRange = logMax - logMin
 
+    // Normalization factor for vDSP_fft_zrip output → amplitude-correct dBFS:
+    //
+    //   * vDSP's forward FFT does no 1/N scaling; raw magnitudes scale with N/2,
+    //     so a unit sine through a rectangular window comes out at magnitude N/2.
+    //   * The Hann window has coherent gain 0.5 — every sample is multiplied by
+    //     a value averaging 0.5 — so windowed magnitudes are halved again. The
+    //     standard amplitude-correction factor for Hann is 2.
+    //
+    // Combined: `magnitude * 2 / (N/2)` recovers the original amplitude, where
+    // `magnitudes.count == N/2`. After this, 0 dBFS = full-scale sine wave.
+    //
+    // Without this normalization, raw magnitudes for typical music sit around
+    // +30 to +50 dB into the formula below, which pegs every band to 1.0 —
+    // the "all bars at full height, identical across columns" symptom.
+    let ampCorrection: Float = 2.0 / Float(magnitudes.count)
+
     var out = [Float](repeating: 0, count: bandCount)
     for i in 0..<bandCount {
       let freqLow = pow(10, logMin + Float(i) / Float(bandCount) * logRange)
@@ -104,7 +120,7 @@ final class FFTProcessor {
       for j in binLow..<binHigh {
         sum += magnitudes[j]
       }
-      let avg = sum / Float(binHigh - binLow)
+      let avg = (sum / Float(binHigh - binLow)) * ampCorrection
 
       // dB scale → 0..1, with `floorDb` as silence and 0dB as full scale.
       let db = 20 * log10(max(avg, 1e-6))
