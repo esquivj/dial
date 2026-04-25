@@ -1,0 +1,4 @@
+
+# Local secrets
+.env.local
+*.xcconfig.local
