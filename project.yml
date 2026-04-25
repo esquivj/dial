@@ -73,6 +73,9 @@ targets:
     platform: macOS
     sources:
       - DialTests
+    resources:
+      - path: DialTests/Fixtures
+        type: folder
     settings:
       base:
         GENERATE_INFOPLIST_FILE: YES
