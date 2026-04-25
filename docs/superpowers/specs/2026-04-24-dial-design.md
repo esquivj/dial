@@ -181,7 +181,8 @@ CREATE TABLE imports_log (
   id INTEGER PRIMARY KEY,
   imported_at INTEGER NOT NULL,
   source_path TEXT,
-  rows_inserted INTEGER
+  rows_inserted INTEGER,
+  notes TEXT                         -- e.g. "skipped 3 malformed rows"
 );
 ```
 
