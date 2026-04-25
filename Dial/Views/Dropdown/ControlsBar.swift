@@ -15,11 +15,20 @@ struct ControlsBar: View {
         .buttonStyle(HoverableTransportButtonStyle())
         .modifier(HoverDimModifier())
         Button {
+          // Optimistic flip: update the local state immediately so the icon
+          // changes on tap instead of waiting up to 3s for the next poll.
+          // The polling loop will reaffirm (or correct) the state shortly after.
+          let wasPlaying = menubar.state == .playing
+          menubar.state = wasPlaying ? .paused : .playing
           Task {
-            if menubar.state == .playing {
-              try? await client.pause()
-            } else {
-              try? await client.play()
+            do {
+              if wasPlaying { try await client.pause() }
+              else          { try await client.play()  }
+            } catch {
+              // Revert if Spotify rejected the command (e.g. no active device).
+              await MainActor.run {
+                menubar.state = wasPlaying ? .playing : .paused
+              }
             }
           }
         } label: {
