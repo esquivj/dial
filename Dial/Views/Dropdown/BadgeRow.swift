@@ -30,9 +30,12 @@ struct BadgeRow: View {
     let (fg, bg, border, label): (Color, Color, Color, String) = {
       switch kind {
       case .firstListen:
-        return (Dial.Palette.amber,
-                Dial.Palette.amber.opacity(0.08),
-                Dial.Palette.amber.opacity(0.35),
+        // Magenta (not cyan) — this is the celebration moment of the row.
+        // Cyan is the steady-state data tone; magenta is reserved for
+        // "something noteworthy is happening with this track."
+        return (Dial.Palette.orange,
+                Dial.Palette.orange.opacity(0.10),
+                Dial.Palette.orange.opacity(0.40),
                 "FIRST LISTEN")
       case .rediscovered:
         return (Dial.Palette.muted,

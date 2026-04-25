@@ -25,6 +25,16 @@ private struct Readout: View {
   let value: String
   let delta: String
 
+  /// Magenta on celebration deltas (NEW / DEBUT), cyan otherwise. Reinforces
+  /// the same two-tone rule used elsewhere: cyan = steady data, magenta =
+  /// "this track triggered something noteworthy."
+  private var deltaColor: Color {
+    switch delta {
+    case "NEW", "DEBUT": return Dial.Palette.orange
+    default:             return Dial.Palette.amber
+    }
+  }
+
   var body: some View {
     VStack(alignment: .leading, spacing: 4) {
       Text(label)
@@ -40,7 +50,7 @@ private struct Readout: View {
           .shadow(color: Dial.Palette.amber.opacity(0.55), radius: 6, x: 0, y: 0)
         Text(delta)
           .font(Dial.Typography.monoLabel)
-          .foregroundStyle(Dial.Palette.amber.opacity(0.9))
+          .foregroundStyle(deltaColor.opacity(0.9))
       }
     }
     .frame(maxWidth: .infinity, alignment: .leading)

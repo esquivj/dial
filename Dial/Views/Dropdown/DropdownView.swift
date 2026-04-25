@@ -22,9 +22,17 @@ struct DropdownView: View {
     .frame(width: 320, height: 400)
     .background(Dial.Palette.ground)
     .clipShape(RoundedRectangle(cornerRadius: 14))
+    // Y2K device bevel: cyan light catch on the top edge, fading through
+    // hairline grey into a darker underside. Sells the "small handheld
+    // crystal device" framing that the inner LCD-recess + scanlines build on.
     .overlay(
       RoundedRectangle(cornerRadius: 14)
-        .stroke(Dial.Palette.hairline, lineWidth: 1)
+        .stroke(LinearGradient(colors: [
+          Dial.Palette.amber.opacity(0.55),
+          Dial.Palette.hairline,
+          Dial.Palette.hairline,
+          Color.black.opacity(0.7),
+        ], startPoint: .top, endPoint: .bottom), lineWidth: 1)
     )
   }
 
@@ -32,28 +40,54 @@ struct DropdownView: View {
 
   private var signedInView: some View {
     VStack(spacing: 0) {
-      // Status rail stays mounted ONLY on the HUD screen — History and Stats
-      // own their own header (with a back chevron). Glossary keeps the rail
-      // because it's a transient overlay.
+      // Top device chrome: status rail. Stays mounted ONLY on the HUD
+      // screen — History and Stats own their own header (with back chevron).
+      // Glossary keeps the rail because it's a transient overlay.
       if screen == .hud {
         StatusRail(vm: coord.menubar, pet: coord.pet, showingGlossary: $showingGlossary)
       }
 
-      if showingGlossary && screen == .hud {
-        GlossaryPanel()
-          .transition(.opacity.combined(with: .move(edge: .leading)))
-      } else {
-        switch screen {
-        case .hud:
-          hudBody
-            .transition(.opacity)
-        case .history:
-          HistoryView(dbq: coord.dbq, onBack: { withAnimation(.easeInOut(duration: 0.18)) { screen = .hud } })
-            .transition(.move(edge: .trailing).combined(with: .opacity))
-        case .stats:
-          StatsView(dbq: coord.dbq, onBack: { withAnimation(.easeInOut(duration: 0.18)) { screen = .hud } })
-            .transition(.move(edge: .trailing).combined(with: .opacity))
-        }
+      // The "screen" — sandwiched between top + bottom chrome — gets the
+      // LCD treatment: scanline grain on top of the content and a recessed
+      // top-edge shadow that suggests it's pressed into a bezel.
+      screenContent
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .overlay(LCDScanlines())
+        .modifier(RecessedScreen())
+
+      // Bottom device chrome: transport controls. Lives outside hudBody so
+      // it isn't covered by scanlines (it's the "buttons below the LCD,"
+      // not part of the screen).
+      if screen == .hud {
+        ControlsBar(
+          menubar: coord.menubar,
+          client: coord.client,
+          onOpenHistory: { withAnimation(.easeInOut(duration: 0.18)) { screen = .history } },
+          onOpenStats:   { withAnimation(.easeInOut(duration: 0.18)) { screen = .stats } }
+        )
+        .modifier(StaggeredAppear(delay: 0.25))
+      }
+    }
+  }
+
+  /// What lives inside the "screen" area — glossary overlay or one of the
+  /// three top-level screens. Extracted so the LCD overlays apply uniformly.
+  @ViewBuilder
+  private var screenContent: some View {
+    if showingGlossary && screen == .hud {
+      GlossaryPanel()
+        .transition(.opacity.combined(with: .move(edge: .leading)))
+    } else {
+      switch screen {
+      case .hud:
+        hudBody
+          .transition(.opacity)
+      case .history:
+        HistoryView(dbq: coord.dbq, onBack: { withAnimation(.easeInOut(duration: 0.18)) { screen = .hud } })
+          .transition(.move(edge: .trailing).combined(with: .opacity))
+      case .stats:
+        StatsView(dbq: coord.dbq, onBack: { withAnimation(.easeInOut(duration: 0.18)) { screen = .hud } })
+          .transition(.move(edge: .trailing).combined(with: .opacity))
       }
     }
   }
@@ -79,21 +113,12 @@ struct DropdownView: View {
       }
       SessionTimeline(plays: coord.aggCache.last60Min)
         .modifier(StaggeredAppear(delay: 0.20))
-      // Flex spacer absorbs any leftover vertical room so ControlsBar
-      // is always pinned to the bottom — independent of how many
-      // optional rows above (BadgeRow / ArtistContext) are mounted.
+      // Flex spacer absorbs any leftover vertical room so the LCD content
+      // stays top-aligned and the screen area fills the bezel cleanly,
+      // regardless of how many optional rows above (BadgeRow / ArtistContext)
+      // are mounted.
       Spacer(minLength: 0)
-      ControlsBar(
-        menubar: coord.menubar,
-        client: coord.client,
-        onOpenHistory: { withAnimation(.easeInOut(duration: 0.18)) { screen = .history } },
-        onOpenStats:   { withAnimation(.easeInOut(duration: 0.18)) { screen = .stats } }
-      )
-      .modifier(StaggeredAppear(delay: 0.25))
     }
-    // Force the body to claim the entire space below the StatusRail so the
-    // Spacer above behaves predictably and SwiftUI doesn't re-allocate
-    // children when the screen swaps.
     .frame(maxHeight: .infinity, alignment: .top)
   }
 

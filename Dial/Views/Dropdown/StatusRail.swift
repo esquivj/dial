@@ -5,6 +5,10 @@ struct StatusRail: View {
   @Bindable var pet: PetViewModel
   @Binding var showingGlossary: Bool
 
+  /// Flips true for ~700ms when the URI changes, so the indicator dot
+  /// flashes magenta (event tone) before settling back to cyan (steady).
+  @State private var trackPulse = false
+
   var body: some View {
     VStack(spacing: 0) {
       // Faint wine accent line where the amber LED used to be.
@@ -13,9 +17,10 @@ struct StatusRail: View {
         BulldogSprite(stage: pet.stage, behavior: pet.behavior, height: 28)
           .frame(width: 28, height: 28)
         Circle()
-          .fill(Dial.Palette.amber)
+          .fill(trackPulse ? Dial.Palette.orange : Dial.Palette.amber)
           .frame(width: 6, height: 6)
-          .shadow(color: Dial.Palette.amber, radius: 3)
+          .shadow(color: trackPulse ? Dial.Palette.orange : Dial.Palette.amber, radius: 3)
+          .animation(.easeOut(duration: 0.5), value: trackPulse)
         Text("NOW PLAYING")
           .font(Dial.Typography.monoLabel)
           .tracking(1.4)
@@ -50,6 +55,18 @@ struct StatusRail: View {
     }
     .background(LinearGradient(colors: [Dial.Palette.surface, Dial.Palette.ground],
                                startPoint: .top, endPoint: .bottom))
+    .onChange(of: vm.track?.uri) { _, _ in
+      // Track changed mid-session → flash the indicator magenta as a
+      // celebration beat, then fade back to the cyan steady state.
+      // (No fire on initial mount: SwiftUI's onChange skips the first
+      // observation, so opening the popover with a song already playing
+      // doesn't trigger a spurious pulse.)
+      trackPulse = true
+      Task {
+        try? await Task.sleep(for: .milliseconds(700))
+        await MainActor.run { trackPulse = false }
+      }
+    }
   }
 
   /// Realtime-interpolated track progress.
