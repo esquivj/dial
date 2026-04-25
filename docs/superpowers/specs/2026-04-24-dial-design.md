@@ -271,7 +271,8 @@ CREATE TABLE pet_state (
   last_play_at INTEGER,
   streak_days INTEGER NOT NULL DEFAULT 0,
   streak_anchor_date TEXT,                   -- YYYY-MM-DD of streak start
-  elder_unlocked_at INTEGER                  -- set after 30d live use; null until then
+  elder_unlocked_at INTEGER,                 -- set after 30d live use; null until then
+  installed_at INTEGER NOT NULL              -- unix seconds; anchors elder-unlock window
 );
 ```
 
