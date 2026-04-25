@@ -14,6 +14,11 @@ final class AppCoordinator {
   let menubar: MenubarStripViewModel
   let pet: PetViewModel
   let settings: SettingsViewModel
+  /// Owns the system-audio capture + FFT pipeline that drives the spectrum
+  /// visualizer. Idle until the visualizer view first appears, at which
+  /// point `start()` is called and the engine triggers the Screen Recording
+  /// permission prompt (first launch only).
+  let visualizer: VisualizerEngine = .init()
 
   /// Idempotent guard so `start()` can be called from launch (when already signed in)
   /// or from `signIn()` (after auth completes) without double-tasking the polling loop.

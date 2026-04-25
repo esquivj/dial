@@ -52,6 +52,11 @@ targets:
         CFBundleVersion: "1"
         ATSApplicationFontsPath: Fonts/
         SpotifyClientID: YOUR_SPOTIFY_CLIENT_ID
+        # Shown in the macOS permission prompt when the spectrum visualizer
+        # first tries to start ScreenCaptureKit. ScreenCaptureKit's audio
+        # capture is gated by Screen Recording TCC even when no video frames
+        # are consumed.
+        NSScreenCaptureUsageDescription: "Dial captures system audio to render a real-time spectrum visualizer for music playback. Audio never leaves your machine."
         CFBundleURLTypes:
           - CFBundleURLName: com.dial.callback
             CFBundleURLSchemes: [dial]
