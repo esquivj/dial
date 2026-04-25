@@ -66,7 +66,11 @@ extension PlayAggregations {
 }
 
 extension PlayAggregations {
-  struct SessionPlay: Equatable { let playedAt: Int64; let trackUri: String; let msPlayed: Int64 }
+  struct SessionPlay: Equatable, Sendable, Hashable {
+    let playedAt: Int64
+    let trackUri: String
+    let msPlayed: Int64
+  }
 
   func last60MinTracks() throws -> [SessionPlay] {
     let cutoff = now() - 3600
