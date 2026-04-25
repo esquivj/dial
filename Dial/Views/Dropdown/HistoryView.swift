@@ -32,12 +32,8 @@ struct HistoryView: View {
   }
 
   private var header: some View {
-    HStack(spacing: 8) {
-      Button(action: onBack) {
-        Image(systemName: "chevron.left")
-          .font(.system(size: 11, weight: .semibold))
-          .foregroundStyle(Dial.Palette.muted)
-      }.buttonStyle(.plain)
+    HStack(spacing: 10) {
+      BackButton(action: onBack)
       Text("HISTORY")
         .font(Dial.Typography.monoLabel)
         .tracking(1.6)
@@ -48,7 +44,7 @@ struct HistoryView: View {
         .tracking(1.4)
         .foregroundStyle(Dial.Palette.muted)
     }
-    .padding(EdgeInsets(top: 11, leading: 14, bottom: 11, trailing: 14))
+    .padding(EdgeInsets(top: 8, leading: 10, bottom: 8, trailing: 14))
   }
 
   private var empty: some View {

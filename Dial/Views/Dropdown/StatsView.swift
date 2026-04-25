@@ -38,19 +38,15 @@ struct StatsView: View {
   }
 
   private var header: some View {
-    HStack(spacing: 8) {
-      Button(action: onBack) {
-        Image(systemName: "chevron.left")
-          .font(.system(size: 11, weight: .semibold))
-          .foregroundStyle(Dial.Palette.muted)
-      }.buttonStyle(.plain)
+    HStack(spacing: 10) {
+      BackButton(action: onBack)
       Text("STATS")
         .font(Dial.Typography.monoLabel)
         .tracking(1.6)
         .foregroundStyle(Dial.Palette.amber)
       Spacer()
     }
-    .padding(EdgeInsets(top: 11, leading: 14, bottom: 11, trailing: 14))
+    .padding(EdgeInsets(top: 8, leading: 10, bottom: 8, trailing: 14))
   }
 
   // MARK: Hero
