@@ -27,14 +27,7 @@ struct MenubarStripView: View {
 
   @ViewBuilder
   private var sprite: some View {
-    let grid = PetSprites.grid(for: pet.stage, behavior: pet.behavior)
-    Group {
-      if case .beatSync(let bpm) = pet.behavior {
-        BeatSyncSprite(grid: grid, pixelSize: 1.5, bpm: bpm)
-      } else {
-        PixelSprite(grid: grid, pixelSize: 1.5)
-      }
-    }
-    .frame(width: 21, height: 21)
+    BulldogSprite(stage: pet.stage, behavior: pet.behavior, height: 20)
+      .frame(width: 22, height: 22)
   }
 }

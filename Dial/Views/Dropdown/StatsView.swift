@@ -152,7 +152,7 @@ struct StatsView: View {
     VStack(alignment: .leading, spacing: 6) {
       sectionHeader("YOUR PET", count: nil)
       HStack(spacing: 12) {
-        PixelSprite(grid: PetSprites.grid(for: p.stage, behavior: .idle), pixelSize: 3)
+        BulldogSprite(stage: p.stage, behavior: .idle, height: 42)
           .frame(width: 42, height: 42)
         VStack(alignment: .leading, spacing: 2) {
           Text(p.stage.rawValue.uppercased())

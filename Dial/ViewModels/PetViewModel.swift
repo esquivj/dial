@@ -12,6 +12,10 @@ final class PetViewModel {
   var behavior: PetBehavior = .idle
   var currentBPM: Double? = nil
   var justLeveledUp: Bool = false
+  /// Set true for ~600ms after a counted play. The behavior resolver picks
+  /// this up and renders the eating animation; auto-clears so the pet
+  /// returns to walk/idle.
+  var isEating: Bool = false
 
   /// Reads the persisted pet state and pulls it into the observable view model.
   /// Sets `justLeveledUp` for ~1.2s if the stage advanced — the menubar/dropdown

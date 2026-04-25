@@ -33,9 +33,11 @@ targets:
       - path: Dial
         excludes:
           - "Resources/Fonts/**"
+          - "Resources/Pets/**"
     resources:
       - path: Dial/Resources/Fonts
         type: folder
+      - path: Dial/Resources/Pets
     info:
       path: Dial/App/Info.plist
       properties:

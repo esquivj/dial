@@ -10,16 +10,8 @@ struct StatusRail: View {
       // Faint wine accent line where the amber LED used to be.
       Rectangle().fill(Dial.Palette.amber.opacity(0.4)).frame(height: 1)
       HStack(spacing: 8) {
-        Group {
-          if case .beatSync(let bpm) = pet.behavior {
-            BeatSyncSprite(grid: PetSprites.grid(for: pet.stage, behavior: pet.behavior),
-                           pixelSize: 2, bpm: bpm)
-          } else {
-            PixelSprite(grid: PetSprites.grid(for: pet.stage, behavior: pet.behavior),
-                        pixelSize: 2)
-          }
-        }
-        .frame(width: 28, height: 28)
+        BulldogSprite(stage: pet.stage, behavior: pet.behavior, height: 28)
+          .frame(width: 28, height: 28)
         Circle()
           .fill(Dial.Palette.amber)
           .frame(width: 6, height: 6)

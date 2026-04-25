@@ -121,6 +121,14 @@ final class AppCoordinator {
       aggCache.refresh(trackUri: uri, artistUri: nowPlaying.track?.artistUri)
       nowPlaying.plays30d = aggCache.plays30d
       pet.syncFromStore(dbq: dbq)
+      // Tamagotchi-style: a counted play "feeds" the pet — flip on the
+      // eating flag for ~600ms, then auto-clear so it returns to walk/idle.
+      pet.isEating = true
+      Task { @MainActor in
+        try? await Task.sleep(nanoseconds: 600_000_000)
+        pet.isEating = false
+        resolvePetBehavior()
+      }
       resolvePetBehavior()
     }
   }
@@ -131,6 +139,7 @@ final class AppCoordinator {
       paused:  menubar.state == .paused,
       firstListen: aggCache.firstListen,
       rediscovered: aggCache.rediscovered,
+      eating: pet.isEating,
       leveledUp: pet.justLeveledUp,
       lastPlayAt: pet.lastPlayAt,
       now: Int64(Date().timeIntervalSince1970),

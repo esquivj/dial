@@ -135,9 +135,12 @@ enum PetSprites {
 }
 
 extension PetBehavior {
+  /// Maps the runtime behavior enum onto the legacy pixel-sprite key system.
+  /// `walk` and `eating` (introduced for the bulldog renderer) fall back to
+  /// `idle` here — the legacy 14×14 pixel renderer doesn't have frames for them.
   var canonical: PetSprites.PetBehaviorKey {
     switch self {
-    case .idle: .idle
+    case .idle, .walk, .eating: .idle
     case .beatSync: .beatSync
     case .firstListen: .firstListen
     case .rediscovered: .rediscovered
