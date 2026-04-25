@@ -51,9 +51,12 @@ targets:
     entitlements:
       path: Dial/App/Dial.entitlements
       properties:
-        com.apple.security.app-sandbox: true
+        # Personal menubar app, not App Store bound — sandbox off to keep
+        # snapshot tests writable, ASWebAuthenticationSession simple, and
+        # the Spotify Extended Streaming History import flow able to read
+        # whatever folder the user picks. Hardened runtime stays on.
+        com.apple.security.app-sandbox: false
         com.apple.security.network.client: true
-        com.apple.security.files.user-selected.read-only: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.dial.Dial
