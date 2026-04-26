@@ -11,6 +11,14 @@ settings:
     SWIFT_VERSION: "5.10"
     MACOSX_DEPLOYMENT_TARGET: "14.0"
     ENABLE_HARDENED_RUNTIME: YES
+    # Ad-hoc signed (no DEVELOPMENT_TEAM). The "right" fix for the
+    # Screen-Recording-prompt-on-every-build problem is a stable Apple
+    # Development cert, but the free Personal Team has cert generation
+    # glitches that can only be cleaned up via the developer.apple.com
+    # portal — which is gated to the paid Developer Program ($99/yr).
+    # Not worth the cost for a personal app. Re-granting Screen Recording
+    # after each ./scripts/install.sh is the accepted cost of free local
+    # development.
     CODE_SIGN_STYLE: Automatic
     DEVELOPMENT_TEAM: ""
 
