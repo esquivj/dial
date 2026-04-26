@@ -154,6 +154,10 @@ final class AppCoordinator {
       menubar.progressMs = ms
       menubar.lastProgressUpdate = Date()
 
+    case let .modesChanged(shuffle, repeatMode):
+      menubar.shuffle = shuffle
+      menubar.repeatMode = repeatMode
+
     case let .countedPlay(uri, ms, at):
       // Don't swallow this one with `try?`. If the play failed to record
       // (DB locked, XP overflow, FK violation), we should NOT then refresh

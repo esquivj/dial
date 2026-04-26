@@ -8,7 +8,31 @@ struct ControlsBar: View {
 
   var body: some View {
     HStack {
-      HStack(spacing: 14) {
+      HStack(spacing: 10) {
+        // Shuffle toggle — small icon-only button, color reflects state.
+        // Optimistic flip: update menubar.shuffle immediately, fire API,
+        // revert on error so the UI doesn't lie if Spotify rejects.
+        Button {
+          let prev = menubar.shuffle
+          menubar.shuffle = !prev
+          Task {
+            do { try await client.setShuffle(!prev) }
+            catch {
+              await MainActor.run { menubar.shuffle = prev }
+            }
+          }
+        } label: {
+          Image(systemName: "shuffle")
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(menubar.shuffle ? Dial.Palette.amber : Dial.Palette.muted)
+            .shadow(color: menubar.shuffle ? Dial.Palette.amber.opacity(0.6) : .clear,
+                    radius: 4, x: 0, y: 0)
+            .frame(width: 24, height: 24)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(menubar.shuffle ? "Shuffle on" : "Shuffle off")
+
         Button { Task { try? await client.prev() } } label: {
           Image(systemName: "backward.fill")
         }
@@ -41,6 +65,39 @@ struct ControlsBar: View {
           Image(systemName: "forward.fill")
         }
         .buttonStyle(GelTransportStyle())
+
+        // Repeat cycle — off → context (whole album/playlist) → track → off.
+        // SF Symbol switches to "repeat.1" in track-repeat mode and the tint
+        // flips to magenta to make "this song will loop forever" visible at
+        // a glance. Same optimistic pattern as shuffle.
+        Button {
+          let prev = menubar.repeatMode
+          let next: RepeatMode = {
+            switch prev {
+            case .off:     return .context
+            case .context: return .track
+            case .track:   return .off
+            }
+          }()
+          menubar.repeatMode = next
+          Task {
+            do { try await client.setRepeat(next.rawValue) }
+            catch {
+              await MainActor.run { menubar.repeatMode = prev }
+            }
+          }
+        } label: {
+          Image(systemName: menubar.repeatMode == .track ? "repeat.1" : "repeat")
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(repeatColor)
+            .shadow(color: menubar.repeatMode != .off ? repeatColor.opacity(0.6) : .clear,
+                    radius: 4, x: 0, y: 0)
+            .contentTransition(.symbolEffect(.replace))
+            .frame(width: 24, height: 24)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(repeatHelp)
       }
       // Slightly dimmer than the pure ivory of titles — gel pills are
       // already glow-bright, the icons sit better at 0.85 opacity ivory.
@@ -68,6 +125,25 @@ struct ControlsBar: View {
     .background(Dial.Palette.subtle)
     .overlay(alignment: .top) {
       Rectangle().fill(Dial.Palette.hairline).frame(height: 1)
+    }
+  }
+
+  /// Color for the repeat icon — cyan for context-loop, magenta for the
+  /// rarer track-loop (visually flags "this song will play forever"),
+  /// muted when off.
+  private var repeatColor: Color {
+    switch menubar.repeatMode {
+    case .off:     return Dial.Palette.muted
+    case .context: return Dial.Palette.amber
+    case .track:   return Dial.Palette.orange
+    }
+  }
+
+  private var repeatHelp: String {
+    switch menubar.repeatMode {
+    case .off:     return "Repeat off"
+    case .context: return "Repeat playlist"
+    case .track:   return "Repeat track"
     }
   }
 }

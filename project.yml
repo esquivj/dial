@@ -80,6 +80,13 @@ targets:
         # whatever folder the user picks. Hardened runtime stays on.
         com.apple.security.app-sandbox: false
         com.apple.security.network.client: true
+        # Allow loading Xcode's debug-build helper dylib (Dial.debug.dylib)
+        # under hardened runtime. Without this entitlement, library
+        # validation rejects the dylib when the main app is signed with our
+        # self-signed cert because the team IDs nominally don't match,
+        # breaking `xcodebuild test`. Dial doesn't load any third-party
+        # plugins, so loosening library validation isn't a real risk.
+        com.apple.security.cs.disable-library-validation: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.dial.Dial
@@ -105,6 +112,14 @@ targets:
         BUNDLE_LOADER: "$(TEST_HOST)"
         TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Dial.app/Contents/MacOS/Dial"
         PRODUCT_BUNDLE_IDENTIFIER: com.dial.DialTests
+        # Tests must sign with the same identity as the main app — otherwise
+        # the dynamic loader rejects Dial.debug.dylib at test launch with
+        # "mapping process and mapped file (non-platform) have different
+        # Team IDs". Globally we use Manual + Dial Local Dev; tests inherit
+        # those, but call them out explicitly here so the relationship is
+        # obvious to the next reader.
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: "Dial Local Dev"
     dependencies:
       - target: Dial
       - package: SnapshotTesting

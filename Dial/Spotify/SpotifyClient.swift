@@ -66,7 +66,12 @@ final class SpotifyClient {
   }
 
   func currentlyPlaying() async throws -> CurrentlyPlaying? {
-    let url = URL(string: "https://api.spotify.com/v1/me/player/currently-playing")!
+    // /me/player gives the full player state (track + progress + is_playing
+    // + shuffle_state + repeat_state + device). The older /currently-playing
+    // endpoint omits shuffle/repeat, which the dropdown's transport row
+    // needs to render the toggle states. Both return 204 when nothing's
+    // playing, so the caller-side semantics are unchanged.
+    let url = URL(string: "https://api.spotify.com/v1/me/player")!
     let (data, http) = try await authedGET(url)
     if http.statusCode == 204 { return nil }
     return try JSONDecoder().decode(CurrentlyPlaying.self, from: data)
@@ -115,6 +120,21 @@ extension SpotifyClient {
   func pause() async throws { try await sendEmpty(method: "PUT",  path: "/me/player/pause") }
   func next()  async throws { try await sendEmpty(method: "POST", path: "/me/player/next") }
   func prev()  async throws { try await sendEmpty(method: "POST", path: "/me/player/previous") }
+
+  /// Restart the current track from 0:00.
+  func seek(positionMs: Int = 0) async throws {
+    try await sendEmpty(method: "PUT", path: "/me/player/seek?position_ms=\(positionMs)")
+  }
+
+  /// Toggle shuffle on or off for the current player.
+  func setShuffle(_ on: Bool) async throws {
+    try await sendEmpty(method: "PUT", path: "/me/player/shuffle?state=\(on)")
+  }
+
+  /// Set repeat mode. Valid values per Spotify: "off" | "context" | "track".
+  func setRepeat(_ mode: String) async throws {
+    try await sendEmpty(method: "PUT", path: "/me/player/repeat?state=\(mode)")
+  }
 
   fileprivate func sendEmpty(method: String, path: String) async throws {
     let url = URL(string: "https://api.spotify.com/v1\(path)")!

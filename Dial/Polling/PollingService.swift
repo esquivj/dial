@@ -12,6 +12,11 @@ final class PollingService {
   private var lastTrackUri: String?
   private var counted = false
   private var playbackState: Bool? = nil
+  // Track previous shuffle/repeat so we only emit modesChanged on actual
+  // change, not every 3s. nil means we haven't observed yet — first
+  // observation always emits.
+  private var lastShuffle: Bool? = nil
+  private var lastRepeat: RepeatMode? = nil
 
   init(client: PollingClient,
        interval: TimeInterval = 3.0,
@@ -94,6 +99,16 @@ final class PollingService {
     if playbackState != cp.is_playing {
       out.append(cp.is_playing ? .resumed : .paused)
       playbackState = cp.is_playing
+    }
+    // Modes (shuffle, repeat). Only emit if changed since last observation.
+    // /me/player returns these consistently; /currently-playing wouldn't have,
+    // hence the optional unwraps with sensible defaults.
+    let shuffle = cp.shuffle_state ?? false
+    let repeatMode = cp.repeat_state.flatMap(RepeatMode.init(rawValue:)) ?? .off
+    if lastShuffle != shuffle || lastRepeat != repeatMode {
+      out.append(.modesChanged(shuffle: shuffle, repeatMode: repeatMode))
+      lastShuffle = shuffle
+      lastRepeat = repeatMode
     }
     return out
   }

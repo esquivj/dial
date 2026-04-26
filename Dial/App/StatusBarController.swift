@@ -127,6 +127,13 @@ final class StatusBarController {
 
     menu.addItem(.separator())
 
+    let restart = NSMenuItem(
+      title: "Restart Current Track", action: #selector(restartTrack), keyEquivalent: "")
+    restart.target = self
+    menu.addItem(restart)
+
+    menu.addItem(.separator())
+
     let quit = NSMenuItem(title: "Quit Dial", action: #selector(quitApp), keyEquivalent: "q")
     quit.target = self
     menu.addItem(quit)
@@ -157,6 +164,13 @@ final class StatusBarController {
   @objc private func openStats() {
     coord?.dropdownScreen = .stats
     showPopover()
+  }
+
+  /// Seek the current track back to 0:00. Best-effort — if no track is
+  /// playing or Spotify rejects (no active device), we silently no-op.
+  @objc private func restartTrack() {
+    guard let client = coord?.client else { return }
+    Task { try? await client.seek(positionMs: 0) }
   }
 
   @objc private func quitApp() {
