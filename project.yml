@@ -11,16 +11,19 @@ settings:
     SWIFT_VERSION: "5.10"
     MACOSX_DEPLOYMENT_TARGET: "14.0"
     ENABLE_HARDENED_RUNTIME: YES
-    # Ad-hoc signed (no DEVELOPMENT_TEAM). The "right" fix for the
-    # Screen-Recording-prompt-on-every-build problem is a stable Apple
-    # Development cert, but the free Personal Team has cert generation
-    # glitches that can only be cleaned up via the developer.apple.com
-    # portal — which is gated to the paid Developer Program ($99/yr).
-    # Not worth the cost for a personal app. Re-granting Screen Recording
-    # after each ./scripts/install.sh is the accepted cost of free local
-    # development.
-    CODE_SIGN_STYLE: Automatic
+    # Stable self-signed code-signing cert "Dial Local Dev" (created via
+    # /usr/bin/openssl + security import). Same identity hash on every
+    # build, so macOS TCC treats consecutive rebuilds as the same app
+    # and the Screen Recording grant persists. Cert valid for 10 years.
+    #
+    # The cert is "not trusted" by Gatekeeper (because self-signed) but
+    # codesign accepts it for *signing*; trust only matters for verifying
+    # signatures on someone else's machine, which is irrelevant for a
+    # personal app that we're never distributing.
+    CODE_SIGN_STYLE: Manual
+    CODE_SIGN_IDENTITY: "Dial Local Dev"
     DEVELOPMENT_TEAM: ""
+    PROVISIONING_PROFILE_SPECIFIER: ""
 
 packages:
   GRDB:
