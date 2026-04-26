@@ -35,6 +35,16 @@ final class AudioCaptureEngine: NSObject, SCStreamOutput, SCStreamDelegate, @unc
   /// counts we see from SCStream.
   var onSamples: (@Sendable ([Float]) -> Void)?
 
+  /// Called on the SCStream's internal queue when the system stops the
+  /// stream out from under us — most commonly because the user revoked
+  /// Screen Recording permission while we were running, but also covers
+  /// "screen sharing took over" and other system-initiated stops.
+  ///
+  /// VisualizerEngine listens to this and flips its `state` so the UI
+  /// shows the "ENABLE VISUALIZER" overlay instead of pretending to be
+  /// running over a dead stream.
+  var onStop: (@Sendable (Error) -> Void)?
+
   func start() async throws {
     let content = try await SCShareableContent.excludingDesktopWindows(
       false, onScreenWindowsOnly: false)
@@ -96,10 +106,19 @@ final class AudioCaptureEngine: NSObject, SCStreamOutput, SCStreamDelegate, @unc
   // MARK: - SCStreamDelegate
 
   func stream(_ stream: SCStream, didStopWithError error: Error) {
-    // System-initiated stop (e.g. permission revoked, screen sharing took
-    // over). The UI will detect via `permissionGranted` falling stale; we
-    // don't surface a notification here because the menubar app is fine
-    // running without a visualizer.
+    // The previous comment here claimed the UI would "detect via
+    // permissionGranted falling stale" — that was wishful thinking,
+    // there's no such polling path. Without surfacing this signal,
+    // the visualizer would render bars frozen on whatever the last
+    // FFT produced and the header label would still say `LIVE · 48k`
+    // long after the stream had died.
+    //
+    // Now: clear our reference to the dead stream and notify whoever
+    // owns the engine. VisualizerEngine reads CGPreflightScreenCaptureAccess()
+    // to distinguish "user revoked permission" (.denied) from "some
+    // other system-initiated stop" (.error).
+    self.stream = nil
+    onStop?(error)
   }
 
   // MARK: - Helpers

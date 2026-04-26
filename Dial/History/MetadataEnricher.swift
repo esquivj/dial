@@ -60,7 +60,7 @@ final class MetadataEnricher {
                 albumArtUrl: m.album.images.first?.url,
                 durationMs: Int64(m.duration_ms),
                 artistsJson: try Self.encodeArtists(m.artists)
-              ).save(db)
+              ).mergeUpsert(db)
             }
           }
           break  // success

@@ -82,6 +82,20 @@ final class VisualizerEngine: @unchecked Sendable {
       self?.handleSamples(samples)
     }
 
+    // System-initiated stop (most commonly: user revoked Screen Recording
+    // permission while we were running). Flip state so the UI surfaces
+    // the overlay instead of rendering frozen bars over a dead stream.
+    // CGPreflightScreenCaptureAccess() distinguishes "user pulled the rug"
+    // (.denied) from any other system-initiated stop (.error).
+    capture.onStop = { [weak self] _ in
+      Task { @MainActor [weak self] in
+        guard let self else { return }
+        self.state = CGPreflightScreenCaptureAccess() ? .error : .denied
+        self.bands = Array(repeating: 0, count: Self.bandCount)
+        self.peaks = Array(repeating: 0, count: Self.bandCount)
+      }
+    }
+
     // Auto-retry start when the app becomes active again. Common path: user
     // saw the .denied overlay, tapped → System Settings opened → granted →
     // came back. This kicks the state back to .idle so the next start()

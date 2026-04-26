@@ -4,7 +4,9 @@ import Foundation
 
 struct TracksDAO {
   let dbq: DatabaseQueue
-  func upsert(_ t: Track) throws { try dbq.write { db in try t.save(db) } }
+  /// Merge-upsert (preserves existing non-NULL columns) — see
+  /// `Track.mergeUpsert` for why this isn't just `save()`.
+  func upsert(_ t: Track) throws { try dbq.write { db in try t.mergeUpsert(db) } }
   func fetch(uri: String) throws -> Track? {
     try dbq.read { db in try Track.fetchOne(db, key: uri) }
   }

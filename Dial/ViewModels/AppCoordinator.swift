@@ -128,7 +128,19 @@ final class AppCoordinator {
       menubar.lastProgressUpdate = Date()
 
     case let .countedPlay(uri, ms, at):
-      try? engine.recordPlay(.init(playedAt: at, trackUri: uri, msPlayed: ms, source: "live"))
+      // Don't swallow this one with `try?`. If the play failed to record
+      // (DB locked, XP overflow, FK violation), we should NOT then refresh
+      // aggregations against a write that didn't land, sync the pet from
+      // a state that didn't change, and — most misleadingly — fire the
+      // "eating" celebration animation. That'd lie to the user about what
+      // happened. Skip the entire downstream celebration on error.
+      do {
+        try engine.recordPlay(
+          .init(playedAt: at, trackUri: uri, msPlayed: ms, source: "live"))
+      } catch {
+        print("[AppCoordinator] recordPlay failed for \(uri): \(error)")
+        return
+      }
       aggCache.refresh(trackUri: uri, artistUri: nowPlaying.track?.artistUri)
       nowPlaying.plays30d = aggCache.plays30d
       pet.syncFromStore(dbq: dbq)

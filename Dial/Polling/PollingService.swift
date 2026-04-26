@@ -24,12 +24,37 @@ final class PollingService {
   func stream() -> AsyncThrowingStream<PlaybackEvent, Error> {
     AsyncThrowingStream { continuation in
       let task = Task {
+        // Tracks consecutive failures so we can back off exponentially.
+        // Reset to zero on every successful call so a single transient
+        // glitch (Wi-Fi blip, brief 5xx) doesn't permanently penalize
+        // future polls.
+        var consecutiveFailures = 0
         while !Task.isCancelled {
           do {
             let cp = try await client.currentlyPlaying()
             for e in interpret(cp) { continuation.yield(e) }
+            consecutiveFailures = 0
           } catch {
-            continuation.finish(throwing: error); return
+            // CRITICAL: don't terminate the stream. Pre-fix, the line
+            // here was `continuation.finish(throwing: error); return`,
+            // which meant a single Wi-Fi blip permanently killed polling
+            // for the rest of the session — the menubar would silently
+            // freeze with the user thinking everything was fine.
+            //
+            // Now: log + back off + keep trying. Token refresh failures
+            // are handled inside SpotifyClient's authedGET (one retry on
+            // 401). If the refresh itself permanently fails, we'll just
+            // keep cycling here at the cap — annoying but not fatal,
+            // and a future "needs reconnect" banner can detect it via
+            // a stale `lastSuccessfulPoll` timestamp.
+            consecutiveFailures += 1
+            print("[PollingService] error #\(consecutiveFailures): \(error)")
+            // Backoff schedule (interval = 3s baseline):
+            //   1st fail: 3s, 2nd: 6s, 3rd: 12s, 4th: 24s, 5th: 48s, then 60s cap.
+            let multiplier = pow(2.0, Double(min(consecutiveFailures - 1, 6)))
+            let backoff = min(interval * multiplier, 60.0)
+            try? await Task.sleep(nanoseconds: UInt64(backoff * 1_000_000_000))
+            continue  // skip the steady-state sleep below; backoff already covered it
           }
           if interval > 0 { try? await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000)) }
         }

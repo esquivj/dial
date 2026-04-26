@@ -29,7 +29,7 @@ final class Importer {
           return "[{\"name\":\"\(safeName)\",\"uri\":\"artist:\(safeArtistId)\"}]"
         }
         try Track(uri: r.trackUri, name: r.trackName, albumName: r.albumName,
-                  albumArtUrl: nil, durationMs: nil, artistsJson: artistsJson).save(db)
+                  albumArtUrl: nil, durationMs: nil, artistsJson: artistsJson).mergeUpsert(db)
 
         // Insert the play; rely on the unique index `(played_at, track_uri, ms_played)`
         // to reject duplicates. Other DatabaseErrors propagate.
