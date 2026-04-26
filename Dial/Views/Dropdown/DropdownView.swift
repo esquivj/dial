@@ -1,6 +1,6 @@
 import SwiftUI
 
-enum DropdownScreen: Equatable { case hud, history, stats }
+enum DropdownScreen: Equatable { case hud, history, stats, pet }
 
 struct DropdownView: View {
   @Bindable var coord: AppCoordinator
@@ -50,7 +50,12 @@ struct DropdownView: View {
       // screen — History and Stats own their own header (with back chevron).
       // Glossary keeps the rail because it's a transient overlay.
       if coord.dropdownScreen == .hud {
-        StatusRail(vm: coord.menubar, pet: coord.pet, showingGlossary: $showingGlossary)
+        StatusRail(
+          vm: coord.menubar,
+          pet: coord.pet,
+          showingGlossary: $showingGlossary,
+          onOpenPet: { withAnimation(.easeInOut(duration: 0.18)) { coord.dropdownScreen = .pet } }
+        )
       }
 
       // The "screen" — sandwiched between top + bottom chrome — gets the
@@ -94,6 +99,13 @@ struct DropdownView: View {
       case .stats:
         StatsView(dbq: coord.dbq, onBack: { withAnimation(.easeInOut(duration: 0.18)) { coord.dropdownScreen = .hud } })
           .transition(.move(edge: .trailing).combined(with: .opacity))
+      case .pet:
+        PetView(
+          pet: coord.pet,
+          dbq: coord.dbq,
+          onBack: { withAnimation(.easeInOut(duration: 0.18)) { coord.dropdownScreen = .hud } }
+        )
+        .transition(.move(edge: .trailing).combined(with: .opacity))
       }
     }
   }
@@ -149,7 +161,14 @@ struct DropdownView: View {
 
   private var connectView: some View {
     VStack(spacing: 0) {
-      StatusRail(vm: coord.menubar, pet: coord.pet, showingGlossary: $showingGlossary)
+      // Connect view's pet sprite is also tappable — even pre-auth, the
+      // user can poke at the egg sitting in their menubar.
+      StatusRail(
+        vm: coord.menubar,
+        pet: coord.pet,
+        showingGlossary: $showingGlossary,
+        onOpenPet: { withAnimation(.easeInOut(duration: 0.18)) { coord.dropdownScreen = .pet } }
+      )
 
       if showingGlossary {
         GlossaryPanel()

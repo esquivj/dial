@@ -36,7 +36,10 @@ final class StatusBarController {
       rootView: DropdownView(coord: coord))
 
     if let button = item.button {
-      let host = NSHostingView(rootView: MenubarStripView(vm: coord.menubar, pet: coord.pet))
+      // MenubarStripView no longer takes a pet — the bulldog moved out of
+      // the menubar (where it was unreadably small) into the dropdown's
+      // StatusRail and its own dedicated PetView screen.
+      let host = NSHostingView(rootView: MenubarStripView(vm: coord.menubar))
       host.translatesAutoresizingMaskIntoConstraints = false
       button.addSubview(host)
       NSLayoutConstraint.activate([
@@ -125,6 +128,10 @@ final class StatusBarController {
     stats.target = self
     menu.addItem(stats)
 
+    let pet = NSMenuItem(title: "Open Pet", action: #selector(openPet), keyEquivalent: "")
+    pet.target = self
+    menu.addItem(pet)
+
     menu.addItem(.separator())
 
     let restart = NSMenuItem(
@@ -163,6 +170,11 @@ final class StatusBarController {
 
   @objc private func openStats() {
     coord?.dropdownScreen = .stats
+    showPopover()
+  }
+
+  @objc private func openPet() {
+    coord?.dropdownScreen = .pet
     showPopover()
   }
 

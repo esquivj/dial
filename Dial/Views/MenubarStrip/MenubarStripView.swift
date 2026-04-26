@@ -1,12 +1,20 @@
 import SwiftUI
 
+/// The view that sits inside the NSStatusItem button. Shows a compact
+/// "now playing" strip — small album art thumbnail + track name when
+/// playing, or just a music-note icon when paused / nothing playing.
+///
+/// Replaced an earlier version that put the bulldog pet here. The pet
+/// is still in the dropdown's StatusRail (and now has its own dedicated
+/// PetView screen reachable by tapping it), but the menubar is the wrong
+/// place for it — at typical menubar sizes the sprite is unreadable, and
+/// the more useful information at a glance is "what am I listening to."
 struct MenubarStripView: View {
   @Bindable var vm: MenubarStripViewModel
-  @Bindable var pet: PetViewModel
 
   var body: some View {
     HStack(spacing: 6) {
-      sprite
+      icon
       switch vm.state {
       case .playing:
         Text(vm.track?.name ?? "")
@@ -25,12 +33,28 @@ struct MenubarStripView: View {
     .padding(.horizontal, 6)
   }
 
+  /// Icon shown to the left of any text. Album art when a track is
+  /// playing (the cover signals "this is what you're hearing"), music
+  /// note glyph otherwise so the menubar item still has presence and
+  /// the user can find Dial when nothing is playing.
   @ViewBuilder
-  private var sprite: some View {
-    // Bigger than before (was h:20 in a 22×22 box). Pushes to the menubar
-    // height ceiling and gives the bulldog more horizontal room — the
-    // 1:1.93 portrait aspect means this lands at ~14×26 on screen.
-    BulldogSprite(stage: pet.stage, behavior: pet.behavior, height: 26)
-      .frame(width: 28, height: 26)
+  private var icon: some View {
+    if vm.state == .playing,
+       let urlString = vm.track?.artUrl,
+       let url = URL(string: urlString)
+    {
+      AsyncImage(url: url) { img in
+        img.resizable().aspectRatio(contentMode: .fill)
+      } placeholder: {
+        Color.gray.opacity(0.3)
+      }
+      .frame(width: 18, height: 18)
+      .clipShape(RoundedRectangle(cornerRadius: 2))
+    } else {
+      Image(systemName: "music.note")
+        .font(.system(size: 12, weight: .semibold))
+        .foregroundStyle(Dial.Palette.amber)
+        .frame(width: 18, height: 18)
+    }
   }
 }

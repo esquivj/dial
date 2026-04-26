@@ -4,6 +4,8 @@ struct StatusRail: View {
   @Bindable var vm: MenubarStripViewModel
   @Bindable var pet: PetViewModel
   @Binding var showingGlossary: Bool
+  /// Tapping the pet sprite opens the dedicated PetView screen.
+  let onOpenPet: () -> Void
 
   /// Flips true for ~700ms when the URI changes, so the indicator dot
   /// flashes magenta (event tone) before settling back to cyan (steady).
@@ -20,19 +22,25 @@ struct StatusRail: View {
         // contained, like the LCD on the original Tamagotchi housing.
         // Sprite shrinks 2pt to leave room for the bezel without changing
         // the row's outer 28×28 footprint.
-        ZStack {
-          RoundedRectangle(cornerRadius: 3)
-            .fill(Color.black.opacity(0.35))
-          BulldogSprite(stage: pet.stage, behavior: pet.behavior, height: 24)
-            .frame(width: 24, height: 24)
+        //
+        // Tap → open the dedicated PetView (bigger sprite + XP + stats).
+        Button(action: onOpenPet) {
+          ZStack {
+            RoundedRectangle(cornerRadius: 3)
+              .fill(Color.black.opacity(0.35))
+            BulldogSprite(stage: pet.stage, behavior: pet.behavior, height: 24)
+              .frame(width: 24, height: 24)
+          }
+          .frame(width: 28, height: 28)
+          .overlay(
+            RoundedRectangle(cornerRadius: 3)
+              .stroke(Dial.Palette.amber.opacity(0.45), lineWidth: 0.5)
+          )
+          // Faint cyan halo so it reads as "lit" against the dark rail.
+          .shadow(color: Dial.Palette.amber.opacity(0.25), radius: 3, x: 0, y: 0)
         }
-        .frame(width: 28, height: 28)
-        .overlay(
-          RoundedRectangle(cornerRadius: 3)
-            .stroke(Dial.Palette.amber.opacity(0.45), lineWidth: 0.5)
-        )
-        // Faint cyan halo so it reads as "lit" against the dark rail.
-        .shadow(color: Dial.Palette.amber.opacity(0.25), radius: 3, x: 0, y: 0)
+        .buttonStyle(.plain)
+        .help("Open pet")
         Circle()
           .fill(trackPulse ? Dial.Palette.orange : Dial.Palette.amber)
           .frame(width: 6, height: 6)
