@@ -14,18 +14,55 @@ final class SpotifyClient {
     self.refresh = refresh
   }
 
-  /// Authed GET that auto-refreshes once on 401.
-  fileprivate func authedGET(_ url: URL, retryOn401: Bool = true) async throws -> (Data, HTTPURLResponse) {
+  /// Authed GET with two layers of self-healing:
+  ///   * 401 → refresh the token once and retry
+  ///   * 429 → sleep for the value Spotify gave us in `Retry-After`, then
+  ///           retry once. Without this, hitting the rate limit (which can
+  ///           happen during the MetadataEnricher backfill across 49k tracks
+  ///           or if multiple polling clients overlap) would just return a
+  ///           429 to PollingService, which would then back off blindly
+  ///           regardless of how long Spotify actually wanted us to wait —
+  ///           sometimes too short (more 429s) and sometimes too long
+  ///           (wasted polling time).
+  fileprivate func authedGET(
+    _ url: URL,
+    retryOn401: Bool = true,
+    retryOn429: Bool = true
+  ) async throws -> (Data, HTTPURLResponse) {
     let token = try tokenStore.load()
     var req = URLRequest(url: url)
     req.setValue("Bearer \(token?.accessToken ?? "")", forHTTPHeaderField: "Authorization")
     let (data, resp) = try await session.data(for: req)
     let http = resp as! HTTPURLResponse
+
     if http.statusCode == 401, retryOn401 {
       _ = try await refresh()
-      return try await authedGET(url, retryOn401: false)
+      return try await authedGET(url, retryOn401: false, retryOn429: retryOn429)
+    }
+    if http.statusCode == 429, retryOn429 {
+      // Cap at 60s so a misconfigured Retry-After (or the rare HTTP-date
+      // form) doesn't silently freeze the polling loop forever. If Spotify
+      // really needs longer, the next poll cycle will just hit 429 again
+      // and we'll wait again.
+      let waitSec = Self.retryAfterSeconds(from: http) ?? 5
+      let capped = min(max(waitSec, 1), 60)
+      try await Task.sleep(nanoseconds: UInt64(capped * 1_000_000_000))
+      return try await authedGET(url, retryOn401: retryOn401, retryOn429: false)
     }
     return (data, http)
+  }
+
+  /// Spotify always returns Retry-After as an integer second count, but the
+  /// HTTP spec also allows an HTTP-date — handle both forms defensively so
+  /// any future change in their behavior doesn't silently default us to 5s.
+  private static func retryAfterSeconds(from response: HTTPURLResponse) -> TimeInterval? {
+    guard let val = response.value(forHTTPHeaderField: "Retry-After") else { return nil }
+    if let seconds = TimeInterval(val) { return seconds }
+    let f = DateFormatter()
+    f.locale = Locale(identifier: "en_US_POSIX")
+    f.dateFormat = "EEE, dd MMM yyyy HH:mm:ss zzz"
+    if let date = f.date(from: val) { return max(0, date.timeIntervalSinceNow) }
+    return nil
   }
 
   func currentlyPlaying() async throws -> CurrentlyPlaying? {

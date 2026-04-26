@@ -69,10 +69,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// One-shot import that runs the production Importer against the user's
   /// real DB at ~/Library/Application Support/Dial/dial.sqlite, then exits.
   /// Logs progress to stderr so the caller can tail it; bypasses the UI
-  /// entirely so this works while the GUI app is *not* running. (If the
-  /// GUI is running, kill it first — SQLite WAL handles concurrent readers
-  /// fine but a write transaction will trip the 500ms busy_timeout.)
+  /// entirely so this works while the GUI app is *not* running.
+  ///
+  /// Refuses to run if another Dial process is alive: SQLite WAL handles
+  /// concurrent readers fine, but two writers race on the 500ms busy_timeout
+  /// and chunks of the import would silently fall through. Better to fail
+  /// loudly with a clear "quit Dial first" message than half-import.
   private func runHeadlessImport(folderPath: String) {
+    let myPID = ProcessInfo.processInfo.processIdentifier
+    let bundleID = Bundle.main.bundleIdentifier ?? "com.dial.Dial"
+    let others = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID)
+      .filter { $0.processIdentifier != myPID }
+    if !others.isEmpty {
+      let pids = others.map { String($0.processIdentifier) }.joined(separator: ", ")
+      stderr("✗ Dial is already running (PID \(pids)). Quit it first:")
+      stderr("    killall Dial && \"$0\" --import \"\(folderPath)\"")
+      stderr("  Concurrent writes against the SQLite WAL can drop import rows.")
+      exit(1)
+    }
+
     Task { @MainActor in
       do {
         let folder = URL(fileURLWithPath: folderPath)
