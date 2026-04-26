@@ -20,6 +20,12 @@ final class AppCoordinator {
   /// permission prompt (first launch only).
   let visualizer: VisualizerEngine = .init()
 
+  /// Which screen the dropdown is showing. Lifted to the coordinator so the
+  /// status item's right-click menu can jump straight to History or Stats
+  /// without going through the SwiftUI view's local @State (which can't be
+  /// driven from outside the view tree).
+  var dropdownScreen: DropdownScreen = .hud
+
   /// Idempotent guard so `start()` can be called from launch (when already signed in)
   /// or from `signIn()` (after auth completes) without double-tasking the polling loop.
   private var pollingStarted = false

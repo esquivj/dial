@@ -4,8 +4,12 @@ enum DropdownScreen: Equatable { case hud, history, stats }
 
 struct DropdownView: View {
   @Bindable var coord: AppCoordinator
-  @State private var screen: DropdownScreen = .hud
   @State private var showingGlossary = false
+
+  // Screen state lives on the coordinator (`coord.dropdownScreen`) so the
+  // status item's right-click menu can drive it from outside the view tree.
+  // Persists across popover open/close cycles, same as the prior local
+  // @State (NSPopover reuses the hosting controller).
 
   var body: some View {
     Group {
@@ -43,7 +47,7 @@ struct DropdownView: View {
       // Top device chrome: status rail. Stays mounted ONLY on the HUD
       // screen — History and Stats own their own header (with back chevron).
       // Glossary keeps the rail because it's a transient overlay.
-      if screen == .hud {
+      if coord.dropdownScreen == .hud {
         StatusRail(vm: coord.menubar, pet: coord.pet, showingGlossary: $showingGlossary)
       }
 
@@ -58,12 +62,12 @@ struct DropdownView: View {
       // Bottom device chrome: transport controls. Lives outside hudBody so
       // it isn't covered by scanlines (it's the "buttons below the LCD,"
       // not part of the screen).
-      if screen == .hud {
+      if coord.dropdownScreen == .hud {
         ControlsBar(
           menubar: coord.menubar,
           client: coord.client,
-          onOpenHistory: { withAnimation(.easeInOut(duration: 0.18)) { screen = .history } },
-          onOpenStats:   { withAnimation(.easeInOut(duration: 0.18)) { screen = .stats } }
+          onOpenHistory: { withAnimation(.easeInOut(duration: 0.18)) { coord.dropdownScreen = .history } },
+          onOpenStats:   { withAnimation(.easeInOut(duration: 0.18)) { coord.dropdownScreen = .stats } }
         )
         .modifier(StaggeredAppear(delay: 0.25))
       }
@@ -74,19 +78,19 @@ struct DropdownView: View {
   /// three top-level screens. Extracted so the LCD overlays apply uniformly.
   @ViewBuilder
   private var screenContent: some View {
-    if showingGlossary && screen == .hud {
+    if showingGlossary && coord.dropdownScreen == .hud {
       GlossaryPanel()
         .transition(.opacity.combined(with: .move(edge: .leading)))
     } else {
-      switch screen {
+      switch coord.dropdownScreen {
       case .hud:
         hudBody
           .transition(.opacity)
       case .history:
-        HistoryView(dbq: coord.dbq, onBack: { withAnimation(.easeInOut(duration: 0.18)) { screen = .hud } })
+        HistoryView(dbq: coord.dbq, onBack: { withAnimation(.easeInOut(duration: 0.18)) { coord.dropdownScreen = .hud } })
           .transition(.move(edge: .trailing).combined(with: .opacity))
       case .stats:
-        StatsView(dbq: coord.dbq, onBack: { withAnimation(.easeInOut(duration: 0.18)) { screen = .hud } })
+        StatsView(dbq: coord.dbq, onBack: { withAnimation(.easeInOut(duration: 0.18)) { coord.dropdownScreen = .hud } })
           .transition(.move(edge: .trailing).combined(with: .opacity))
       }
     }
