@@ -65,13 +65,13 @@ struct DropdownView: View {
       // it isn't covered by scanlines (it's the "buttons below the LCD,"
       // not part of the screen).
       if coord.dropdownScreen == .hud {
-        ControlsBar(
-          menubar: coord.menubar,
-          client: coord.client,
-          onOpenHistory: { withAnimation(.easeInOut(duration: 0.18)) { coord.dropdownScreen = .history } },
-          onOpenStats:   { withAnimation(.easeInOut(duration: 0.18)) { coord.dropdownScreen = .stats } }
-        )
-        .modifier(StaggeredAppear(delay: 0.25))
+        // ControlsBar no longer takes onOpen{History,Stats} — those screens
+        // are reachable via the status item's right-click context menu now,
+        // which freed up the bar to be playback-only (the shuffle + repeat
+        // additions made the previous combined layout overflow 320pt and
+        // wrap "HISTORY" to two lines).
+        ControlsBar(menubar: coord.menubar, client: coord.client)
+          .modifier(StaggeredAppear(delay: 0.25))
       }
     }
   }

@@ -3,11 +3,16 @@ import SwiftUI
 struct ControlsBar: View {
   @Bindable var menubar: MenubarStripViewModel
   let client: SpotifyClient
-  let onOpenHistory: () -> Void
-  let onOpenStats: () -> Void
 
   var body: some View {
+    // Centered playback strip — shuffle / transport / repeat. The earlier
+    // version also held HISTORY · STATS labels on the right, but with the
+    // shuffle + repeat additions the row didn't fit in 320pt and HISTORY
+    // wrapped to two lines. Both screens are now reachable from the
+    // status item's right-click menu (Open History / Open Stats), so the
+    // controls bar is free to be exclusively about playback.
     HStack {
+      Spacer(minLength: 0)
       HStack(spacing: 10) {
         // Shuffle toggle — small icon-only button, color reflects state.
         // Optimistic flip: update menubar.shuffle immediately, fire API,
@@ -102,24 +107,7 @@ struct ControlsBar: View {
       // Slightly dimmer than the pure ivory of titles — gel pills are
       // already glow-bright, the icons sit better at 0.85 opacity ivory.
       .foregroundStyle(Dial.Palette.ivory.opacity(0.85))
-      Spacer()
-      HStack(spacing: 10) {
-        Button(action: onOpenHistory) {
-          Text("HISTORY")
-            .font(Dial.Typography.monoLabel)
-            .tracking(1.4)
-            .foregroundStyle(Dial.Palette.muted)
-        }
-        .buttonStyle(.plain)
-        Rectangle().fill(Dial.Palette.muted.opacity(0.4)).frame(width: 1, height: 10)
-        Button(action: onOpenStats) {
-          Text("STATS")
-            .font(Dial.Typography.monoLabel)
-            .tracking(1.4)
-            .foregroundStyle(Dial.Palette.muted)
-        }
-        .buttonStyle(.plain)
-      }
+      Spacer(minLength: 0)
     }
     .padding(EdgeInsets(top: 10, leading: 14, bottom: 12, trailing: 14))
     .background(Dial.Palette.subtle)
