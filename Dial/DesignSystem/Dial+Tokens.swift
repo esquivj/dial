@@ -22,8 +22,12 @@ enum Dial {
     static let orange   = Color(red: 0xE8/255, green: 0x4B/255, blue: 0x98/255)
     /// Cool off-white — primary text on dark.
     static let ivory    = Color(red: 0xE8/255, green: 0xEB/255, blue: 0xED/255)
-    /// Cool gray — secondary text, labels.
-    static let muted    = Color(red: 0x6B/255, green: 0x71/255, blue: 0x78/255)
+    /// Cool gray — secondary text, labels. Brightened from #6B7178 to
+    /// #898F98 to clear WCAG-AA 4.5:1 contrast against `ground` for
+    /// small text (the previous value was 3.93:1, technically failing).
+    /// Still reads as "muted" against the cyan accent; the hue stays
+    /// cool-neutral so it doesn't compete with the cyan/magenta.
+    static let muted    = Color(red: 0x89/255, green: 0x8F/255, blue: 0x98/255)
 
     /// Hairline divider — subtle dark line on the dark ground.
     static let hairline = Color(red: 0x25/255, green: 0x2A/255, blue: 0x30/255)

@@ -245,15 +245,20 @@ struct DropdownView: View {
 /// State lives at the modifier level (outside the wrapped view) so internal
 /// id/transition swaps inside a section — e.g. TrackHero's track-change
 /// crossfade — don't reset the cascade.
+///
+/// Respects `accessibilityReduceMotion`: when the user has macOS's "Reduce
+/// motion" enabled (System Settings → Accessibility → Display), the cascade
+/// is skipped — content appears instantly with no opacity/offset tween.
 private struct StaggeredAppear: ViewModifier {
   let delay: Double
   @State private var appeared = false
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   func body(content: Content) -> some View {
     content
-      .opacity(appeared ? 1 : 0)
-      .offset(y: appeared ? 0 : 6)
-      .animation(.easeOut(duration: 0.28).delay(delay), value: appeared)
+      .opacity(appeared || reduceMotion ? 1 : 0)
+      .offset(y: appeared || reduceMotion ? 0 : 6)
+      .animation(reduceMotion ? nil : .easeOut(duration: 0.28).delay(delay), value: appeared)
       .onAppear { appeared = true }
   }
 }
