@@ -135,6 +135,37 @@ struct StatsQueries {
     }
   }
 
+  // MARK: - Enrichment progress
+
+  struct EnrichmentProgress: Equatable {
+    let total: Int     // distinct spotify track URIs seen in plays
+    let enriched: Int  // those with album_art_url populated in tracks
+  }
+
+  /// Counts distinct Spotify track URIs seen in `plays` and how many of
+  /// those have been enriched (album_art_url populated by MetadataEnricher).
+  /// Surfaced in the Settings diagnostic panel as "47,234 / 49,229 tracks"
+  /// so the user can see the backfill progress without tailing logs.
+  ///
+  /// Single scan via a CASE expression — at 193k plays we don't want two
+  /// separate full-table joins.
+  func enrichmentProgress() throws -> EnrichmentProgress {
+    try dbq.read { db in
+      let row = try Row.fetchOne(db, sql: """
+        SELECT
+          COUNT(DISTINCT p.track_uri) AS total,
+          COUNT(DISTINCT CASE WHEN t.album_art_url IS NOT NULL
+                              THEN p.track_uri END) AS enriched
+        FROM plays p
+        LEFT JOIN tracks t ON t.uri = p.track_uri
+        WHERE p.track_uri LIKE 'spotify:track:%'
+      """)
+      return EnrichmentProgress(
+        total: row?["total"] ?? 0,
+        enriched: row?["enriched"] ?? 0)
+    }
+  }
+
   // MARK: - Live observation
 
   /// Fires whenever the `plays` table changes. Window views observe this to refresh.

@@ -10,6 +10,7 @@ struct DialApp: App {
       if let coord = appDelegate.coordinator {
         SettingsView(
           vm: coord.settings,
+          coord: coord,
           onSignIn: { try? await coord.signIn() },
           onImport: { folder in
             Task { await runImport(coord: coord, from: folder) }

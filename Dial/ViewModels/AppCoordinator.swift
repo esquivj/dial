@@ -30,6 +30,13 @@ final class AppCoordinator {
   /// or from `signIn()` (after auth completes) without double-tasking the polling loop.
   private var pollingStarted = false
 
+  /// Timestamp of the last poll cycle that successfully returned events
+  /// (any non-error response from the Spotify API). Surfaced in the
+  /// Settings diagnostics panel so the user can confirm at a glance that
+  /// polling is alive — "5 sec ago" = healthy, "12 min ago" = something
+  /// upstream is broken. `nil` until the first successful poll lands.
+  var lastSuccessfulPoll: Date?
+
   init(dbq: DatabaseQueue, client: SpotifyClient, auth: SpotifyAuthService, tokenStore: TokenStore) {
     self.dbq = dbq
     self.client = client
@@ -94,6 +101,11 @@ final class AppCoordinator {
   }
 
   private func handle(_ event: PlaybackEvent) async {
+    // Mark "polling is alive" on every event we receive — the API responded
+    // and we got something to handle. This is the heartbeat the diagnostics
+    // panel shows; granularity is per-event but functionally per-poll since
+    // PollingService yields a batch of events per HTTP round-trip.
+    lastSuccessfulPoll = Date()
     switch event {
     case let .started(uri, name, artistName, artistUri, albumName, artUrl, durationMs, _):
       // Persist track metadata so the SQL joins in `artistRank7d`,
