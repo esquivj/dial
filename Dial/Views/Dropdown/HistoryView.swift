@@ -9,6 +9,7 @@ struct HistoryView: View {
   let dbq: DatabaseQueue
   let onBack: () -> Void
   @State private var rows: [StatsQueries.HistoryRow] = []
+  @State private var totalPlays: Int = 0
   @State private var loaded = false
 
   var body: some View {
@@ -24,7 +25,14 @@ struct HistoryView: View {
     .task(id: ObjectIdentifier(dbq)) {
       let observation = StatsQueries(dbq: dbq).observePlaysChanges()
       do {
-        for try await _ in observation.values(in: dbq) { reload() }
+        // The observation's value is `SELECT COUNT(*) FROM plays` — capture
+        // it as the lifetime total instead of throwing it away. No extra
+        // query: the observation has to run the count anyway to know when
+        // to fire, so we just keep the result.
+        for try await total in observation.values(in: dbq) {
+          totalPlays = total
+          reload()
+        }
       } catch {
         reload()
       }
@@ -39,16 +47,26 @@ struct HistoryView: View {
         .tracking(1.6)
         .foregroundStyle(Dial.Palette.amber)
       Spacer()
-      // "LAST N" rather than "N PLAYS" — communicates that this is a recent
-      // slice, not the whole archive. The full history (193k+ rows after
-      // the import) is already aggregated by Stats; HistoryView just shows
-      // the most recent feed.
-      Text("LAST \(rows.count)")
+      // "LAST N · TOTAL" — communicates that we're showing a recent slice
+      // and gives the lifetime context (e.g. "LAST 200 · 193K"). When
+      // shown count equals total (early days, < 200 plays), drop the
+      // suffix to avoid the redundant "LAST 47 · 47".
+      Text(headerCount)
         .font(Dial.Typography.monoLabel)
         .tracking(1.4)
         .foregroundStyle(Dial.Palette.muted)
+        .contentTransition(.numericText())
     }
     .padding(EdgeInsets(top: 8, leading: 10, bottom: 8, trailing: 14))
+  }
+
+  private var headerCount: String {
+    if rows.count >= totalPlays {
+      return "LAST \(rows.count)"
+    }
+    // Compact notation: 193456 → "193K", 1.2M, etc.
+    let total = totalPlays.formatted(.number.notation(.compactName))
+    return "LAST \(rows.count) · \(total)"
   }
 
   private var empty: some View {
