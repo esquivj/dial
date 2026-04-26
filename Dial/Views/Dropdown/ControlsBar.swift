@@ -12,8 +12,7 @@ struct ControlsBar: View {
         Button { Task { try? await client.prev() } } label: {
           Image(systemName: "backward.fill")
         }
-        .buttonStyle(HoverableTransportButtonStyle())
-        .modifier(HoverDimModifier())
+        .buttonStyle(GelTransportStyle())
         Button {
           // Optimistic flip: update the local state immediately so the icon
           // changes on tap instead of waiting up to 3s for the next poll.
@@ -37,15 +36,15 @@ struct ControlsBar: View {
             // glyph between play↔pause instead of snap-cutting.
             .contentTransition(.symbolEffect(.replace))
         }
-        .buttonStyle(HoverableTransportButtonStyle())
-        .modifier(HoverDimModifier())
+        .buttonStyle(GelTransportStyle())
         Button { Task { try? await client.next() } } label: {
           Image(systemName: "forward.fill")
         }
-        .buttonStyle(HoverableTransportButtonStyle())
-        .modifier(HoverDimModifier())
+        .buttonStyle(GelTransportStyle())
       }
-      .foregroundStyle(Dial.Palette.ivory)
+      // Slightly dimmer than the pure ivory of titles — gel pills are
+      // already glow-bright, the icons sit better at 0.85 opacity ivory.
+      .foregroundStyle(Dial.Palette.ivory.opacity(0.85))
       Spacer()
       HStack(spacing: 10) {
         Button(action: onOpenHistory) {
@@ -73,27 +72,63 @@ struct ControlsBar: View {
   }
 }
 
-private struct HoverableTransportButtonStyle: ButtonStyle {
+/// Gel-Aqua transport button — capsule pill with cyan glow, top-arc sheen,
+/// and a hover/press response. Reads as a glassy hardware button below the
+/// LCD screen, completing the "small crystal device" framing the rest of
+/// the dropdown sets up. iTunes-Aqua inspiration; Y2K palette.
+///
+/// Implementation note: ButtonStyle.makeBody can't directly use @State,
+/// so the body is wrapped in a private View where `hovering` lives.
+private struct GelTransportStyle: ButtonStyle {
   func makeBody(configuration: Configuration) -> some View {
-    configuration.label
-      // Pad up to a 32×32 hit area so the tiny SF-Symbol glyphs aren't
-      // pixel-hunting targets. Visible glyph stays the same size; the
-      // surrounding padding catches the click.
-      .frame(minWidth: 32, minHeight: 32)
-      .contentShape(Rectangle())
-      .opacity(configuration.isPressed ? 0.55 : 1)
-      // 0.96 (was 0.92): 0.92 reads as exaggerated; 0.96 is just enough
-      // tactile feedback without feeling collapsed.
-      .scaleEffect(configuration.isPressed ? 0.96 : 1)
-      .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+    GelButtonView(configuration: configuration)
   }
-}
 
-private struct HoverDimModifier: ViewModifier {
-  @State private var hover = false
-  func body(content: Content) -> some View {
-    content
-      .opacity(hover ? 1 : 0.78)
-      .onHover { hover = $0 }
+  private struct GelButtonView: View {
+    let configuration: ButtonStyle.Configuration
+    @State private var hovering = false
+
+    var body: some View {
+      configuration.label
+        // 36×32 pill keeps the SF-Symbol glyph centered without empty
+        // crowding it. Hit area survives less precise mousing.
+        .frame(minWidth: 36, minHeight: 32)
+        .contentShape(Capsule())
+        .background(
+          ZStack {
+            // Base fill — top-lit cyan gradient. Subtle at rest, brightens
+            // on hover so the button reads as "alive" without being noisy.
+            Capsule()
+              .fill(LinearGradient(colors: [
+                Dial.Palette.amber.opacity(hovering ? 0.22 : 0.10),
+                Dial.Palette.amber.opacity(0.03),
+              ], startPoint: .top, endPoint: .bottom))
+
+            // Border — thin cyan line that brightens on hover.
+            Capsule()
+              .stroke(
+                Dial.Palette.amber.opacity(hovering ? 0.50 : 0.22),
+                lineWidth: 0.5)
+
+            // Top-arc highlight — the Aqua "gel sheen" at the top of the
+            // pill. Half-trim of the capsule path, blurred slightly so it
+            // reads as a soft reflection instead of a hard line.
+            Capsule()
+              .trim(from: 0, to: 0.5)
+              .stroke(Color.white.opacity(0.20), lineWidth: 0.5)
+              .blur(radius: 0.4)
+          }
+          // Outer cyan glow — the Y2K "lit-from-within" halo. Stronger on
+          // hover so motion through the controls bar feels responsive.
+          .shadow(
+            color: Dial.Palette.amber.opacity(hovering ? 0.45 : 0.18),
+            radius: 6, x: 0, y: 0)
+        )
+        .opacity(configuration.isPressed ? 0.82 : 1.0)
+        .scaleEffect(configuration.isPressed ? 0.96 : 1.0)
+        .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+        .animation(.easeOut(duration: 0.18), value: hovering)
+        .onHover { hovering = $0 }
+    }
   }
 }

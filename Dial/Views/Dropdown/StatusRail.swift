@@ -14,8 +14,25 @@ struct StatusRail: View {
       // Faint wine accent line where the amber LED used to be.
       Rectangle().fill(Dial.Palette.amber.opacity(0.4)).frame(height: 1)
       HStack(spacing: 8) {
-        BulldogSprite(stage: pet.stage, behavior: pet.behavior, height: 28)
-          .frame(width: 28, height: 28)
+        // Pet screen-within-screen: the bulldog lives inside its own little
+        // LCD window. Cyan-tinted bezel + dim recessed background sells
+        // the tamagotchi-on-a-handheld framing — the sprite is visibly
+        // contained, like the LCD on the original Tamagotchi housing.
+        // Sprite shrinks 2pt to leave room for the bezel without changing
+        // the row's outer 28×28 footprint.
+        ZStack {
+          RoundedRectangle(cornerRadius: 3)
+            .fill(Color.black.opacity(0.35))
+          BulldogSprite(stage: pet.stage, behavior: pet.behavior, height: 24)
+            .frame(width: 24, height: 24)
+        }
+        .frame(width: 28, height: 28)
+        .overlay(
+          RoundedRectangle(cornerRadius: 3)
+            .stroke(Dial.Palette.amber.opacity(0.45), lineWidth: 0.5)
+        )
+        // Faint cyan halo so it reads as "lit" against the dark rail.
+        .shadow(color: Dial.Palette.amber.opacity(0.25), radius: 3, x: 0, y: 0)
         Circle()
           .fill(trackPulse ? Dial.Palette.orange : Dial.Palette.amber)
           .frame(width: 6, height: 6)
