@@ -15,7 +15,11 @@ final class MetadataEnricher {
     self.client = client
   }
 
-  func enrichMissing(batchSize: Int = 50, rateLimitPerSec: Double = 5) async throws {
+  /// Default rate is 3 req/sec — Spotify's standard rate limit is ~180 req/min,
+  /// and the prior 5 req/sec value was hitting 429s during the 49k-track
+  /// backfill from the Extended Streaming History import. 3 req/sec leaves
+  /// comfortable headroom for the live-polling client running concurrently.
+  func enrichMissing(batchSize: Int = 50, rateLimitPerSec: Double = 3) async throws {
     let missing: [String] = try await dbq.read { db in
       // Backfill includes:
       // - Tracks referenced in `plays` with no row in `tracks` at all
@@ -31,21 +35,49 @@ final class MetadataEnricher {
           AND (t.uri IS NULL OR t.album_art_url IS NULL)
       """)
     }
-    for chunk in missing.chunked(into: batchSize) {
-      let metas = try await client.tracks(uris: chunk)
-      try await dbq.write { db in
-        for m in metas {
-          try Track(
-            uri: m.uri,
-            name: m.name,
-            albumName: m.album.name,
-            albumArtUrl: m.album.images.first?.url,
-            durationMs: Int64(m.duration_ms),
-            artistsJson: try Self.encodeArtists(m.artists)
-          ).save(db)
+    let chunks = missing.chunked(into: batchSize)
+    let total = chunks.count
+    let nominalDelay = UInt64(1_000_000_000.0 / rateLimitPerSec)
+
+    for (idx, chunk) in chunks.enumerated() {
+      // Per-chunk retry with exponential backoff. Previously a single 429
+      // (or any other client error) would propagate up and terminate the
+      // entire backfill — losing all remaining ~999 batches' worth of
+      // progress. Now we retry the failing chunk a few times, then skip it
+      // if persistently broken (the next enrichMissing() run picks it back
+      // up because the WHERE clause re-finds anything still un-enriched).
+      var attempt = 0
+      var backoff: UInt64 = 2_000_000_000  // start at 2s
+      while true {
+        do {
+          let metas = try await client.tracks(uris: chunk)
+          try await dbq.write { db in
+            for m in metas {
+              try Track(
+                uri: m.uri,
+                name: m.name,
+                albumName: m.album.name,
+                albumArtUrl: m.album.images.first?.url,
+                durationMs: Int64(m.duration_ms),
+                artistsJson: try Self.encodeArtists(m.artists)
+              ).save(db)
+            }
+          }
+          break  // success
+        } catch {
+          attempt += 1
+          guard attempt < 5 else {
+            print(
+              "[MetadataEnricher] chunk \(idx + 1)/\(total) failed after \(attempt) attempts; "
+                + "skipping (will retry next run): \(error)")
+            break
+          }
+          try await Task.sleep(nanoseconds: backoff)
+          backoff = min(backoff * 2, 30_000_000_000)  // cap at 30s
         }
       }
-      try await Task.sleep(nanoseconds: UInt64(1_000_000_000.0 / rateLimitPerSec))
+      // Pace successful batches; cumulative ~total/rate seconds at the floor.
+      try await Task.sleep(nanoseconds: nominalDelay)
     }
   }
 

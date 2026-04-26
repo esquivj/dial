@@ -107,14 +107,26 @@ struct StatsQueries {
 
   func totals() throws -> Totals {
     try dbq.read { db in
-      let plays = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM plays") ?? 0
-      let ms = try Int64.fetchOne(db, sql: "SELECT COALESCE(SUM(ms_played), 0) FROM plays") ?? 0
-      let tracks = try Int.fetchOne(db, sql: "SELECT COUNT(DISTINCT track_uri) FROM plays") ?? 0
+      // One scan of `plays` for the three play-derived metrics — was three
+      // separate scans, which at 193k rows is 3× the work for no reason.
+      // COUNT, SUM, and COUNT(DISTINCT) all share the same row stream and
+      // SQLite handles them in a single pass when issued together.
+      let row = try Row.fetchOne(db, sql: """
+        SELECT COUNT(*) AS plays,
+               COALESCE(SUM(ms_played), 0) AS total_ms,
+               COUNT(DISTINCT track_uri) AS uniq_tracks
+        FROM plays
+      """)
+      // Artists live in a different table, so this stays as a separate query.
       let artists = try Int.fetchOne(db, sql: """
         SELECT COUNT(DISTINCT json_extract(artists_json, '$[0].uri'))
         FROM tracks WHERE artists_json IS NOT NULL
       """) ?? 0
-      return Totals(plays: plays, listeningMs: ms, uniqueTracks: tracks, uniqueArtists: artists)
+      return Totals(
+        plays: row?["plays"] ?? 0,
+        listeningMs: row?["total_ms"] ?? 0,
+        uniqueTracks: row?["uniq_tracks"] ?? 0,
+        uniqueArtists: artists)
     }
   }
 

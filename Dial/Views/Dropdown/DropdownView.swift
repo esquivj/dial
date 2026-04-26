@@ -123,12 +123,17 @@ struct DropdownView: View {
       //
       // Long-lived engine: `.task` fires start() every appear, but the engine
       // is idempotent and keeps the SCStream running across dropdown closes.
-      // Avoids re-prompting for Screen Recording permission on every open
-      // (TCC under ad-hoc signing is fussy enough as it is — see
-      // VisualizerEngine docs).
+      // Avoids re-prompting for Screen Recording permission on every open.
+      //
+      // Visibility throttle: attach/detach gate FFT processing on whether
+      // the view is mounted, so when the popover is closed the engine stops
+      // burning CPU on FFT work nobody is observing. Stream stays alive
+      // either way (permission stability > tiny capture cost).
       PixelGridVisualizer(engine: coord.visualizer)
         .modifier(StaggeredAppear(delay: 0.20))
         .task { await coord.visualizer.start() }
+        .onAppear { coord.visualizer.attach() }
+        .onDisappear { coord.visualizer.detach() }
       // Flex spacer absorbs any leftover vertical room so the LCD content
       // stays top-aligned and the screen area fills the bezel cleanly,
       // regardless of how many optional rows above (BadgeRow / ArtistContext)

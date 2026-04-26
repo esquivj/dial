@@ -54,6 +54,15 @@ final class VisualizerEngine: @unchecked Sendable {
   private let lock = NSLock()
   private var sampleBuffer: [Float] = []
 
+  /// Visibility throttle: views call `attach()`/`detach()` to register/
+  /// unregister themselves as consumers. While zero consumers are attached,
+  /// `handleSamples` short-circuits — the SCStream stays alive (so we don't
+  /// re-prompt for permission) but the FFT, MainActor dispatch, and SwiftUI
+  /// updates all skip. Saves ~5ms/sec of CPU plus main-thread wakeups while
+  /// the popover sits closed (which is most of the time).
+  private let visibilityLock = NSLock()
+  private var _consumers = 0
+
   // Smoothing constants. Tuned so:
   //   - bars rise fast (attack 0.4) → transients feel snappy
   //   - bars fall slow (release 0.12) → no flicker on percussive material
@@ -149,9 +158,51 @@ final class VisualizerEngine: @unchecked Sendable {
     peaks = Array(repeating: 0, count: Self.bandCount)
   }
 
+  // MARK: - Visibility throttle
+
+  /// View calls this on `.onAppear`. Increments the consumer count;
+  /// FFT processing resumes if it had been paused.
+  func attach() {
+    visibilityLock.lock()
+    _consumers += 1
+    visibilityLock.unlock()
+  }
+
+  /// View calls this on `.onDisappear`. Decrements the consumer count;
+  /// FFT processing pauses when count reaches zero. The capture stream
+  /// stays alive (pausing/restarting it would re-trigger permission
+  /// prompt risk under ad-hoc signing).
+  func detach() {
+    visibilityLock.lock()
+    _consumers = max(0, _consumers - 1)
+    let stillVisible = _consumers > 0
+    visibilityLock.unlock()
+
+    if !stillVisible {
+      // Reset to zero so when a view next attaches, the visualizer starts
+      // from a clean state instead of stale residual values from the last
+      // visible session.
+      Task { @MainActor in
+        self.bands = Array(repeating: 0, count: Self.bandCount)
+        self.peaks = Array(repeating: 0, count: Self.bandCount)
+      }
+    }
+  }
+
+  /// Lock-protected read of consumer count for the audio thread's gate.
+  private func hasVisibleConsumer() -> Bool {
+    visibilityLock.lock()
+    defer { visibilityLock.unlock() }
+    return _consumers > 0
+  }
+
   // MARK: - Audio thread
 
   nonisolated private func handleSamples(_ samples: [Float]) {
+    // Skip everything when no view is observing. Done before the buffer
+    // lock so we don't even allocate the snapshot array.
+    guard hasVisibleConsumer() else { return }
+
     let snapshot: [Float]?
     lock.lock()
     sampleBuffer.append(contentsOf: samples)
