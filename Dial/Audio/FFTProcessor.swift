@@ -80,7 +80,12 @@ final class FFTProcessor {
     from magnitudes: [Float],
     count bandCount: Int,
     sampleRate: Float = 48_000,
-    minFreq: Float = 60,
+    // 100Hz floor (was 60Hz) — kick-drum fundamentals and sub-bass rumble
+    // dominated the leftmost bands and made the bottom of the grid feel
+    // permanently maxed out. 100Hz cuts the rumble and spreads the 32
+    // bands across more useful musical territory (bass guitar second
+    // harmonics → cymbals).
+    minFreq: Float = 100,
     maxFreq: Float = 16_000,
     floorDb: Float = -60
   ) -> [Float] {

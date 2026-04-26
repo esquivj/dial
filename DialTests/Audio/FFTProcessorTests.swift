@@ -38,9 +38,9 @@ final class FFTProcessorTests: XCTestCase {
 
   func test_bands_peakAtKnownFrequency() {
     // Generate a 1kHz sine at 48kHz sample rate, the canonical "hello FFT" test.
-    // The bands are log-spaced from 60Hz to 16kHz across 32 bins; 1kHz lands
-    // at log10(1000) = 3.0, position = (3.0 - log10(60)) / (log10(16000) - log10(60))
-    //   = (3.0 - 1.778) / 2.426 = 0.504 → band index 16 (50% of the way through).
+    // The bands are log-spaced from 100Hz to 16kHz across 32 bins; 1kHz lands
+    // at log10(1000) = 3.0, position = (3.0 - log10(100)) / (log10(16000) - log10(100))
+    //   = (3.0 - 2.0) / 2.204 = 0.454 → band index 14 (≈45% of the way through).
     // We allow ±1 band of tolerance for FFT bin-edge effects and Hann leakage.
     let fft = FFTProcessor(fftSize: 1024)
     let sampleRate: Float = 48_000
@@ -55,8 +55,8 @@ final class FFTProcessorTests: XCTestCase {
     }
     let bands = fft.bands(from: mags, count: 32, sampleRate: sampleRate)
     let peak = bands.indices.max { bands[$0] < bands[$1] }!
-    XCTAssertGreaterThanOrEqual(peak, 15, "1kHz sine peak should be near band 16, got \(peak); bands = \(bands)")
-    XCTAssertLessThanOrEqual(peak, 17, "1kHz sine peak should be near band 16, got \(peak); bands = \(bands)")
+    XCTAssertGreaterThanOrEqual(peak, 13, "1kHz sine peak should be near band 14, got \(peak); bands = \(bands)")
+    XCTAssertLessThanOrEqual(peak, 15, "1kHz sine peak should be near band 14, got \(peak); bands = \(bands)")
   }
 
   func test_bands_normalizationStaysWithinZeroOne() {
