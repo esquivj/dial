@@ -19,11 +19,13 @@ struct DropdownView: View {
         connectView
       }
     }
-    // 400 (was 360): gives the HUD breathing room when both BadgeRow and
-    // ArtistContext are visible. Prevents the layout shift on transition
-    // back from History/Stats where the HUD was butting hard against the
-    // frame and SwiftUI re-laid it inconsistently.
-    .frame(width: 320, height: 400)
+    // 440 (was 400, was 360): the visualizer is ~87pt tall (vs the old
+    // SessionTimeline's ~50pt), so when both BadgeRow + ArtistContext are
+    // visible the content sums to ~436pt and the 400pt frame overflowed —
+    // Spacer went negative, content compressed, top/bottom padding got
+    // eaten. 440pt gives ~16pt of healthy Spacer at worst case and
+    // breathing room when only one optional row is showing.
+    .frame(width: 320, height: 440)
     .background(Dial.Palette.ground)
     .clipShape(RoundedRectangle(cornerRadius: 14))
     // Y2K device bevel: cyan light catch on the top edge, fading through
