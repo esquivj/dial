@@ -20,7 +20,12 @@ struct StatsQueries {
 
   /// Most-recent plays first. Joins `plays` with `tracks` (left join — plays
   /// without metadata still surface, just with empty strings).
-  func recentPlays(limit: Int = 500) throws -> [HistoryRow] {
+  ///
+  /// Default cap of 200 is intentional: HistoryView is a "what did I just
+  /// listen to" feed, not an archive browser. The full history stays in the
+  /// DB (where Stats aggregates against it) — there's just no need to scroll
+  /// through 193k rows in a popover that's 320pt wide.
+  func recentPlays(limit: Int = 200) throws -> [HistoryRow] {
     try dbq.read { db in
       try Row.fetchAll(db, sql: """
         SELECT p.id, p.played_at, p.track_uri,

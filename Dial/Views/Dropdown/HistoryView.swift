@@ -39,7 +39,11 @@ struct HistoryView: View {
         .tracking(1.6)
         .foregroundStyle(Dial.Palette.amber)
       Spacer()
-      Text("\(rows.count) PLAYS")
+      // "LAST N" rather than "N PLAYS" — communicates that this is a recent
+      // slice, not the whole archive. The full history (193k+ rows after
+      // the import) is already aggregated by Stats; HistoryView just shows
+      // the most recent feed.
+      Text("LAST \(rows.count)")
         .font(Dial.Typography.monoLabel)
         .tracking(1.4)
         .foregroundStyle(Dial.Palette.muted)
@@ -76,7 +80,7 @@ struct HistoryView: View {
 
   private func reload() {
     let q = StatsQueries(dbq: dbq)
-    rows = (try? q.recentPlays(limit: 500)) ?? []
+    rows = (try? q.recentPlays(limit: 200)) ?? []
     loaded = true
   }
 }
