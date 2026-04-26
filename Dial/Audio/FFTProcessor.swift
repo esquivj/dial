@@ -121,14 +121,21 @@ final class FFTProcessor {
       let binLow = max(0, Int(freqLow / binWidth))
       let binHigh = min(magnitudes.count, max(binLow + 1, Int(freqHigh / binWidth)))
 
-      var sum: Float = 0
+      // MAX (was AVERAGE). The grid's bands are log-spaced over linear FFT
+      // bins, so the top-end bands cover many more bins than the bottom-end
+      // ones (band 31 ≈ 51 bins, band 0 ≈ 1 bin). Real music in the high
+      // bands is mostly silence with sharp peaks (cymbal sheen, sibilance);
+      // averaging 50 quiet neighbors against 1 hot bin drowned the peaks
+      // by ~30dB. MAX captures the loudest bin in the band — for the
+      // narrow lower bands max == avg, so the fix only lifts the highs.
+      var peak: Float = 0
       for j in binLow..<binHigh {
-        sum += magnitudes[j]
+        if magnitudes[j] > peak { peak = magnitudes[j] }
       }
-      let avg = (sum / Float(binHigh - binLow)) * ampCorrection
+      let amp = peak * ampCorrection
 
       // dB scale → 0..1, with `floorDb` as silence and 0dB as full scale.
-      let db = 20 * log10(max(avg, 1e-6))
+      let db = 20 * log10(max(amp, 1e-6))
       let normalized = (db - floorDb) / -floorDb
       out[i] = max(0, min(1, normalized))
     }
