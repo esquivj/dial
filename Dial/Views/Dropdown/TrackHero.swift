@@ -28,10 +28,16 @@ struct TrackHero: View {
       .shadow(color: Dial.Palette.amber.opacity(0.18), radius: 10, x: 0, y: 0)
 
       VStack(alignment: .leading, spacing: 2) {
-        Text(vm.track?.name ?? "Nothing playing")
-          .font(Dial.Typography.sansTitle)
-          .foregroundStyle(Dial.Palette.ivory)
-          .lineLimit(1)
+        // Marquee on the track name — Y2K-cliché now-playing scroll for
+        // long titles. Fits-in-container titles render normally as
+        // truncated lineLimit(1). Tiny height carve-out so the marquee's
+        // GeometryReader has a height (it doesn't measure vertically).
+        Marquee(
+          text: vm.track?.name ?? "Nothing playing",
+          font: Dial.Typography.sansTitle,
+          foreground: Dial.Palette.ivory
+        )
+        .frame(height: 18)
         if let artist = vm.track?.artistName {
           Text(artist)
             .font(Dial.Typography.sansCaption)

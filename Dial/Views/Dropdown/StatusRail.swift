@@ -24,6 +24,12 @@ struct StatusRail: View {
         // the row's outer 28×28 footprint.
         //
         // Tap → open the dedicated PetView (bigger sprite + XP + stats).
+        //
+        // Care indicator (Tamagotchi pictogram language): when streak is
+        // active (≥3 days), a tiny magenta flame appears in the top-right
+        // of the LCD frame. Original Tamagotchis used corner pictograms
+        // for hunger/discipline/happiness; "current streak" is the most
+        // meaningful Dial equivalent.
         Button(action: onOpenPet) {
           ZStack {
             RoundedRectangle(cornerRadius: 3)
@@ -36,6 +42,16 @@ struct StatusRail: View {
             RoundedRectangle(cornerRadius: 3)
               .stroke(Dial.Palette.amber.opacity(0.45), lineWidth: 0.5)
           )
+          .overlay(alignment: .topTrailing) {
+            if pet.streakDays >= 3 {
+              Image(systemName: "flame.fill")
+                .font(.system(size: 7, weight: .bold))
+                .foregroundStyle(Dial.Palette.orange)
+                .shadow(color: Dial.Palette.orange.opacity(0.8), radius: 2)
+                .padding(2)
+                .help("\(pet.streakDays)-day streak")
+            }
+          }
           // Faint cyan halo so it reads as "lit" against the dark rail.
           .shadow(color: Dial.Palette.amber.opacity(0.25), radius: 3, x: 0, y: 0)
         }
