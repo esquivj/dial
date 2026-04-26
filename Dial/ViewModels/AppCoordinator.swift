@@ -48,14 +48,29 @@ final class AppCoordinator {
   func start() {
     guard !pollingStarted else { return }
     pollingStarted = true
-    Task {
+    Task { [weak self] in
+      guard let self else { return }
       do {
-        for try await event in poller.stream() {
-          await handle(event)
+        for try await event in self.poller.stream() {
+          await self.handle(event)
+        }
+      } catch let error as SpotifyAuthError where error == .refreshFailed {
+        // Refresh token is dead — user disconnected Dial from Spotify on
+        // the web, or the grant otherwise expired. Flip the UI back to
+        // the connect view so the user knows to reconnect. Polling stays
+        // stopped (loop exited via thrown stream) and a future signIn()
+        // will re-call start() with the now-cleared pollingStarted guard.
+        print("[AppCoordinator] auth revoked — surfacing connect view")
+        await MainActor.run { [weak self] in
+          self?.settings.markSignedOut()
         }
       } catch {
         print("[AppCoordinator] polling error: \(error)")
       }
+      // Allow re-start after the task exits (whether normally, errored, or
+      // cancelled). Without this, the next signIn() would no-op because the
+      // guard sees pollingStarted = true even though the loop is dead.
+      self.pollingStarted = false
     }
     // Backfill any track URIs that are referenced from `plays` but have no
     // metadata in `tracks`. Runs in the background, low priority — the

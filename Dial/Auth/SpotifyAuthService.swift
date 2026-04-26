@@ -2,6 +2,16 @@
 import Foundation
 import AuthenticationServices
 
+/// Auth-related errors that callers can pattern-match on. `refreshFailed`
+/// is the "token is permanently bad — user needs to reconnect" signal:
+/// PollingService treats it as fatal (terminates the stream), and
+/// AppCoordinator catches it to flip `settings.signedIn = false` so the
+/// dropdown surfaces the connect view instead of cycling silently forever
+/// on a revoked refresh token.
+enum SpotifyAuthError: Error, Equatable {
+  case refreshFailed
+}
+
 final class SpotifyAuthService: NSObject {
   private let clientID: String
   private let redirectURI = "dial://callback"
@@ -83,7 +93,10 @@ final class SpotifyAuthService: NSObject {
 
   func refresh() async throws -> SpotifyToken {
     guard let current = try tokenStore.load() else {
-      throw NSError(domain: "Dial.Auth", code: 2, userInfo: [NSLocalizedDescriptionKey: "no token to refresh"])
+      // No token at all — the user has signed out (or never signed in).
+      // Surface as `refreshFailed` so the polling loop terminates instead
+      // of looping on "no token" forever.
+      throw SpotifyAuthError.refreshFailed
     }
     var req = URLRequest(url: URL(string: "https://accounts.spotify.com/api/token")!)
     req.httpMethod = "POST"
@@ -93,7 +106,19 @@ final class SpotifyAuthService: NSObject {
       "refresh_token": current.refreshToken,
       "client_id":     clientID
     ]).data(using: .utf8)
-    let (data, _) = try await URLSession.shared.data(for: req)
+    let (data, resp) = try await URLSession.shared.data(for: req)
+    let http = resp as! HTTPURLResponse
+
+    // 4xx on the token endpoint = the refresh token is dead (revoked, expired,
+    // or the user disconnected Dial from their Spotify account web settings).
+    // Nothing we can do here will fix it; clear the stored token so we don't
+    // keep retrying with the same dead credential, and signal the caller to
+    // route to the connect-view path. 5xx is transient — let it propagate
+    // as a generic error so polling backoff handles it.
+    if (400...499).contains(http.statusCode) {
+      try? tokenStore.clear()
+      throw SpotifyAuthError.refreshFailed
+    }
     struct R: Decodable {
       let access_token: String
       let refresh_token: String?

@@ -35,18 +35,21 @@ final class PollingService {
             for e in interpret(cp) { continuation.yield(e) }
             consecutiveFailures = 0
           } catch {
-            // CRITICAL: don't terminate the stream. Pre-fix, the line
-            // here was `continuation.finish(throwing: error); return`,
+            // Auth permanently broken — surface to the caller. The refresh
+            // token is dead and cycling here at 60s forever just wastes
+            // battery while the menubar lies about being connected. Caller
+            // (AppCoordinator) handles this by marking signed-out so the
+            // dropdown flips to the connect view.
+            if (error as? SpotifyAuthError) == .refreshFailed {
+              continuation.finish(throwing: error)
+              return
+            }
+            // Everything else: don't terminate the stream. Pre-fix, the
+            // line here was `continuation.finish(throwing: error); return`,
             // which meant a single Wi-Fi blip permanently killed polling
             // for the rest of the session — the menubar would silently
             // freeze with the user thinking everything was fine.
-            //
-            // Now: log + back off + keep trying. Token refresh failures
-            // are handled inside SpotifyClient's authedGET (one retry on
-            // 401). If the refresh itself permanently fails, we'll just
-            // keep cycling here at the cap — annoying but not fatal,
-            // and a future "needs reconnect" banner can detect it via
-            // a stale `lastSuccessfulPoll` timestamp.
+            // Now: log + back off + keep trying.
             consecutiveFailures += 1
             print("[PollingService] error #\(consecutiveFailures): \(error)")
             // Backoff schedule (interval = 3s baseline):
