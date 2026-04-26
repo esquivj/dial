@@ -25,7 +25,13 @@ final class StatusBarController {
     self.item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     self.popover = NSPopover()
     self.popover.behavior = .transient
-    self.popover.contentSize = NSSize(width: 320, height: 360)
+    // MUST match DropdownView's .frame(width: 320, height: 400). When the
+    // popover's contentSize disagreed with the SwiftUI frame inside, NSPopover
+    // would auto-resize on the first content layout — producing visible top/
+    // bottom padding flicker every time the dropdown content reflowed (track
+    // change, badge appear/disappear, screen swap). Locking them to the same
+    // value removes that NSPopover-vs-SwiftUI fight.
+    self.popover.contentSize = NSSize(width: 320, height: 400)
     self.popover.contentViewController = NSHostingController(
       rootView: DropdownView(coord: coord))
 

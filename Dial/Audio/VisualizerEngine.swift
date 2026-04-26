@@ -97,10 +97,11 @@ final class VisualizerEngine: @unchecked Sendable {
     }
 
     // Auto-retry start when the app becomes active again. Common path: user
-    // saw the .denied overlay, tapped → System Settings opened → granted →
-    // came back. This kicks the state back to .idle so the next start()
-    // (either via this notification or via .task on dropdown open) will try
-    // SCShareableContent again with the now-valid permission.
+    // saw the .denied or .error overlay, tapped → System Settings opened →
+    // granted → came back. We retry from any non-running state (idle/denied/
+    // error) since SCShareableContent is now the source of truth — if the
+    // permission really is granted now, start() will succeed; if not, it'll
+    // re-set to .denied and we're no worse off.
     activationObserver = NotificationCenter.default.addObserver(
       forName: NSApplication.didBecomeActiveNotification,
       object: nil,
@@ -108,7 +109,7 @@ final class VisualizerEngine: @unchecked Sendable {
     ) { [weak self] _ in
       Task { @MainActor [weak self] in
         guard let self else { return }
-        if self.state == .denied {
+        if self.state != .running {
           self.state = .idle
           await self.start()
         }
@@ -131,14 +132,23 @@ final class VisualizerEngine: @unchecked Sendable {
     // which fires on every view appearance.
     guard state != .running else { return }
 
-    // Peek at TCC without prompting. If permission isn't already granted,
-    // surface .denied immediately and skip the SCShareableContent call —
-    // calling it under denied state can cause flaky prompt behavior under
-    // ad-hoc signing.
-    guard CGPreflightScreenCaptureAccess() else {
-      state = .denied
-      return
-    }
+    // No preflight gate. SCShareableContent itself is the source of truth
+    // for permission — if it succeeds, we're authed.
+    //
+    // We previously used CGPreflightScreenCaptureAccess() here to short-
+    // circuit when TCC reported "not granted" (rationale: avoid potential
+    // re-prompt flakiness on every start). But under ad-hoc signing — which
+    // is what Xcode produces and we ship to /Applications via cp -R every
+    // rebuild — TCC tracks grants by code signature. When the binary's
+    // signature changes (every rebuild), TCC's cached entry no longer
+    // matches and the preflight returns false-negative even though the
+    // user clearly granted permission and System Settings shows it as on.
+    // Result: visualizer would surface the "ENABLE VISUALIZER" overlay
+    // forever despite the permission being authentic.
+    //
+    // Letting SCShareableContent decide is cleaner: it succeeds when the
+    // permission is actually usable and throws otherwise. The activation-
+    // observer auto-retry below still handles the post-grant return path.
 
     do {
       try await capture.start()
@@ -148,6 +158,7 @@ final class VisualizerEngine: @unchecked Sendable {
       // SCShareableContent. Map any failure to either `.denied` (most common
       // first-launch case) or `.error`. Either way the UI shows a fallback.
       let nsErr = error as NSError
+      print("[VisualizerEngine] start failed: domain=\(nsErr.domain) code=\(nsErr.code) — \(nsErr.localizedDescription)")
       if nsErr.domain == "com.apple.ScreenCaptureKit.SCStreamErrorDomain"
         || nsErr.domain == "com.apple.TCC"
         || nsErr.code == -3801
