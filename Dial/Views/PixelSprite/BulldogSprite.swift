@@ -88,7 +88,7 @@ struct BulldogSprite: View {
       case .eating:       return ["companion-eating-a", "companion-eating-b"]
       case .paused:       return ["companion-paused"]
       case .dormant:      return ["companion-sleeping-a", "companion-sleeping-b"]
-      case .levelUp:      return ["companion-idle"]
+      case .levelUp:      return ["companion-level-up"]
       }
     }
   }
