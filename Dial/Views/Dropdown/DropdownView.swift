@@ -19,36 +19,107 @@ struct DropdownView: View {
         connectView
       }
     }
-    // 380 (was 440): ArtistContext was dropped and ReadoutsRow shrunk
-    // (monoValue 28→20, padding 12→8), so 440pt was leaving ~80–120pt
-    // of empty Spacer between the visualizer and the controls bar.
-    // 380pt leaves ~17pt with a badge visible and ~52pt without — the
-    // breathing room reads as deliberate negative space rather than
-    // "this dropdown is half empty."
-    .frame(width: 320, height: 380)
-    .background(Dial.Palette.ground)
-    .clipShape(RoundedRectangle(cornerRadius: 14))
-    // Y2K device bevel: cyan light catch on the top edge, fading through
-    // hairline grey into a darker underside. Sells the "small handheld
-    // crystal device" framing that the inner LCD-recess + scanlines build on.
-    .overlay(
-      RoundedRectangle(cornerRadius: 14)
-        .stroke(LinearGradient(colors: [
-          Dial.Palette.amber.opacity(0.55),
-          Dial.Palette.hairline,
-          Dial.Palette.hairline,
-          Color.black.opacity(0.7),
-        ], startPoint: .top, endPoint: .bottom), lineWidth: 1)
+    // Device body: 360×380. Square-ish; the extra 20pt over a true
+    // square gives the status bar more breathing room from the top
+    // corner curves without bloating the body or reintroducing empty
+    // Spacer below the spectrum.
+    .frame(width: 360, height: 380)
+    .background(
+      // Layered device body, bottom to top:
+      //   1. Solid ground (teal-shifted for material identity)
+      //   2. Convex linear gradient — mint glow catching the upper curve,
+      //      fading through clear, deepening to black at the underside.
+      //   3. Radial vignette — darkens the corners, leaves the center
+      //      neutral. The render's body reads as a 3D glass slab because
+      //      its corners are visibly darker than its middle (light falls
+      //      off as the curve recedes from the viewer). This single
+      //      gradient does most of the "this is glass with depth" work.
+      //   4. Dust texture stippling
+      ZStack {
+        Dial.Palette.ground
+        LinearGradient(
+          colors: [
+            Dial.Palette.amber.opacity(0.12),
+            Color.clear,
+            Color.clear,
+            Color.black.opacity(0.28),
+          ],
+          startPoint: .top, endPoint: .bottom)
+        RadialGradient(
+          colors: [
+            Color.clear,
+            Color.clear,
+            Color.black.opacity(0.40),
+          ],
+          center: .center,
+          startRadius: 100,
+          endRadius: 240)
+        DustTexture()
+      }
     )
+    .clipShape(RoundedRectangle(cornerRadius: 40))
+    // Inner top shadow — the device body's own lip casts a soft shadow
+    // into the cavity. Sells the "this is a glass slab with a recessed
+    // interior" reading that all the inner containers then sit inside.
+    .overlay(
+      RoundedRectangle(cornerRadius: 40)
+        .stroke(Color.black.opacity(0.35), lineWidth: 3)
+        .blur(radius: 2)
+        .offset(y: 2)
+        .mask(RoundedRectangle(cornerRadius: 40))
+        .allowsHitTesting(false)
+    )
+    // Plasticky outer shell — translucent white gradient stroke matches
+    // the inner panels' chrome language. Earlier this was mint top →
+    // black bottom, which read as "neon LED edge" rather than "clear
+    // plastic shell." White-on-white gradient (bright top catch, faint
+    // bottom) reads as "translucent plastic catching ambient light from
+    // above." 1.4pt line width gives the shell visible "thickness."
+    .overlay(
+      RoundedRectangle(cornerRadius: 40)
+        .stroke(LinearGradient(colors: [
+          Color.white.opacity(0.65),
+          Color.white.opacity(0.30),
+          Color.white.opacity(0.15),
+          Color.white.opacity(0.08),
+        ], startPoint: .top, endPoint: .bottom), lineWidth: 1.4)
+    )
+    .overlay(
+      // Top-arc gel sheen — bright specular highlight where the curve
+      // catches light. 0.70 (was 0.40) — needs to be visibly brighter
+      // than the new 0.65 base stroke or the sheen disappears into it.
+      RoundedRectangle(cornerRadius: 39)
+        .trim(from: 0.05, to: 0.45)
+        .stroke(Color.white.opacity(0.70), lineWidth: 1.4)
+        .blur(radius: 0.6)
+        .padding(0.5)
+        .allowsHitTesting(false)
+    )
+    // Outer aura removed — there's no reason for the entire panel to
+    // emit mint light into surrounding space. The device body's chrome
+    // (plasticky stroke + sheen) does enough to read as "lit object";
+    // the aura on top was decorative bloat. Padding also removed since
+    // there's no shadow that needs room to render — the panel now
+    // matches the body dimensions exactly.
   }
 
   // MARK: - Signed-in body (HUD / History / Stats / Glossary)
 
   private var signedInView: some View {
-    VStack(spacing: 0) {
-      // Top device chrome: status rail. Stays mounted ONLY on the HUD
-      // screen — History and Stats own their own header (with back chevron).
-      // Glossary keeps the rail because it's a transient overlay.
+    // Three-zone layout matching the mockup render:
+    //   1. Status bar — floats directly on the device body
+    //   2. LCD panel — inset rectangle with the main content
+    //   3. Transport panel — inset rectangle with the controls
+    //
+    // Both panels use the shared `lcdPanel()` modifier which paints a
+    // surface-fill + hairline + inner-top-shadow chrome. They're slightly
+    // lighter than `ground` so they read as "the lit screen part of the
+    // device" rather than as content sitting on the device chrome.
+    // Three-zone layout matching the mockup render. Tighter spacing in
+    // this pass — the prior 6pt VStack spacing + 8pt horizontal padding
+    // left the LCD floating in too much surrounding margin. The render
+    // is edge-to-edge dense; ours read loose by comparison.
+    VStack(spacing: 4) {
       if coord.dropdownScreen == .hud {
         StatusRail(
           vm: coord.menubar,
@@ -58,27 +129,29 @@ struct DropdownView: View {
         )
       }
 
-      // The "screen" — sandwiched between top + bottom chrome — gets the
-      // LCD treatment: scanline grain on top of the content and a recessed
-      // top-edge shadow that suggests it's pressed into a bezel.
       screenContent
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .overlay(LCDScanlines())
-        .modifier(RecessedScreen())
+        .lcdPanel()
+        .padding(.horizontal, 6)
 
-      // Bottom device chrome: transport controls. Lives outside hudBody so
-      // it isn't covered by scanlines (it's the "buttons below the LCD,"
-      // not part of the screen).
       if coord.dropdownScreen == .hud {
-        // ControlsBar no longer takes onOpen{History,Stats} — those screens
-        // are reachable via the status item's right-click context menu now,
-        // which freed up the bar to be playback-only (the shuffle + repeat
-        // additions made the previous combined layout overflow 320pt and
-        // wrap "HISTORY" to two lines).
+        // Transport panel uses the special capsule shape — horizontally
+        // pill-shaped with fully rounded short edges. Distinct from the
+        // rectangular LCD panel above so the eye reads it as the device's
+        // dedicated playback-controls cradle.
         ControlsBar(menubar: coord.menubar, client: coord.client)
+          .transportPanel()
+          .padding(.horizontal, 6)
           .modifier(StaggeredAppear(delay: 0.20))
       }
     }
+    // Vertical padding — 8pt top + 10pt bottom. Earlier 2pt top was
+    // crowding the status bar against the body's upper corner curves;
+    // 8pt gives "NOW PLAYING" and the time clear breathing room from
+    // the top edge.
+    .padding(.top, 8)
+    .padding(.bottom, 10)
   }
 
   /// What lives inside the "screen" area — glossary overlay or one of the
@@ -208,7 +281,7 @@ struct DropdownView: View {
             .clipShape(RoundedRectangle(cornerRadius: 4))
             .shadow(color: Dial.Palette.amber.opacity(0.4), radius: 8, x: 0, y: 0)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
         .padding(.horizontal, 18)
 
         Spacer(minLength: 12)

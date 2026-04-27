@@ -15,15 +15,23 @@ struct StatusRail: View {
 
   var body: some View {
     VStack(spacing: 0) {
-      // Faint wine accent line where the amber LED used to be.
-      Rectangle().fill(Dial.Palette.amber.opacity(0.4)).frame(height: 1)
+      // Status bar items float free on the device body — earlier
+      // version wrapped them in a Capsule pill chrome, but the actual
+      // mockup render shows them ungrouped (the pill in section 5 of
+      // the design system is shown as a *reusable component*, not as
+      // how it appears in the rendered shell).
       HStack(spacing: 8) {
         // Pet thumbnail relocated to TrackHero. Rail starts directly with
         // the indicator dot now — frees up ~40pt of horizontal space.
         Circle()
           .fill(trackPulse ? Dial.Palette.orange : Dial.Palette.amber)
           .frame(width: 6, height: 6)
-          .shadow(color: trackPulse ? Dial.Palette.orange : Dial.Palette.amber, radius: 3)
+          // Single tight halo — keeps the dot reading as a powered LED
+          // without the prior two-layer bloom that pushed the glow into
+          // "neon tacky" territory. The dot's color contrast against
+          // the dark body does most of the "lit" work; the halo is
+          // just a soft edge softening.
+          .shadow(color: (trackPulse ? Dial.Palette.orange : Dial.Palette.amber).opacity(0.55), radius: 3)
           .animation(.easeOut(duration: 0.5), value: trackPulse)
         Text("NOW PLAYING")
           .font(Dial.Typography.monoLabel)
@@ -33,21 +41,24 @@ struct StatusRail: View {
         // Inline nav icons — surface History / Stats here so they're 1-tap
         // reachable instead of requiring the (undiscoverable) menubar
         // right-click. Pet stays accessible via the sprite tap on the left.
-        navIcon(systemName: "clock.arrow.circlepath", help: "Open History", action: onOpenHistory)
-        navIcon(systemName: "chart.bar", help: "Open Stats", action: onOpenStats)
+        // Uses our pixel-art icon set; filenames mirror SF Symbol names so
+        // the call site reads identically to the prior systemName: variant.
+        navIcon(name: "clock.arrow.circlepath", help: "Open History", action: onOpenHistory)
+        navIcon(name: "chart.bar.fill", help: "Open Stats", action: onOpenStats)
         Button {
           showingGlossary.toggle()
         } label: {
           Image(systemName: showingGlossary ? "xmark.circle" : "info.circle")
-            .font(.system(size: 11, weight: .regular))
+            .font(.system(size: 12, weight: .regular))
             .foregroundStyle(Dial.Palette.muted)
             .contentTransition(.symbolEffect(.replace))
-            // Pad to a 28×28 hit slot — the visible glyph is 11pt, but
-            // padding makes the tap target survive less precise mousing.
-            .frame(width: 28, height: 28)
+            // 24×24 hit slot to match navIcon — earlier 28×28 was
+            // larger than the other status bar icons, breaking the
+            // even rhythm across the bar.
+            .frame(width: 24, height: 24)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
         .help(showingGlossary ? "Hide glossary" : "What do these badges mean?")
         // Tick once a second while the dropdown is open so the timer reads
         // realtime even though we only poll Spotify every 3s.
@@ -59,11 +70,20 @@ struct StatusRail: View {
             .monospacedDigit()
         }
       }
-      .padding(.horizontal, 14)
-      .padding(.vertical, 7)
+      // Horizontal padding 24pt (was 20) — at the status bar's vertical
+      // position (y≈8–24pt inside the body), the 40pt corner curves
+      // are still cutting inward; 20pt put NOW PLAYING and the time
+      // visibly close to the curve boundary. 24pt gives both sides
+      // symmetric breathing room and reads as deliberately balanced
+      // rather than crowded.
+      .padding(.horizontal, 24)
+      .padding(.vertical, 4)
     }
-    .background(LinearGradient(colors: [Dial.Palette.surface, Dial.Palette.ground],
-                               startPoint: .top, endPoint: .bottom))
+    // No background — status bar floats directly on the device body.
+    // Earlier we painted a surface→ground gradient here, but with the
+    // three-zone layout (status / LCD / transport) the LCD panel below
+    // is the only zone that should look "lit," and the status bar reads
+    // cleaner sitting flush on the device chrome.
     .onChange(of: vm.track?.uri) { _, _ in
       // Track changed mid-session → flash the indicator magenta as a
       // celebration beat, then fade back to the cyan steady state.
@@ -79,19 +99,21 @@ struct StatusRail: View {
   }
 
   /// Compact icon-only nav button. Same 28×28 hit slot as the info button
-  /// for consistent thumbing.
+  /// for consistent thumbing. Renders our pixel-art icon set rather than
+  /// SF Symbols — the chunky 1-bit glyph reads more "device chrome" than
+  /// SF's smooth vector geometry.
   @ViewBuilder
   private func navIcon(
-    systemName: String, help: String, action: @escaping () -> Void
+    name: String, help: String, action: @escaping () -> Void
   ) -> some View {
     Button(action: action) {
-      Image(systemName: systemName)
-        .font(.system(size: 11, weight: .regular))
+      DialIcon(name)
+        .frame(width: 13, height: 13)
         .foregroundStyle(Dial.Palette.muted)
         .frame(width: 24, height: 24)
         .contentShape(Rectangle())
     }
-    .buttonStyle(.plain)
+    .buttonStyle(.pressable)
     .help(help)
   }
 

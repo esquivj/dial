@@ -5,11 +5,10 @@ import SwiftUI
 /// LED-grid spectrum visualizer that renders directly from `VisualizerEngine`'s
 /// FFT bands. Visual contract:
 ///   - 32 columns × 7 rows of cells, sized to fill the available width
-///   - Cyan (`Dial.Palette.amber`) for steady-state lit cells
-///   - Magenta (`Dial.Palette.orange`) for the top "hot" band of any column
-///     and for the peak-hold marker — reinforces the cyan/magenta two-tone
-///     rule used elsewhere (event tone for noteworthy moments)
-///   - Unlit cells stay faintly visible at ~5% opacity so the grid reads as
+///   - All cells in mint (`Dial.Palette.amber`) at varied alpha to suggest
+///     intensity — peak (1.0) > hot top band (0.95) > bulk lit (0.80) >
+///     off ghost (0.06). Single-color matches mockup render.
+///   - Unlit cells stay faintly visible at ~6% opacity so the grid reads as
 ///     a populated LED matrix at rest, not a black void
 ///
 /// Renders inside a `TimelineView(.animation)` so paint is decoupled from
@@ -21,8 +20,9 @@ struct PixelGridVisualizer: View {
   private let columns = VisualizerEngine.bandCount  // 32
   private let rows = 7
   private let gap: CGFloat = 1
-  /// Top 30% of any column lights up in magenta — reads as the bar entering
-  /// "hot" territory, like the red zone on a VU meter.
+  /// Top 30% of any column gets a brighter alpha — reads as the bar entering
+  /// "hot" territory, like the lit zone on a VU meter. Within the mint family
+  /// rather than a magenta accent (mockup is single-tone).
   private let hotZoneFraction: Double = 0.30
 
   var body: some View {
@@ -86,8 +86,7 @@ struct PixelGridVisualizer: View {
   private func draw(into ctx: GraphicsContext, cellSize: CGFloat) {
     let cellH = cellHeight
     let cellW = cellSize
-    let cyan = Dial.Palette.amber
-    let magenta = Dial.Palette.orange
+    let mint = Dial.Palette.amber
 
     for col in 0..<columns {
       let height = engine.bands[col]
@@ -107,26 +106,23 @@ struct PixelGridVisualizer: View {
         let isPeak = hasPeak && row == peakRow
         let isHot = isLit && (Double(row) / Double(rows)) >= (1 - hotZoneFraction)
 
-        let color: Color
+        // Single-color spectrum (mint at varied alpha). Mockup spec shows
+        // all mint bars; the prior cyan/magenta two-tone was a creative
+        // choice that didn't match the render. Hot zone + peak get
+        // brighter alpha for visual interest, just within the mint family.
+        // Increased peak/lit contrast (1.0 vs 0.65, was 1.0 vs 0.80) so
+        // the "lit zone" reads as clearly distinct from the "hot top."
         let alpha: Double
         if isPeak {
-          // Bright magenta peak marker
-          color = magenta
           alpha = 1.0
         } else if isHot {
-          // Top of the bar — magenta, slightly dimmer than the peak
-          color = magenta
-          alpha = 0.85
+          alpha = 0.92
         } else if isLit {
-          // Bulk of the bar — cyan
-          color = cyan
-          alpha = 0.9
+          alpha = 0.65
         } else {
-          // Off cell — barely visible "ghost" so the grid feels populated
-          color = cyan
-          alpha = 0.05
+          alpha = 0.06          // off cell — faint grid ghost
         }
-        ctx.fill(path, with: .color(color.opacity(alpha)))
+        ctx.fill(path, with: .color(mint.opacity(alpha)))
       }
     }
   }
@@ -151,7 +147,7 @@ struct PixelGridVisualizer: View {
       .frame(maxWidth: .infinity, maxHeight: .infinity)
       .background(Dial.Palette.ground.opacity(0.85))
     }
-    .buttonStyle(.plain)
+    .buttonStyle(.pressable)
   }
 
   private func openScreenRecordingPrefs() {

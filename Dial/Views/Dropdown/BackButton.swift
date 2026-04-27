@@ -27,7 +27,7 @@ struct BackButton: View {
           .fill(Dial.Palette.amber.opacity(hover ? 0.08 : 0))
       )
     }
-    .buttonStyle(.plain)
+    .buttonStyle(.pressable)
     .onHover { hover = $0 }
   }
 }

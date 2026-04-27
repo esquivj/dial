@@ -1,25 +1,37 @@
 // Dial/DesignSystem/Dial+Tokens.swift
 import SwiftUI
 
-/// Crystal Y2K palette — dark mode, cyan-glass-on-black aesthetic.
-/// Pivoted from the prior "Editorial Wine" cream + wine pass.
-/// Token *names* preserved; their roles now read as:
-///   amber  → primary accent (crystal cyan)
-///   orange → secondary accent (electric magenta — Y2K complement)
+/// Crystal Y2K palette — dark mode, cyan-LCD-on-black aesthetic.
+/// Pivoted to cyan-blue (#1FB6FF) as primary to match the Digivice-style
+/// translucent toy reference. Token *names* preserved; their roles now
+/// read as:
+///   amber  → primary accent (cyan-blue LCD readout)
+///   orange → secondary accent (hot pink — Y2K complement)
 ///   ivory  → primary text on dark
 ///   muted  → secondary text / labels
 enum Dial {
   enum Palette {
-    /// Near-black with a hint of blue — main background. Pure #000 reads
-    /// too harsh, this gives the cyan glows somewhere to bleed into.
-    static let ground   = Color(red: 0x0A/255, green: 0x0D/255, blue: 0x11/255)
+    /// Near-black with a teal shift — main background. Pure #000 reads
+    /// too harsh and uniform-dark; nudging green up and red down gives
+    /// the device body a subtle "tinted glass" identity instead of
+    /// "rectangle filled with neutral dark." Mint glows bleed into a
+    /// background that's already slightly mint-leaning, which reads as
+    /// material continuity rather than "glow stuck on dark paint."
+    static let ground   = Color(red: 0x07/255, green: 0x0E/255, blue: 0x14/255)
     /// Slightly elevated surface for cards, inset panels.
     static let surface  = Color(red: 0x12/255, green: 0x16/255, blue: 0x1B/255)
-    /// Crystal cyan — primary accent. Numerals, chips, the pet sprite.
-    static let amber    = Color(red: 0x1A/255, green: 0xC5/255, blue: 0xBC/255)
-    /// Electric magenta — secondary, classic Y2K complement to cyan.
-    /// Used for ON STREAK and other secondary moments.
-    static let orange   = Color(red: 0xE8/255, green: 0x4B/255, blue: 0x98/255)
+    /// Cyan-blue — primary accent. LCD readouts, numerals, status dot.
+    /// #1FB6FF (was mint #00FFA3). Pivot to the Digivice-style cyan
+    /// palette: cooler, more "powered LCD on a translucent toy device"
+    /// than the prior mint reading. Contrast against `ground` is well
+    /// above WCAG-AA at small text sizes.
+    static let amber    = Color(red: 0x1F/255, green: 0xB6/255, blue: 0xFF/255)
+    /// Hot pink — secondary, Y2K complement to mint.
+    /// #FF4DD8 (was magenta #E84B98). Brightened to keep complementary
+    /// tension against the brighter mint primary; muddier pinks read as
+    /// "wine" rather than "neon" against #00FFA3.
+    /// Used for ON STREAK / firstListen and other secondary moments.
+    static let orange   = Color(red: 0xFF/255, green: 0x4D/255, blue: 0xD8/255)
     /// Cool off-white — primary text on dark.
     static let ivory    = Color(red: 0xE8/255, green: 0xEB/255, blue: 0xED/255)
     /// Cool gray — secondary text, labels. Brightened from #6B7178 to
@@ -55,6 +67,16 @@ enum Dial {
     static let monoValue   = Font.custom("IBMPlexMono-Medium",  size: 20)
     static let monoSmall   = Font.custom("IBMPlexMono-Regular", size: 10)
     static let monoTiny    = Font.custom("IBMPlexMono-Medium",  size: 8)
+    /// Pixel/mono treatment for the track title in TrackHero. Reserved
+    /// for "this readout is on the device's LCD" — distinct from sansTitle,
+    /// which is for app-text strings (e.g. the welcome screen heading).
+    /// 16pt — bumped from 14pt now that the body is 360pt wide (was 320),
+    /// giving the title VStack ~164pt of horizontal room. At 16pt mono
+    /// medium most real-world titles (~14–17 chars) fit without
+    /// triggering the marquee. The bigger size lets the title dominate
+    /// the track row, which it should — it's the most important data
+    /// point on the screen.
+    static let monoTitle   = Font.custom("IBMPlexMono-Medium",  size: 16)
     static let sansTitle   = Font.custom("IBMPlexSans-Medium",  size: 14)
     static let sansBody    = Font.custom("IBMPlexSans-Regular", size: 12)
     static let sansCaption = Font.custom("IBMPlexSans-Regular", size: 11)

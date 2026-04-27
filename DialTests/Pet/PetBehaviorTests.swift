@@ -34,7 +34,7 @@ final class PetBehaviorTests: XCTestCase {
   }
 
   func test_eatingBeatsPaused() {
-    let r = PetBehaviorResolver.resolve(ctx(eating: true, paused: true))
+    let r = PetBehaviorResolver.resolve(ctx(paused: true, eating: true))
     XCTAssertEqual(r, .eating)
   }
 

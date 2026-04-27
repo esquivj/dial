@@ -80,7 +80,12 @@ struct BulldogSprite: View {
     case .elder:      return ["elder"]
     case .companion:
       switch behavior {
-      case .idle:         return ["companion-idle"]
+      // Idle is a long static hold with a single-frame blink at the end
+      // (~200ms shut-eye every 2s). Implemented by padding the loop with
+      // 9 copies of `companion-idle` followed by 1 copy of the blink frame
+      // so the existing fixed-interval TimelineView ticker can express the
+      // asymmetric rhythm without needing per-frame timings.
+      case .idle:         return Array(repeating: "companion-idle", count: 9) + ["companion-idle-blink"]
       case .walk:         return ["companion-walk-a", "companion-walk-b"]
       case .beatSync:     return ["companion-beat-sync"]
       case .firstListen:  return ["companion-first-listen"]
@@ -95,11 +100,13 @@ struct BulldogSprite: View {
 
   /// Frame interval for the 2-frame loops. Chosen so total cycle matches
   /// the cadence we mocked in Paper:
-  ///   walk     ~700ms total → 350ms / frame
-  ///   eating   ~600ms       → 300ms / frame
-  ///   sleeping ~1500ms      → 750ms / frame
+  ///   idle     ~2000ms total → 200ms / frame × 10 frames (9 open + 1 blink)
+  ///   walk     ~700ms total  → 350ms / frame
+  ///   eating   ~600ms        → 300ms / frame
+  ///   sleeping ~1500ms       → 750ms / frame
   static func frameInterval(for behavior: PetBehavior) -> Double? {
     switch behavior {
+    case .idle:     return 0.20
     case .walk:     return 0.35
     case .eating:   return 0.30
     case .dormant:  return 0.75

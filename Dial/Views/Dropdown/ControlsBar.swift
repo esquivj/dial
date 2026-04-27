@@ -27,19 +27,19 @@ struct ControlsBar: View {
             }
           }
         } label: {
-          Image(systemName: "shuffle")
-            .font(.system(size: 12, weight: .semibold))
+          DialIcon("shuffle")
+            .frame(width: 14, height: 14)
             .foregroundStyle(menubar.shuffle ? Dial.Palette.amber : Dial.Palette.muted)
             .shadow(color: menubar.shuffle ? Dial.Palette.amber.opacity(0.6) : .clear,
                     radius: 4, x: 0, y: 0)
             .frame(width: 24, height: 24)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
         .help(menubar.shuffle ? "Shuffle on" : "Shuffle off")
 
         Button { Task { try? await client.prev() } } label: {
-          Image(systemName: "backward.fill")
+          DialIcon("backward.fill").frame(width: 14, height: 14)
         }
         .buttonStyle(GelTransportStyle())
         Button {
@@ -60,14 +60,24 @@ struct ControlsBar: View {
             }
           }
         } label: {
-          Image(systemName: menubar.state == .playing ? "pause.fill" : "play.fill")
-            // Smooth SF-Symbol replace transition — scales / fades the
-            // glyph between play↔pause instead of snap-cutting.
-            .contentTransition(.symbolEffect(.replace))
+          // Pixel-art glyph swap. Lost the SF-Symbol .replace transition
+          // (which is symbol-specific) — we crossfade via id+opacity
+          // instead so the play↔pause flip still animates rather than
+          // snap-cutting. 120ms duration matches the optimistic flip's
+          // perceived response time.
+          DialIcon(menubar.state == .playing ? "pause.fill" : "play.fill")
+            .frame(width: 14, height: 14)
+            .id(menubar.state)
+            .transition(.opacity.combined(with: .scale(scale: 0.92)))
+            .animation(.easeOut(duration: 0.12), value: menubar.state)
         }
-        .buttonStyle(GelTransportStyle())
+        // `prominent: true` reads as the primary action — brighter mint
+        // fill, stronger stroke, larger outer halo. Without it, all three
+        // pills carried equal visual weight and the play button didn't
+        // earn its central position.
+        .buttonStyle(GelTransportStyle(prominent: true))
         Button { Task { try? await client.next() } } label: {
-          Image(systemName: "forward.fill")
+          DialIcon("forward.fill").frame(width: 14, height: 14)
         }
         .buttonStyle(GelTransportStyle())
 
@@ -92,16 +102,22 @@ struct ControlsBar: View {
             }
           }
         } label: {
-          Image(systemName: menubar.repeatMode == .track ? "repeat.1" : "repeat")
-            .font(.system(size: 12, weight: .semibold))
+          // Same id+opacity crossfade pattern as play↔pause — the
+          // repeat → repeat-1 transition is rarer but still benefits from
+          // motion since it signals "this song will loop forever," which
+          // is a meaningful state change.
+          DialIcon(menubar.repeatMode == .track ? "repeat.1" : "repeat")
+            .frame(width: 14, height: 14)
             .foregroundStyle(repeatColor)
             .shadow(color: menubar.repeatMode != .off ? repeatColor.opacity(0.6) : .clear,
                     radius: 4, x: 0, y: 0)
-            .contentTransition(.symbolEffect(.replace))
+            .id(menubar.repeatMode)
+            .transition(.opacity.combined(with: .scale(scale: 0.92)))
+            .animation(.easeOut(duration: 0.12), value: menubar.repeatMode)
             .frame(width: 24, height: 24)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
         .help(repeatHelp)
       }
       // Slightly dimmer than the pure ivory of titles — gel pills are
@@ -109,11 +125,10 @@ struct ControlsBar: View {
       .foregroundStyle(Dial.Palette.ivory.opacity(0.85))
       Spacer(minLength: 0)
     }
-    .padding(EdgeInsets(top: 10, leading: 14, bottom: 12, trailing: 14))
-    .background(Dial.Palette.subtle)
-    .overlay(alignment: .top) {
-      Rectangle().fill(Dial.Palette.hairline).frame(height: 1)
-    }
+    // Tighter vertical padding (4 vs 6). Background + top hairline
+    // removed — the parent's `.lcdPanel()` modifier provides the
+    // inset-panel chrome.
+    .padding(EdgeInsets(top: 4, leading: 10, bottom: 4, trailing: 10))
   }
 
   /// Color for the repeat icon — cyan for context-loop, magenta for the
@@ -136,59 +151,102 @@ struct ControlsBar: View {
   }
 }
 
-/// Gel-Aqua transport button — capsule pill with cyan glow, top-arc sheen,
-/// and a hover/press response. Reads as a glassy hardware button below the
-/// LCD screen, completing the "small crystal device" framing the rest of
-/// the dropdown sets up. iTunes-Aqua inspiration; Y2K palette.
+/// Translucent gel transport button — matches the Digivice-style render's
+/// playback pills: a glassy semi-transparent capsule with a clear top
+/// sheen, cyan icon inside, and a soft contact shadow. Reads as gel /
+/// translucent plastic that catches light, not as solid white rubber.
+///
+/// Composition:
+///   * Fill: white at low opacity (the chassis surface behind shows
+///     through, tinted slightly white) — this is what makes it "gel"
+///     instead of "rubber"
+///   * Top-arc sheen: bright white wet-glass highlight at the upper curve
+///   * Edge stroke: thin white for definition
+///   * Drop shadow: dark, soft, no color — physical contact shadow
+///
+/// `prominent` flag bumps the fill opacity and sheen brightness on the
+/// play/pause button — same hierarchy idea as before, expressed through
+/// translucency strength rather than colored glow.
 ///
 /// Implementation note: ButtonStyle.makeBody can't directly use @State,
 /// so the body is wrapped in a private View where `hovering` lives.
 private struct GelTransportStyle: ButtonStyle {
+  var prominent: Bool = false
+
   func makeBody(configuration: Configuration) -> some View {
-    GelButtonView(configuration: configuration)
+    GelButtonView(configuration: configuration, prominent: prominent)
   }
 
   private struct GelButtonView: View {
     let configuration: ButtonStyle.Configuration
+    let prominent: Bool
     @State private var hovering = false
+
+    /// Pill dimensions. Prominent (play) gets a slightly larger frame
+    /// so it reads as the primary action without colored glow.
+    private var pillWidth: CGFloat  { prominent ? 44 : 36 }
+    private var pillHeight: CGFloat { prominent ? 30 : 26 }
+
+    /// Fill opacity (top of gradient). Translucent — the dark chassis
+    /// surface behind shows through, which is what gives the button its
+    /// "gel" reading versus "solid rubber."
+    private var fillTopOpacity: Double {
+      if prominent { return hovering ? 0.36 : 0.24 }
+      return hovering ? 0.24 : 0.15
+    }
+    private var fillBottomOpacity: Double {
+      if prominent { return hovering ? 0.12 : 0.08 }
+      return hovering ? 0.08 : 0.04
+    }
+
+    /// Top-arc sheen brightness — the bright wet-glass reflection at
+    /// the upper curve.
+    private var sheenOpacity: Double {
+      if prominent { return hovering ? 0.95 : 0.75 }
+      return hovering ? 0.75 : 0.55
+    }
 
     var body: some View {
       configuration.label
-        // 36×32 pill keeps the SF-Symbol glyph centered without empty
-        // crowding it. Hit area survives less precise mousing.
-        .frame(minWidth: 36, minHeight: 32)
+        // Cyan icon inside — single contrast point against the
+        // translucent gel.
+        .foregroundStyle(Dial.Palette.amber)
+        .frame(minWidth: pillWidth, minHeight: pillHeight)
         .contentShape(Capsule())
         .background(
           ZStack {
-            // Base fill — top-lit cyan gradient. Subtle at rest, brightens
-            // on hover so the button reads as "alive" without being noisy.
+            // Translucent gel fill — white at low opacity so the chassis
+            // surface behind shows through tinted. Top-down gradient
+            // (lighter top, fainter bottom) suggests light from above.
             Capsule()
-              .fill(LinearGradient(colors: [
-                Dial.Palette.amber.opacity(hovering ? 0.22 : 0.10),
-                Dial.Palette.amber.opacity(0.03),
-              ], startPoint: .top, endPoint: .bottom))
+              .fill(LinearGradient(
+                colors: [
+                  Color.white.opacity(fillTopOpacity),
+                  Color.white.opacity(fillBottomOpacity),
+                ],
+                startPoint: .top, endPoint: .bottom))
 
-            // Border — thin cyan line that brightens on hover.
+            // Top-arc sheen — bright wet-glass reflection at the upper
+            // curve. The single highest-leverage detail for "this is gel."
             Capsule()
-              .stroke(
-                Dial.Palette.amber.opacity(hovering ? 0.50 : 0.22),
-                lineWidth: 0.5)
-
-            // Top-arc highlight — the Aqua "gel sheen" at the top of the
-            // pill. Half-trim of the capsule path, blurred slightly so it
-            // reads as a soft reflection instead of a hard line.
-            Capsule()
-              .trim(from: 0, to: 0.5)
-              .stroke(Color.white.opacity(0.20), lineWidth: 0.5)
+              .trim(from: 0.0, to: 0.5)
+              .stroke(Color.white.opacity(sheenOpacity), lineWidth: 0.8)
               .blur(radius: 0.4)
+
+            // Thin white edge stroke — defines the pill against the
+            // dark transport panel. Lower opacity than the rubber pass
+            // so it doesn't double up with the sheen.
+            Capsule()
+              .stroke(Color.white.opacity(0.35), lineWidth: 0.5)
           }
-          // Outer cyan glow — the Y2K "lit-from-within" halo. Stronger on
-          // hover so motion through the controls bar feels responsive.
+          // Soft dark contact shadow — physical "mounted on chassis"
+          // depth, no color. Press state pulls the shadow tight to the
+          // button so it visually "presses down."
           .shadow(
-            color: Dial.Palette.amber.opacity(hovering ? 0.45 : 0.18),
-            radius: 6, x: 0, y: 0)
+            color: Color.black.opacity(configuration.isPressed ? 0.25 : 0.45),
+            radius: 3, x: 0, y: configuration.isPressed ? 0.5 : 1.5)
         )
-        .opacity(configuration.isPressed ? 0.82 : 1.0)
+        .opacity(configuration.isPressed ? 0.90 : 1.0)
         .scaleEffect(configuration.isPressed ? 0.96 : 1.0)
         .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
         .animation(.easeOut(duration: 0.18), value: hovering)

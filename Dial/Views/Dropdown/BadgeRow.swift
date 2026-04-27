@@ -7,23 +7,24 @@ struct BadgeRow: View {
   let detail: String
 
   var body: some View {
-    if kind == .none {
-      EmptyView()
-    } else {
-      HStack(spacing: 8) {
+    // Always render the row at fixed height regardless of badge state.
+    // Earlier code returned `EmptyView()` when kind == .none, which
+    // caused the rest of the LCD content (specifically the spectrum
+    // visualizer below) to slide UP into the badge's vertical slot —
+    // a layout shift on every track change between badged and unbadged
+    // tracks. Reserving the row's space stabilizes the layout so
+    // children below stay anchored regardless of badge presence.
+    HStack(spacing: 8) {
+      if kind != .none {
         chip
         Text(detail)
           .font(Dial.Typography.sansCaption)
           .foregroundStyle(Dial.Palette.muted)
           .lineLimit(1)
       }
-      .padding(EdgeInsets(top: 10, leading: 14, bottom: 10, trailing: 14))
-      .frame(maxWidth: .infinity, alignment: .leading)
-      .background(Dial.Palette.ground)
-      .overlay(alignment: .top) {
-        Rectangle().fill(Dial.Palette.hairline).frame(height: 1)
-      }
     }
+    .frame(maxWidth: .infinity, minHeight: 22, alignment: .leading)
+    .padding(EdgeInsets(top: 6, leading: 10, bottom: 6, trailing: 10))
   }
 
   private var chip: some View {
@@ -38,9 +39,14 @@ struct BadgeRow: View {
                 Dial.Palette.orange.opacity(0.40),
                 "FIRST LISTEN")
       case .rediscovered:
-        return (Dial.Palette.muted,
-                Dial.Palette.muted.opacity(0.10),
-                Dial.Palette.muted.opacity(0.40),
+        // Mockup section 5 BADGES shows ▲ REDISCOVERED in mint, not muted.
+        // Earlier code kept it muted to imply "quiet rediscovery" but the
+        // spec is the source of truth — REDISCOVERED is a celebration tone
+        // alongside FIRST LISTEN / ON STREAK, just with the cyan-side
+        // primary accent (mint) rather than the magenta-side secondary.
+        return (Dial.Palette.amber,
+                Dial.Palette.amber.opacity(0.10),
+                Dial.Palette.amber.opacity(0.40),
                 "REDISCOVERED")
       case .onStreak:
         return (Dial.Palette.orange,
@@ -59,8 +65,8 @@ struct BadgeRow: View {
         .foregroundStyle(fg)
     }
     .padding(EdgeInsets(top: 4, leading: 7, bottom: 4, trailing: 8))
-    .background(bg)
-    .overlay(RoundedRectangle(cornerRadius: 3).stroke(border, lineWidth: 1))
+    .background(bg.opacity(0.6))  // 0.10 base × 0.6 = 0.06 effective fill
+    .overlay(RoundedRectangle(cornerRadius: 3).stroke(border.opacity(0.55), lineWidth: 0.6))
     .clipShape(RoundedRectangle(cornerRadius: 3))
   }
 }
