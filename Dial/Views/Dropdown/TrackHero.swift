@@ -87,27 +87,30 @@ struct TrackHero: View {
         // Was Color.black.opacity(0.40) when the pet itself was cyan; with
         // the pet now being a pure-black silhouette, the bezel needs to be
         // light or the pet would be invisible against the dark device chrome.
-        RoundedRectangle(cornerRadius: 5)
+        RoundedRectangle(cornerRadius: 6)
           .fill(Dial.Palette.lcd)
-        BulldogSprite(stage: pet.stage, behavior: pet.behavior, height: 48)
-          .frame(width: 48, height: 48)
+        BulldogSprite(stage: pet.stage, behavior: pet.behavior, height: 56)
+          .frame(width: 56, height: 56)
       }
-      .frame(width: 56, height: 56)
+      // Pet block bumped 56×56 → 64×64 (sprite 48 → 56) — the pixel-art
+      // detail reads better at this size and balances against the 72×72
+      // album art on the left. Text VStack still has ~132pt to work with.
+      .frame(width: 64, height: 64)
       .overlay(
-        RoundedRectangle(cornerRadius: 5)
+        RoundedRectangle(cornerRadius: 6)
           .stroke(Dial.Palette.amber.opacity(0.55), lineWidth: 1)
       )
       .overlay(alignment: .topTrailing) {
         if pet.streakDays >= 3 {
           Image(systemName: "flame.fill")
-            .font(.system(size: 12, weight: .bold))
+            .font(.system(size: 14, weight: .bold))
             .foregroundStyle(Dial.Palette.orange)
             .shadow(color: Dial.Palette.orange.opacity(0.8), radius: 3)
-            .padding(3)
+            .padding(4)
             .help("\(pet.streakDays)-day streak")
         }
       }
-      .shadow(color: Dial.Palette.amber.opacity(0.30), radius: 5, x: 0, y: 0)
+      .shadow(color: Dial.Palette.amber.opacity(0.30), radius: 6, x: 0, y: 0)
     }
     .buttonStyle(.plain)
     .help("Open pet")
