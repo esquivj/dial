@@ -52,9 +52,7 @@ struct DropdownView: View {
       if coord.dropdownScreen == .hud {
         StatusRail(
           vm: coord.menubar,
-          pet: coord.pet,
           showingGlossary: $showingGlossary,
-          onOpenPet: { withAnimation(.easeInOut(duration: 0.18)) { coord.dropdownScreen = .pet } },
           onOpenHistory: { withAnimation(.easeInOut(duration: 0.18)) { coord.dropdownScreen = .history } },
           onOpenStats: { withAnimation(.easeInOut(duration: 0.18)) { coord.dropdownScreen = .stats } }
         )
@@ -117,8 +115,12 @@ struct DropdownView: View {
       // Staggered entrance: each section fades + lifts in with a 50ms cascade.
       // Reads as deliberate composition rather than "everything appears at once,"
       // and is short enough (~250ms total) not to feel like a loading sequence.
-      TrackHero(vm: coord.nowPlaying)
-        .modifier(StaggeredAppear(delay: 0.00))
+      TrackHero(
+        vm: coord.nowPlaying,
+        pet: coord.pet,
+        onOpenPet: { withAnimation(.easeInOut(duration: 0.18)) { coord.dropdownScreen = .pet } }
+      )
+      .modifier(StaggeredAppear(delay: 0.00))
       ReadoutsRow(vm: coord.nowPlaying)
         .modifier(StaggeredAppear(delay: 0.05))
       BadgeRow(kind: activeBadge, detail: badgeDetail)
@@ -162,13 +164,12 @@ struct DropdownView: View {
 
   private var connectView: some View {
     VStack(spacing: 0) {
-      // Connect view's pet sprite is also tappable — even pre-auth, the
-      // user can poke at the egg sitting in their menubar.
+      // Connect view's StatusRail is now pet-less too (pet display moved to
+      // TrackHero, which the connect view doesn't render — the pet shows
+      // up after auth via the signed-in HUD).
       StatusRail(
         vm: coord.menubar,
-        pet: coord.pet,
         showingGlossary: $showingGlossary,
-        onOpenPet: { withAnimation(.easeInOut(duration: 0.18)) { coord.dropdownScreen = .pet } },
         onOpenHistory: { withAnimation(.easeInOut(duration: 0.18)) { coord.dropdownScreen = .history } },
         onOpenStats: { withAnimation(.easeInOut(duration: 0.18)) { coord.dropdownScreen = .stats } }
       )

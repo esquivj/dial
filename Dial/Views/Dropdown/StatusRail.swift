@@ -2,12 +2,10 @@ import SwiftUI
 
 struct StatusRail: View {
   @Bindable var vm: MenubarStripViewModel
-  @Bindable var pet: PetViewModel
   @Binding var showingGlossary: Bool
-  /// Tapping the pet sprite opens the dedicated PetView screen.
-  let onOpenPet: () -> Void
-  /// History + Stats are now reachable directly from the rail rather
-  /// than only via the menubar right-click — that was undiscoverable.
+  /// History + Stats are reachable directly from the rail. The pet
+  /// thumbnail moved out of StatusRail entirely — it's now in TrackHero
+  /// at 48×48 (was 24×24 here, too small to read the pixel-art detail).
   let onOpenHistory: () -> Void
   let onOpenStats: () -> Void
 
@@ -20,47 +18,8 @@ struct StatusRail: View {
       // Faint wine accent line where the amber LED used to be.
       Rectangle().fill(Dial.Palette.amber.opacity(0.4)).frame(height: 1)
       HStack(spacing: 8) {
-        // Pet screen-within-screen: the bulldog lives inside its own little
-        // LCD window. Cyan-tinted bezel + dim recessed background sells
-        // the tamagotchi-on-a-handheld framing — the sprite is visibly
-        // contained, like the LCD on the original Tamagotchi housing.
-        // Sprite shrinks 2pt to leave room for the bezel without changing
-        // the row's outer 28×28 footprint.
-        //
-        // Tap → open the dedicated PetView (bigger sprite + XP + stats).
-        //
-        // Care indicator (Tamagotchi pictogram language): when streak is
-        // active (≥3 days), a tiny magenta flame appears in the top-right
-        // of the LCD frame. Original Tamagotchis used corner pictograms
-        // for hunger/discipline/happiness; "current streak" is the most
-        // meaningful Dial equivalent.
-        Button(action: onOpenPet) {
-          ZStack {
-            RoundedRectangle(cornerRadius: 3)
-              .fill(Color.black.opacity(0.35))
-            BulldogSprite(stage: pet.stage, behavior: pet.behavior, height: 24)
-              .frame(width: 24, height: 24)
-          }
-          .frame(width: 28, height: 28)
-          .overlay(
-            RoundedRectangle(cornerRadius: 3)
-              .stroke(Dial.Palette.amber.opacity(0.45), lineWidth: 0.5)
-          )
-          .overlay(alignment: .topTrailing) {
-            if pet.streakDays >= 3 {
-              Image(systemName: "flame.fill")
-                .font(.system(size: 7, weight: .bold))
-                .foregroundStyle(Dial.Palette.orange)
-                .shadow(color: Dial.Palette.orange.opacity(0.8), radius: 2)
-                .padding(2)
-                .help("\(pet.streakDays)-day streak")
-            }
-          }
-          // Faint cyan halo so it reads as "lit" against the dark rail.
-          .shadow(color: Dial.Palette.amber.opacity(0.25), radius: 3, x: 0, y: 0)
-        }
-        .buttonStyle(.plain)
-        .help("Open pet")
+        // Pet thumbnail relocated to TrackHero. Rail starts directly with
+        // the indicator dot now — frees up ~40pt of horizontal space.
         Circle()
           .fill(trackPulse ? Dial.Palette.orange : Dial.Palette.amber)
           .frame(width: 6, height: 6)

@@ -2,6 +2,11 @@ import SwiftUI
 
 struct TrackHero: View {
   @Bindable var vm: NowPlayingViewModel
+  @Bindable var pet: PetViewModel
+  /// Tap on the pet block opens the dedicated PetView. Wired from
+  /// DropdownView (was previously on the StatusRail thumbnail; relocated
+  /// here so the pet can be rendered at a readable 48×48).
+  let onOpenPet: () -> Void
 
   /// Identity for the crossfade transition — when the URI changes,
   /// SwiftUI swaps the entire row and animates the swap. Without this,
@@ -53,11 +58,53 @@ struct TrackHero: View {
             .lineLimit(1)
         }
       }
-      Spacer(minLength: 0)
+      .frame(maxWidth: .infinity, alignment: .leading)
+
+      // Pet block — moved from StatusRail (where it was 24×24, too small to
+      // read the new pixel-art detail) to TrackHero at 48×48 inside a 56×56
+      // LCD-bezel frame. Sits opposite the album art for balanced visual
+      // weight: album = music identity, pet = brand identity, both equally
+      // present in the user's primary glance row.
+      petBlock
     }
     .padding(EdgeInsets(top: 12, leading: 14, bottom: 14, trailing: 14))
     .id(transitionID)
     .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .leading)))
     .animation(.easeOut(duration: 0.28), value: transitionID)
+  }
+
+  // MARK: - Pet
+
+  /// Same Tamagotchi-on-a-handheld framing the StatusRail thumbnail used,
+  /// scaled up. Tap → PetView. Streak-flame indicator (≥3 days) carried
+  /// over from the old thumbnail so the per-pet status follows the pet.
+  @ViewBuilder
+  private var petBlock: some View {
+    Button(action: onOpenPet) {
+      ZStack {
+        RoundedRectangle(cornerRadius: 5)
+          .fill(Color.black.opacity(0.40))
+        BulldogSprite(stage: pet.stage, behavior: pet.behavior, height: 48)
+          .frame(width: 48, height: 48)
+      }
+      .frame(width: 56, height: 56)
+      .overlay(
+        RoundedRectangle(cornerRadius: 5)
+          .stroke(Dial.Palette.amber.opacity(0.55), lineWidth: 1)
+      )
+      .overlay(alignment: .topTrailing) {
+        if pet.streakDays >= 3 {
+          Image(systemName: "flame.fill")
+            .font(.system(size: 12, weight: .bold))
+            .foregroundStyle(Dial.Palette.orange)
+            .shadow(color: Dial.Palette.orange.opacity(0.8), radius: 3)
+            .padding(3)
+            .help("\(pet.streakDays)-day streak")
+        }
+      }
+      .shadow(color: Dial.Palette.amber.opacity(0.30), radius: 5, x: 0, y: 0)
+    }
+    .buttonStyle(.plain)
+    .help("Open pet")
   }
 }
