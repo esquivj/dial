@@ -70,8 +70,11 @@ struct PetView: View {
     HStack {
       Spacer(minLength: 0)
       ZStack {
+        // Tamagotchi-style "powered LCD" inside the bezel (matches the
+        // smaller pet block in TrackHero) — black-and-white pet silhouette
+        // on a pale green-cream lit screen.
         RoundedRectangle(cornerRadius: 8)
-          .fill(Color.black.opacity(0.55))
+          .fill(Dial.Palette.lcd)
         BulldogSprite(stage: pet.stage, behavior: pet.behavior, height: 80)
           .frame(width: 80, height: 80)
       }

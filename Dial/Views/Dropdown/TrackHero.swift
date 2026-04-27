@@ -82,8 +82,13 @@ struct TrackHero: View {
   private var petBlock: some View {
     Button(action: onOpenPet) {
       ZStack {
+        // Tamagotchi-style "powered LCD" inside the bezel — pale green-cream
+        // background that the black-and-white pet silhouette sits on top of.
+        // Was Color.black.opacity(0.40) when the pet itself was cyan; with
+        // the pet now being a pure-black silhouette, the bezel needs to be
+        // light or the pet would be invisible against the dark device chrome.
         RoundedRectangle(cornerRadius: 5)
-          .fill(Color.black.opacity(0.40))
+          .fill(Dial.Palette.lcd)
         BulldogSprite(stage: pet.stage, behavior: pet.behavior, height: 48)
           .frame(width: 48, height: 48)
       }

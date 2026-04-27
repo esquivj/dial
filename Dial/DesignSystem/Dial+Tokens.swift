@@ -35,6 +35,14 @@ enum Dial {
     /// Slightly tinted card surface for inner panels (Stats pet panel, etc.).
     /// Sits between ground and surface.
     static let subtle   = Color(red: 0x0F/255, green: 0x13/255, blue: 0x16/255)
+
+    /// Pale green-cream — the "powered-on Tamagotchi LCD" color. Used as
+    /// the inside-fill of the pet's LCD bezel in TrackHero / PetView so
+    /// the black-and-white pet sprite reads against a literally lit screen
+    /// rather than against pure dark device chrome. Sits outside the
+    /// cyan/magenta accent system intentionally — the pet is its own
+    /// identity, separate from the rest of the UI's tone palette.
+    static let lcd      = Color(red: 0xC5/255, green: 0xCC/255, blue: 0xA0/255)
   }
 
   enum Typography {
