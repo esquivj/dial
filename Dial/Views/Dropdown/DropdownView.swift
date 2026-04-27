@@ -19,13 +19,13 @@ struct DropdownView: View {
         connectView
       }
     }
-    // 440 (was 400, was 360): the visualizer is ~87pt tall (vs the old
-    // SessionTimeline's ~50pt), so when both BadgeRow + ArtistContext are
-    // visible the content sums to ~436pt and the 400pt frame overflowed —
-    // Spacer went negative, content compressed, top/bottom padding got
-    // eaten. 440pt gives ~16pt of healthy Spacer at worst case and
-    // breathing room when only one optional row is showing.
-    .frame(width: 320, height: 440)
+    // 380 (was 440): ArtistContext was dropped and ReadoutsRow shrunk
+    // (monoValue 28→20, padding 12→8), so 440pt was leaving ~80–120pt
+    // of empty Spacer between the visualizer and the controls bar.
+    // 380pt leaves ~17pt with a badge visible and ~52pt without — the
+    // breathing room reads as deliberate negative space rather than
+    // "this dropdown is half empty."
+    .frame(width: 320, height: 380)
     .background(Dial.Palette.ground)
     .clipShape(RoundedRectangle(cornerRadius: 14))
     // Y2K device bevel: cyan light catch on the top edge, fading through

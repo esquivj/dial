@@ -39,7 +39,12 @@ enum Dial {
 
   enum Typography {
     static let monoLabel   = Font.custom("IBMPlexMono-Regular", size: 9)
-    static let monoValue   = Font.custom("IBMPlexMono-Medium",  size: 28)
+    /// Hero numeric values (PLAYS · 30D, RANK · 7D). 20 (was 28) — 28pt
+    /// values were dominating the HUD's vertical real estate, especially
+    /// when the values were "0" or "—" so the size shouted at empty
+    /// content. 20 still reads as a "stat hero" without carrying its own
+    /// gravity.
+    static let monoValue   = Font.custom("IBMPlexMono-Medium",  size: 20)
     static let monoSmall   = Font.custom("IBMPlexMono-Regular", size: 10)
     static let monoTiny    = Font.custom("IBMPlexMono-Medium",  size: 8)
     static let sansTitle   = Font.custom("IBMPlexSans-Medium",  size: 14)

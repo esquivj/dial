@@ -58,6 +58,9 @@ private struct Readout: View {
       }
     }
     .frame(maxWidth: .infinity, alignment: .leading)
-    .padding(EdgeInsets(top: 12, leading: 14, bottom: 12, trailing: 14))
+    // Padding 8 (was 12). Combined with the 20pt monoValue (was 28pt),
+    // the row now lands at ~45pt (was ~65pt) — reclaims ~20pt of HUD
+    // vertical and stops feeling oversized when the values are 0 / —.
+    .padding(EdgeInsets(top: 8, leading: 14, bottom: 8, trailing: 14))
   }
 }
