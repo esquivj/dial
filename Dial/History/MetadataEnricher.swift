@@ -1,6 +1,9 @@
 // Dial/History/MetadataEnricher.swift
 import GRDB
 import Foundation
+import os.log
+
+private let enricherLog = Logger(subsystem: "com.dial.Dial", category: "MetadataEnricher")
 
 /// Walks every track URI referenced from `plays` whose metadata is incomplete
 /// (no row in `tracks` at all, or row exists but `album_art_url` is null) and
@@ -15,76 +18,82 @@ final class MetadataEnricher {
     self.client = client
   }
 
-  /// Default rate is 3 req/sec — Spotify's standard rate limit is ~180 req/min,
-  /// and the prior 5 req/sec value was hitting 429s during the 49k-track
-  /// backfill from the Extended Streaming History import. 3 req/sec leaves
-  /// comfortable headroom for the live-polling client running concurrently.
-  func enrichMissing(batchSize: Int = 50, rateLimitPerSec: Double = 3) async throws {
+  /// Default rate is 5 req/sec for the public oEmbed endpoint. There's
+  /// no documented rate limit but we throttle politely so we don't get
+  /// IP-blocked. At 5 req/sec, 49k tracks completes in ~2.7 hours;
+  /// recent plays (HistoryView) get art within seconds since the queue
+  /// is ordered by `MAX(p.played_at) DESC`.
+  ///
+  /// **Endpoint choice**: this used to hit `/v1/tracks` (batched, 50
+  /// per request, full metadata). Spotify's November 2024 Web API
+  /// changes restricted that endpoint to apps in Extended Quota Mode —
+  /// Development Mode apps get 403 Forbidden every time. `oembed` is
+  /// the only public, unrestricted endpoint that returns album art
+  /// without auth. Tradeoffs:
+  ///   * No batching (one request per track, slower per-track)
+  ///   * Returns title + thumbnail only (no artist URI, no duration)
+  ///   * No auth, no rate limit headers, no scope requirements
+  /// We accept the per-track cost because it's the only path that
+  /// actually works for the user's app under current restrictions.
+  ///
+  /// `batchSize` is unused (kept in the signature for ABI compatibility
+  /// with any callers that pass it explicitly).
+  func enrichMissing(batchSize: Int = 50, rateLimitPerSec: Double = 5) async throws {
+    enricherLog.notice("enrichMissing started")
     let missing: [String] = try await dbq.read { db in
-      // Backfill includes:
-      // - Tracks referenced in `plays` with no row in `tracks` at all
-      //   (plays recorded before the AppCoordinator track-upsert fix landed)
-      // - Tracks with rows but missing `album_art_url`
-      // Filter to spotify track URIs only — local files / podcast URIs aren't
-      // resolvable via /v1/tracks and would fail the batch.
+      // Order by most-recent play DESC so HistoryView's visible rows
+      // get album art first; the ~49k-track backfill takes hours, but
+      // the recently-played stuff lands within seconds.
       try String.fetchAll(db, sql: """
-        SELECT DISTINCT p.track_uri
+        SELECT p.track_uri
         FROM plays p
         LEFT JOIN tracks t ON t.uri = p.track_uri
         WHERE p.track_uri LIKE 'spotify:track:%'
           AND (t.uri IS NULL OR t.album_art_url IS NULL)
+        GROUP BY p.track_uri
+        ORDER BY MAX(p.played_at) DESC
       """)
     }
-    let chunks = missing.chunked(into: batchSize)
-    let total = chunks.count
+    let total = missing.count
     let nominalDelay = UInt64(1_000_000_000.0 / rateLimitPerSec)
+    enricherLog.notice("\(total) missing tracks (oEmbed mode, ~\(Int(Double(total) / rateLimitPerSec))s ETA)")
 
-    for (idx, chunk) in chunks.enumerated() {
-      // Per-chunk retry with exponential backoff. Previously a single 429
-      // (or any other client error) would propagate up and terminate the
-      // entire backfill — losing all remaining ~999 batches' worth of
-      // progress. Now we retry the failing chunk a few times, then skip it
-      // if persistently broken (the next enrichMissing() run picks it back
-      // up because the WHERE clause re-finds anything still un-enriched).
-      var attempt = 0
-      var backoff: UInt64 = 2_000_000_000  // start at 2s
-      while true {
-        do {
-          let metas = try await client.tracks(uris: chunk)
-          try await dbq.write { db in
-            for m in metas {
-              try Track(
-                uri: m.uri,
-                name: m.name,
-                albumName: m.album.name,
-                albumArtUrl: m.album.images.first?.url,
-                durationMs: Int64(m.duration_ms),
-                artistsJson: try Self.encodeArtists(m.artists)
-              ).mergeUpsert(db)
-            }
-          }
-          break  // success
-        } catch {
-          attempt += 1
-          guard attempt < 5 else {
-            print(
-              "[MetadataEnricher] chunk \(idx + 1)/\(total) failed after \(attempt) attempts; "
-                + "skipping (will retry next run): \(error)")
-            break
-          }
-          try await Task.sleep(nanoseconds: backoff)
-          backoff = min(backoff * 2, 30_000_000_000)  // cap at 30s
+    var consecutiveFailures = 0
+
+    for (idx, uri) in missing.enumerated() {
+      do {
+        let oembed = try await client.trackOEmbed(uri: uri)
+        try await dbq.write { db in
+          // Use mergeUpsert so existing fields (artist URIs from imports,
+          // album_name from prior live-poll inserts) aren't clobbered.
+          // We only have title + thumbnail to contribute from oEmbed.
+          try Track(
+            uri: uri,
+            name: oembed.title,
+            albumName: nil,
+            albumArtUrl: oembed.thumbnail_url,
+            durationMs: nil,
+            artistsJson: nil
+          ).mergeUpsert(db)
+        }
+        consecutiveFailures = 0
+        if (idx + 1) % 25 == 0 || idx == 0 {
+          enricherLog.notice("track \(idx + 1)/\(total) ok")
+        }
+      } catch {
+        consecutiveFailures += 1
+        enricherLog.error("track \(idx + 1)/\(total) (\(uri, privacy: .public)) failed: \(String(describing: error), privacy: .public)")
+        // Bail if the endpoint is consistently failing — better to stop
+        // than burn through 49k requests at full speed against a wall.
+        // Next launch's enrichMissing() will re-attempt.
+        if consecutiveFailures >= 20 {
+          enricherLog.error("aborting backfill after \(consecutiveFailures) consecutive failures")
+          return
         }
       }
-      // Pace successful batches; cumulative ~total/rate seconds at the floor.
       try await Task.sleep(nanoseconds: nominalDelay)
     }
-  }
-
-  private static func encodeArtists(_ a: [TrackMeta.Artist]) throws -> String {
-    struct E: Encodable { let name: String; let uri: String }
-    let data = try JSONEncoder().encode(a.map { E(name: $0.name, uri: $0.uri) })
-    return String(data: data, encoding: .utf8) ?? "[]"
+    enricherLog.notice("enrichMissing finished: \(total) tracks attempted")
   }
 }
 

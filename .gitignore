@@ -22,3 +22,10 @@ Package.resolved
 
 # macOS
 .DS_Store
+
+# Coverage artifacts (xcodebuild leaves these in the repo root)
+*.profraw
+
+# Editor / agent local config (per-machine, not part of the project)
+.claude/
+.agents/

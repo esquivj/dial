@@ -108,8 +108,34 @@ extension SpotifyClient {
       .joined(separator: ",")
     let url = URL(string: "https://api.spotify.com/v1/tracks?ids=\(ids)")!
     let (data, _) = try await authedGET(url)
-    struct R: Decodable { let tracks: [TrackMeta] }
-    return try JSONDecoder().decode(R.self, from: data).tracks
+    struct R: Decodable { let tracks: [TrackMeta?] }
+    return try JSONDecoder().decode(R.self, from: data).tracks.compactMap { $0 }
+  }
+}
+
+// MARK: - oEmbed (public, no-auth fallback)
+
+/// Lightweight track metadata from Spotify's public oEmbed endpoint.
+/// `/v1/tracks` (Get Several Tracks) was restricted in Spotify's November 2024
+/// API changes — apps in Development Mode quota now get 403 Forbidden on it.
+/// `oembed` is unrestricted, requires no authentication, and returns just
+/// enough (title + thumbnail) for the History view to show album art.
+struct OEmbedTrack: Decodable {
+  let title: String?
+  let thumbnail_url: String?
+}
+
+extension SpotifyClient {
+  /// Fetch a track's title + album art via oEmbed. No auth required.
+  /// One request per track (no batching) — slower than `/v1/tracks` but
+  /// works under the post-2024 API restrictions.
+  func trackOEmbed(uri: String) async throws -> OEmbedTrack {
+    // The oEmbed endpoint accepts a Spotify URI in the `url` parameter,
+    // URL-encoded. `spotify:track:<id>` works as-is when colon-encoded.
+    let encoded = uri.replacingOccurrences(of: ":", with: "%3A")
+    let url = URL(string: "https://open.spotify.com/oembed?url=\(encoded)&format=json")!
+    let (data, _) = try await session.data(for: URLRequest(url: url))
+    return try JSONDecoder().decode(OEmbedTrack.self, from: data)
   }
 }
 

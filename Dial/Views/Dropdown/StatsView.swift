@@ -63,7 +63,7 @@ struct StatsView: View {
         .lineLimit(1)
         .minimumScaleFactor(0.6)
         .shadow(color: Dial.Palette.amber.opacity(0.6), radius: 10, x: 0, y: 0)
-      Text("across \(totals.plays) \(totals.plays == 1 ? "play" : "plays")")
+      Text("across \(totals.plays.formatted(.number)) \(totals.plays == 1 ? "play" : "plays")")
         .font(.system(size: 10))
         .foregroundStyle(Dial.Palette.muted)
     }
@@ -73,8 +73,8 @@ struct StatsView: View {
 
   private var secondaryStats: some View {
     HStack(spacing: 16) {
-      stat("TRACKS", "\(totals.uniqueTracks)")
-      stat("ARTISTS", "\(totals.uniqueArtists)")
+      stat("TRACKS", totals.uniqueTracks.formatted(.number))
+      stat("ARTISTS", totals.uniqueArtists.formatted(.number))
       stat("AVG", avgPerTrack())
       Spacer()
     }
@@ -132,7 +132,7 @@ struct StatsView: View {
                 .foregroundStyle(Dial.Palette.ivory)
                 .lineLimit(1)
               Spacer()
-              Text("\(row.count)")
+              Text(row.count.formatted(.number))
                 .font(Dial.Typography.monoTiny)
                 .foregroundStyle(Dial.Palette.amber)
             }
@@ -211,7 +211,10 @@ struct StatsView: View {
     let totalSec = ms / 1000
     let h = totalSec / 3600
     let m = (totalSec % 3600) / 60
-    if h > 0 { return "\(h)h \(m)m" }
+    // Comma-separated hours so 7,453h doesn't read as "7453h" — large
+    // play histories are common after Extended-History import and
+    // unseparated thousands look like a single chunk of digits.
+    if h > 0 { return "\(h.formatted(.number))h \(m)m" }
     if m > 0 { return "\(m)m" }
     return "—"
   }
@@ -260,7 +263,7 @@ private struct TopTrackRow: View {
         }
       }
       Spacer()
-      Text("\(row.count)")
+      Text(row.count.formatted(.number))
         .font(.custom("IBMPlexMono-Medium", size: 16))
         .foregroundStyle(Dial.Palette.amber)
     }

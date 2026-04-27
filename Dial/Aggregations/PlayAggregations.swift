@@ -86,17 +86,22 @@ extension PlayAggregations {
 
   /// Total all-time plays for an artist (live + import combined).
   /// Joins via `tracks.artists_json[0].uri`; tracks without artist metadata are skipped.
+  /// `json_valid` guard skips ~108 rows in the DB with malformed JSON
+  /// (unescaped backslashes from imported extended-history data) — without
+  /// it, hitting one of those rows mid-query throws "malformed JSON" and
+  /// the whole call returns 0, silently breaking the badge.
   func artistLifetimePlays(artistUri: String) throws -> Int {
     try dbq.read { db in
       try Int.fetchOne(db, sql: """
         SELECT COUNT(*) FROM plays p JOIN tracks t ON t.uri = p.track_uri
-        WHERE json_extract(t.artists_json, '$[0].uri') = ?
+        WHERE json_valid(t.artists_json) = 1
+          AND json_extract(t.artists_json, '$[0].uri') = ?
       """, arguments: [artistUri]) ?? 0
     }
   }
 
   /// Ranks artists by play count in the last 7d via `tracks.artists_json[0].uri`.
-  /// Ties broken by recent play.
+  /// Ties broken by recent play. `json_valid` guard same as `artistLifetimePlays`.
   func artistRank7d(artistUri: String) throws -> Int? {
     let cutoff = now() - 7 * 86_400
     return try dbq.read { db in
@@ -105,6 +110,7 @@ extension PlayAggregations {
           SELECT json_extract(t.artists_json, '$[0].uri') AS aurl, p.played_at
           FROM plays p JOIN tracks t ON t.uri = p.track_uri
           WHERE p.played_at > ? AND t.artists_json IS NOT NULL
+            AND json_valid(t.artists_json) = 1
         ),
         ranked AS (
           SELECT aurl, COUNT(*) AS c, MAX(played_at) AS last

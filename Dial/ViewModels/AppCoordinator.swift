@@ -2,6 +2,9 @@
 import Observation
 import Foundation
 import GRDB
+import os.log
+
+private let coordLog = Logger(subsystem: "com.dial.Dial", category: "AppCoordinator")
 
 @Observable
 final class AppCoordinator {
@@ -53,6 +56,7 @@ final class AppCoordinator {
   /// Starts the polling loop. Idempotent — second call is a no-op.
   /// Caller must ensure a Spotify token exists in the keychain before calling.
   func start() {
+    coordLog.notice("start() called, pollingStarted=\(self.pollingStarted)")
     guard !pollingStarted else { return }
     pollingStarted = true
     Task { [weak self] in
@@ -83,10 +87,12 @@ final class AppCoordinator {
     // metadata in `tracks`. Runs in the background, low priority — the
     // dropdown stays usable while it works through the queue.
     Task(priority: .background) {
+      coordLog.notice("enricher task starting")
       do {
         try await MetadataEnricher(dbq: dbq, client: client).enrichMissing()
+        coordLog.notice("enricher task finished cleanly")
       } catch {
-        print("[AppCoordinator] metadata backfill error: \(error)")
+        coordLog.error("metadata backfill error: \(String(describing: error), privacy: .public)")
       }
     }
   }
@@ -111,12 +117,17 @@ final class AppCoordinator {
       // Persist track metadata so the SQL joins in `artistRank7d`,
       // `artistLifetimePlays`, and the PetEngine variety detection work.
       // Without this, the `tracks` table stays empty for live-only sessions.
+      // Use JSONEncoder to avoid the hand-rolled escaping bug that lived
+      // here previously (only escaped name's backslashes/quotes, left
+      // the URI completely unescaped — symmetric to the Importer bug
+      // that produced 108 malformed rows in `tracks`).
       let artistsJson: String? = {
         guard let aUri = artistUri else { return nil }
-        let safeName = artistName
-          .replacingOccurrences(of: "\\", with: "\\\\")
-          .replacingOccurrences(of: "\"", with: "\\\"")
-        return "[{\"name\":\"\(safeName)\",\"uri\":\"\(aUri)\"}]"
+        struct Entry: Encodable { let name: String; let uri: String }
+        let entry = Entry(name: artistName, uri: aUri)
+        return (try? JSONEncoder().encode([entry])).flatMap {
+          String(data: $0, encoding: .utf8)
+        }
       }()
       try? TracksDAO(dbq: dbq).upsert(.init(
         uri: uri, name: name, albumName: albumName,
@@ -168,8 +179,9 @@ final class AppCoordinator {
       do {
         try engine.recordPlay(
           .init(playedAt: at, trackUri: uri, msPlayed: ms, source: "live"))
+        coordLog.notice("recorded live play: \(uri, privacy: .public) (\(ms)ms)")
       } catch {
-        print("[AppCoordinator] recordPlay failed for \(uri): \(error)")
+        coordLog.error("recordPlay failed for \(uri, privacy: .public): \(String(describing: error), privacy: .public)")
         return
       }
       aggCache.refresh(trackUri: uri, artistUri: nowPlaying.track?.artistUri)

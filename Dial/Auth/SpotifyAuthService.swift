@@ -1,6 +1,9 @@
 // Dial/Auth/SpotifyAuthService.swift
 import Foundation
 import AuthenticationServices
+import os.log
+
+private let authLog = Logger(subsystem: "com.dial.Dial", category: "Auth")
 
 /// Auth-related errors that callers can pattern-match on. `refreshFailed`
 /// is the "token is permanently bad — user needs to reconnect" signal:
@@ -92,10 +95,9 @@ final class SpotifyAuthService: NSObject {
   }
 
   func refresh() async throws -> SpotifyToken {
+    authLog.notice("refresh() called")
     guard let current = try tokenStore.load() else {
-      // No token at all — the user has signed out (or never signed in).
-      // Surface as `refreshFailed` so the polling loop terminates instead
-      // of looping on "no token" forever.
+      authLog.error("refresh: no token in store")
       throw SpotifyAuthError.refreshFailed
     }
     var req = URLRequest(url: URL(string: "https://accounts.spotify.com/api/token")!)
@@ -116,6 +118,7 @@ final class SpotifyAuthService: NSObject {
     // route to the connect-view path. 5xx is transient — let it propagate
     // as a generic error so polling backoff handles it.
     if (400...499).contains(http.statusCode) {
+      authLog.error("refresh: 4xx status \(http.statusCode), clearing token")
       try? tokenStore.clear()
       throw SpotifyAuthError.refreshFailed
     }
@@ -130,7 +133,13 @@ final class SpotifyAuthService: NSObject {
       refreshToken: r.refresh_token ?? current.refreshToken,
       expiresAt: Int64(Date().timeIntervalSince1970) + Int64(r.expires_in)
     )
-    try tokenStore.save(updated)
+    do {
+      try tokenStore.save(updated)
+      authLog.notice("refresh: saved new token, expires in \(r.expires_in)s")
+    } catch {
+      authLog.error("refresh: tokenStore.save FAILED: \(String(describing: error), privacy: .public)")
+      throw error
+    }
     return updated
   }
 }

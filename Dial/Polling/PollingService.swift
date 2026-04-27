@@ -1,4 +1,7 @@
 import Foundation
+import os.log
+
+private let pollingLog = Logger(subsystem: "com.dial.Dial", category: "PollingService")
 
 protocol PollingClient {
   func currentlyPlaying() async throws -> CurrentlyPlaying?
@@ -34,9 +37,17 @@ final class PollingService {
         // glitch (Wi-Fi blip, brief 5xx) doesn't permanently penalize
         // future polls.
         var consecutiveFailures = 0
+        pollingLog.notice("polling stream started, interval=\(self.interval)s")
         while !Task.isCancelled {
           do {
             let cp = try await client.currentlyPlaying()
+            // Per-poll outcome at debug level — quiet by default but
+            // available via `log show --debug` for live-play diagnosis.
+            if let item = cp?.item {
+              pollingLog.debug("poll: \(item.name, privacy: .public) at \(cp?.progress_ms ?? -1)ms (playing=\(cp?.is_playing ?? false))")
+            } else {
+              pollingLog.debug("poll: no playback")
+            }
             for e in interpret(cp) { continuation.yield(e) }
             consecutiveFailures = 0
           } catch {
@@ -56,7 +67,7 @@ final class PollingService {
             // freeze with the user thinking everything was fine.
             // Now: log + back off + keep trying.
             consecutiveFailures += 1
-            print("[PollingService] error #\(consecutiveFailures): \(error)")
+            pollingLog.error("error #\(consecutiveFailures): \(String(describing: error), privacy: .public)")
             // Backoff schedule (interval = 3s baseline):
             //   1st fail: 3s, 2nd: 6s, 3rd: 12s, 4th: 24s, 5th: 48s, then 60s cap.
             let multiplier = pow(2.0, Double(min(consecutiveFailures - 1, 6)))

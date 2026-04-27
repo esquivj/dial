@@ -6,6 +6,15 @@ import Foundation
 /// duplicate `(played_at, track_uri, ms_played)` rows are skipped.
 /// XP is awarded inline (capped at the companion threshold for imports);
 /// elder is locked off because it requires 30 days of live use.
+/// Synthetic artist record used for imported plays — Spotify's Extended
+/// Streaming History export gives us a name but no real artist URI, so
+/// we synthesize one from the name. Encoded via `JSONEncoder` (not
+/// hand-rolled string interpolation) so the output is always valid JSON.
+private struct ImportedArtist: Encodable {
+  let name: String
+  let uri: String
+}
+
 final class Importer {
   private let dbq: DatabaseQueue
   private let engine: PetEngine
@@ -21,12 +30,20 @@ final class Importer {
     try dbq.write { db in
       for r in rows {
         // Upsert minimal Track metadata so artistRank7d-style aggregations have something to join.
-        let artistsJson: String? = r.artistName.map {
-          let safeName = $0
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"")
-          let safeArtistId = $0.replacingOccurrences(of: " ", with: "_")
-          return "[{\"name\":\"\(safeName)\",\"uri\":\"artist:\(safeArtistId)\"}]"
+        // Use JSONEncoder for the artists JSON to avoid hand-rolled escape
+        // bugs — the previous implementation only escaped backslashes and
+        // quotes in `name`, leaving the synthetic URI ("artist:Name_With_X")
+        // completely unescaped. Any artist name containing characters that
+        // require JSON escaping (most commonly backslashes — e.g.
+        // "Axwell /\\ Ingrosso") would produce malformed JSON in the URI
+        // field, which then cascaded to crash every json_extract query
+        // that hit that row (Stats totals, topArtists, pet event detection).
+        let artistsJson: String? = r.artistName.flatMap { name in
+          let underscoredName = name.replacingOccurrences(of: " ", with: "_")
+          let entry = ImportedArtist(name: name, uri: "artist:\(underscoredName)")
+          return (try? JSONEncoder().encode([entry])).flatMap {
+            String(data: $0, encoding: .utf8)
+          }
         }
         try Track(uri: r.trackUri, name: r.trackName, albumName: r.albumName,
                   albumArtUrl: nil, durationMs: nil, artistsJson: artistsJson).mergeUpsert(db)

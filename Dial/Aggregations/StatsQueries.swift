@@ -25,12 +25,25 @@ struct StatsQueries {
   /// listen to" feed, not an archive browser. The full history stays in the
   /// DB (where Stats aggregates against it) — there's just no need to scroll
   /// through 193k rows in a popover that's 320pt wide.
+  ///
+  /// Defensive `json_valid` guard: some `artists_json` rows in the DB have
+  /// malformed JSON (e.g. unescaped backslashes from imported Spotify
+  /// extended-history rows like `"artist:Axwell_/\_Ingrosso"`). Without
+  /// this guard, hitting one of those rows during the join causes SQLite
+  /// to throw "malformed JSON" and the whole query fails — so the view
+  /// silently shows empty data via `try?`. Wrapping in CASE returns NULL
+  /// (handled downstream) instead of crashing the query.
   func recentPlays(limit: Int = 200) throws -> [HistoryRow] {
     try dbq.read { db in
       try Row.fetchAll(db, sql: """
         SELECT p.id, p.played_at, p.track_uri,
                COALESCE(t.name, '') AS name,
-               COALESCE(json_extract(t.artists_json, '$[0].name'), '') AS artist,
+               COALESCE(
+                 CASE WHEN json_valid(t.artists_json) = 1
+                      THEN json_extract(t.artists_json, '$[0].name')
+                      ELSE NULL END,
+                 ''
+               ) AS artist,
                t.album_name, t.album_art_url
         FROM plays p
         LEFT JOIN tracks t ON t.uri = p.track_uri
@@ -66,7 +79,9 @@ struct StatsQueries {
         SELECT p.track_uri AS uri,
                COALESCE(t.name, p.track_uri) AS name,
                t.album_art_url AS art_url,
-               json_extract(t.artists_json, '$[0].name') AS artist_name,
+               CASE WHEN json_valid(t.artists_json) = 1
+                    THEN json_extract(t.artists_json, '$[0].name')
+                    ELSE NULL END AS artist_name,
                COUNT(*) AS c
         FROM plays p
         LEFT JOIN tracks t ON t.uri = p.track_uri
@@ -82,20 +97,30 @@ struct StatsQueries {
     }
   }
 
+  /// Top artists by play count. Filters to rows with VALID `artists_json`
+  /// (some imported rows have malformed JSON that crashes json_extract).
+  ///
+  /// **Alias note**: the column alias is `artist_uri`, not `uri`. SQLite's
+  /// GROUP BY resolves `uri` to the unambiguous `tracks.uri` column (track
+  /// URI — unique per track) instead of our extracted-artist alias, which
+  /// produced one row per track (not per artist). Symptom in the UI:
+  /// the same artist (e.g. "Junior H") appearing multiple times in
+  /// top-artists with different play counts that don't sum to the artist's
+  /// actual total. Renaming the alias avoids the collision.
   func topArtists(limit: Int = 10) throws -> [TopRow] {
     try dbq.read { db in
       try Row.fetchAll(db, sql: """
         SELECT
-          json_extract(t.artists_json, '$[0].uri')  AS uri,
+          json_extract(t.artists_json, '$[0].uri')  AS artist_uri,
           json_extract(t.artists_json, '$[0].name') AS name,
           COUNT(*) AS c
         FROM plays p JOIN tracks t ON t.uri = p.track_uri
-        WHERE t.artists_json IS NOT NULL
-        GROUP BY uri
+        WHERE t.artists_json IS NOT NULL AND json_valid(t.artists_json) = 1
+        GROUP BY artist_uri
         ORDER BY c DESC, MAX(p.played_at) DESC
         LIMIT ?
       """, arguments: [limit]).map { row in
-        TopRow(uri: row["uri"] ?? "", name: row["name"] ?? "Unknown", count: row["c"],
+        TopRow(uri: row["artist_uri"] ?? "", name: row["name"] ?? "Unknown", count: row["c"],
                artUrl: nil, subtitle: nil)
       }
     }
@@ -122,10 +147,17 @@ struct StatsQueries {
                COUNT(DISTINCT track_uri) AS uniq_tracks
         FROM plays
       """)
-      // Artists live in a different table, so this stays as a separate query.
+      // Artists live in a different table, so this stays as a separate
+      // query. Filter to rows with VALID `artists_json` — some imported
+      // rows have malformed JSON (unescaped backslashes in URIs) which
+      // makes `json_extract` throw "malformed JSON" mid-query. Before
+      // the `json_valid` guard, ONE bad row would crash the whole
+      // `totals()` call and the view's `try?` would silently fall back
+      // to all zeros — making Stats look completely broken to the user.
       let artists = try Int.fetchOne(db, sql: """
         SELECT COUNT(DISTINCT json_extract(artists_json, '$[0].uri'))
-        FROM tracks WHERE artists_json IS NOT NULL
+        FROM tracks
+        WHERE artists_json IS NOT NULL AND json_valid(artists_json) = 1
       """) ?? 0
       return Totals(
         plays: row?["plays"] ?? 0,
