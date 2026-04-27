@@ -6,6 +6,10 @@ struct StatusRail: View {
   @Binding var showingGlossary: Bool
   /// Tapping the pet sprite opens the dedicated PetView screen.
   let onOpenPet: () -> Void
+  /// History + Stats are now reachable directly from the rail rather
+  /// than only via the menubar right-click — that was undiscoverable.
+  let onOpenHistory: () -> Void
+  let onOpenStats: () -> Void
 
   /// Flips true for ~700ms when the URI changes, so the indicator dot
   /// flashes magenta (event tone) before settling back to cyan (steady).
@@ -67,6 +71,11 @@ struct StatusRail: View {
           .tracking(1.4)
           .foregroundStyle(Dial.Palette.amber)
         Spacer()
+        // Inline nav icons — surface History / Stats here so they're 1-tap
+        // reachable instead of requiring the (undiscoverable) menubar
+        // right-click. Pet stays accessible via the sprite tap on the left.
+        navIcon(systemName: "clock.arrow.circlepath", help: "Open History", action: onOpenHistory)
+        navIcon(systemName: "chart.bar", help: "Open Stats", action: onOpenStats)
         Button {
           showingGlossary.toggle()
         } label: {
@@ -108,6 +117,23 @@ struct StatusRail: View {
         await MainActor.run { trackPulse = false }
       }
     }
+  }
+
+  /// Compact icon-only nav button. Same 28×28 hit slot as the info button
+  /// for consistent thumbing.
+  @ViewBuilder
+  private func navIcon(
+    systemName: String, help: String, action: @escaping () -> Void
+  ) -> some View {
+    Button(action: action) {
+      Image(systemName: systemName)
+        .font(.system(size: 11, weight: .regular))
+        .foregroundStyle(Dial.Palette.muted)
+        .frame(width: 24, height: 24)
+        .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .help(help)
   }
 
   /// Realtime-interpolated track progress.

@@ -54,7 +54,9 @@ struct DropdownView: View {
           vm: coord.menubar,
           pet: coord.pet,
           showingGlossary: $showingGlossary,
-          onOpenPet: { withAnimation(.easeInOut(duration: 0.18)) { coord.dropdownScreen = .pet } }
+          onOpenPet: { withAnimation(.easeInOut(duration: 0.18)) { coord.dropdownScreen = .pet } },
+          onOpenHistory: { withAnimation(.easeInOut(duration: 0.18)) { coord.dropdownScreen = .history } },
+          onOpenStats: { withAnimation(.easeInOut(duration: 0.18)) { coord.dropdownScreen = .stats } }
         )
       }
 
@@ -76,7 +78,7 @@ struct DropdownView: View {
         // additions made the previous combined layout overflow 320pt and
         // wrap "HISTORY" to two lines).
         ControlsBar(menubar: coord.menubar, client: coord.client)
-          .modifier(StaggeredAppear(delay: 0.25))
+          .modifier(StaggeredAppear(delay: 0.20))
       }
     }
   }
@@ -121,14 +123,13 @@ struct DropdownView: View {
         .modifier(StaggeredAppear(delay: 0.05))
       BadgeRow(kind: activeBadge, detail: badgeDetail)
         .modifier(StaggeredAppear(delay: 0.10))
-      if let artist = coord.nowPlaying.track?.artistName {
-        ArtistContext(
-          artist: artist,
-          rank7d: coord.aggCache.artistRank7d,
-          lifetime: coord.aggCache.artistLifetimePlays
-        )
-        .modifier(StaggeredAppear(delay: 0.15))
-      }
+      // ArtistContext (artist rank + lifetime plays) used to live here as a
+      // 4th data row, but stacking three numeric rows (Readouts + Badge +
+      // Artist) before the visualizer was the AI-slop "metric grid" tell —
+      // every individual row was well-designed but the stack read as
+      // dashboard-template. Artist data is still surfaced in StatsView for
+      // anyone who wants the breakdown.
+      //
       // Replaces the old SessionTimeline ("plays in last 60 min" bars).
       // That row encoded recency through three redundant channels (width,
       // height, opacity) and didn't represent the song. The visualizer
@@ -144,7 +145,7 @@ struct DropdownView: View {
       // burning CPU on FFT work nobody is observing. Stream stays alive
       // either way (permission stability > tiny capture cost).
       PixelGridVisualizer(engine: coord.visualizer)
-        .modifier(StaggeredAppear(delay: 0.20))
+        .modifier(StaggeredAppear(delay: 0.15))
         .task { await coord.visualizer.start() }
         .onAppear { coord.visualizer.attach() }
         .onDisappear { coord.visualizer.detach() }
@@ -167,7 +168,9 @@ struct DropdownView: View {
         vm: coord.menubar,
         pet: coord.pet,
         showingGlossary: $showingGlossary,
-        onOpenPet: { withAnimation(.easeInOut(duration: 0.18)) { coord.dropdownScreen = .pet } }
+        onOpenPet: { withAnimation(.easeInOut(duration: 0.18)) { coord.dropdownScreen = .pet } },
+        onOpenHistory: { withAnimation(.easeInOut(duration: 0.18)) { coord.dropdownScreen = .history } },
+        onOpenStats: { withAnimation(.easeInOut(duration: 0.18)) { coord.dropdownScreen = .stats } }
       )
 
       if showingGlossary {

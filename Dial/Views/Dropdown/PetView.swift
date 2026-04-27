@@ -90,9 +90,9 @@ struct PetView: View {
   private var xpSection: some View {
     VStack(alignment: .leading, spacing: 6) {
       HStack(alignment: .firstTextBaseline) {
+        // Body-content label, mixed-case sansCaption (was mono-caps).
         Text("XP")
-          .font(Dial.Typography.monoLabel)
-          .tracking(1.4)
+          .font(Dial.Typography.sansCaption)
           .foregroundStyle(Dial.Palette.muted)
         Spacer()
         Text("\(formatXP(pet.xp)) / \(formatXP(nextThreshold))")
@@ -114,7 +114,10 @@ struct PetView: View {
         Capsule()
           .fill(Dial.Palette.amber)
           .frame(width: max(0, xpProgress * proxy.size.width), height: 5)
-          .shadow(color: Dial.Palette.amber.opacity(0.7), radius: 4, x: 0, y: 0)
+          // 0.35 (was 0.70) — same glow-discipline demote: the bar is
+          // steady-state state, not an event. Heavy glow was reserved
+          // for transients elsewhere.
+          .shadow(color: Dial.Palette.amber.opacity(0.35), radius: 4, x: 0, y: 0)
       }
     }
     .frame(height: 5)
@@ -124,20 +127,23 @@ struct PetView: View {
 
   private var statsList: some View {
     VStack(spacing: 10) {
-      statRow("STREAK", value: "\(pet.streakDays) \(pet.streakDays == 1 ? "DAY" : "DAYS")")
-      statRow("HATCHED", value: hatchedLabel)
+      statRow("Streak", value: "\(pet.streakDays) \(pet.streakDays == 1 ? "day" : "days")")
+      statRow("Hatched", value: hatchedLabel)
       if !isElder, let until = daysUntilElder {
-        statRow("DAYS UNTIL ELDER", value: "\(until) \(until == 1 ? "DAY" : "DAYS")")
+        statRow("Days until elder", value: "\(until) \(until == 1 ? "day" : "days")")
       }
-      statRow("LIFETIME PLAYS", value: lifetimePlays.formatted(.number.notation(.compactName)))
+      statRow("Lifetime plays", value: lifetimePlays.formatted(.number.notation(.compactName)))
     }
   }
 
+  /// Mixed-case sansCaption labels (was mono-caps) — these are body content
+  /// inside a screen, not device chrome. The 1.4-tracked mono-caps treatment
+  /// is reserved for actual chrome (PET title, NOW PLAYING, SPECTRUM, etc.)
+  /// so it doesn't get diluted by appearing on every label everywhere.
   private func statRow(_ label: String, value: String) -> some View {
     HStack {
       Text(label)
-        .font(Dial.Typography.monoLabel)
-        .tracking(1.4)
+        .font(Dial.Typography.sansCaption)
         .foregroundStyle(Dial.Palette.muted)
       Spacer()
       Text(value)

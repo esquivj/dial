@@ -25,7 +25,9 @@ struct TrackHero: View {
       .clipShape(RoundedRectangle(cornerRadius: 6))
       // Y2K crystal: subtle cyan halo around the album art instead of
       // a warm drop shadow. Reads as "lit-from-within" against the dark.
-      .shadow(color: Dial.Palette.amber.opacity(0.18), radius: 10, x: 0, y: 0)
+      // 0.10 (was 0.18) — demoted as part of the glow-discipline pass;
+      // the album art is steady-state, the halo only needs to whisper.
+      .shadow(color: Dial.Palette.amber.opacity(0.10), radius: 10, x: 0, y: 0)
 
       VStack(alignment: .leading, spacing: 2) {
         // Marquee on the track name — Y2K-cliché now-playing scroll for

@@ -47,7 +47,11 @@ private struct Readout: View {
           .monospacedDigit()           // tabular nums — prevents jitter when 9 → 10
           .contentTransition(.numericText())
           .foregroundStyle(Dial.Palette.amber)
-          .shadow(color: Dial.Palette.amber.opacity(0.55), radius: 6, x: 0, y: 0)
+          // 0.20 (was 0.55) — demoted from "blazing" to "lit." The numerals
+          // are steady-state data; the heavy glow was contributing to the
+          // overall cyan ambient noise. Bright glow is now reserved for
+          // actual events (track-pulse, peak markers, hover states).
+          .shadow(color: Dial.Palette.amber.opacity(0.20), radius: 6, x: 0, y: 0)
         Text(delta)
           .font(Dial.Typography.monoLabel)
           .foregroundStyle(deltaColor.opacity(0.9))
