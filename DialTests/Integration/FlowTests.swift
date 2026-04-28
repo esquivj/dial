@@ -53,6 +53,7 @@ final class FlowTests: XCTestCase {
 
     let agg = PlayAggregations(dbq: dbq, now: { 1_700_000_000 })
     XCTAssertEqual(try agg.plays30d(trackUri: "spotify:track:NEW"), 1)
+    XCTAssertEqual(try agg.playsYTD(trackUri: "spotify:track:NEW"), 1)
     XCTAssertTrue(try agg.firstListen(trackUri: "spotify:track:NEW"))
 
     let state = try PetStateDAO(dbq: dbq).get()

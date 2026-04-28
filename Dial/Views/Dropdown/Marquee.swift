@@ -11,7 +11,7 @@ import SwiftUI
 struct Marquee: View {
   let text: String
   let font: Font
-  var foreground: Color = Dial.Palette.ivory
+  var foreground: Color = Dial.Palette.textPrimary
   /// Pixels per second of horizontal travel. 30 reads as "deliberate"
   /// — fast enough to be lively, slow enough to be readable.
   var speed: Double = 30
@@ -25,6 +25,10 @@ struct Marquee: View {
     GeometryReader { proxy in
       let containerWidth = proxy.size.width
       let needsScroll = textWidth > containerWidth && !reduceMotion
+      // Keep the repeated copy fully off-screen until the first copy has
+      // left. A small fixed gap let fragments of the next copy appear beside
+      // the current title, which read like broken duplicate text in the HUD.
+      let effectiveGap = max(gap, containerWidth)
 
       Group {
         if needsScroll {
@@ -35,11 +39,11 @@ struct Marquee: View {
           // state mutations.
           TimelineView(.animation) { context in
             let elapsed = context.date.timeIntervalSinceReferenceDate
-            let cycleLen = (Double(textWidth) + Double(gap)) / speed
+            let cycleLen = (Double(textWidth) + Double(effectiveGap)) / speed
             let phase = elapsed.truncatingRemainder(dividingBy: cycleLen) / cycleLen
-            let offsetX = -CGFloat(phase) * (textWidth + gap)
+            let offsetX = -CGFloat(phase) * (textWidth + effectiveGap)
 
-            HStack(spacing: gap) {
+            HStack(spacing: effectiveGap) {
               Text(text).font(font).foregroundStyle(foreground).fixedSize()
               Text(text).font(font).foregroundStyle(foreground).fixedSize()
             }

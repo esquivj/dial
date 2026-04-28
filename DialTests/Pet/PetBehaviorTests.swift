@@ -25,12 +25,17 @@ final class PetBehaviorTests: XCTestCase {
     let r = PetBehaviorResolver.resolve(ctx(
       playing: true, firstListen: true, rediscovered: true, eating: true,
       leveledUp: true, bpm: 100))
-    XCTAssertEqual(r, .levelUp)
+    XCTAssertEqual(r, .expressed(.levelUp, motion: .beatSync(bpm: 100)))
   }
 
   func test_firstListenOverRediscovered() {
     let r = PetBehaviorResolver.resolve(ctx(playing: true, firstListen: true, rediscovered: true))
-    XCTAssertEqual(r, .firstListen)
+    XCTAssertEqual(r, .expressed(.firstListen, motion: .walk))
+  }
+
+  func test_badgeExpressionKeepsBeatMotionWhenPlayingWithBPM() {
+    let r = PetBehaviorResolver.resolve(ctx(playing: true, rediscovered: true, bpm: 126))
+    XCTAssertEqual(r, .expressed(.rediscovered, motion: .beatSync(bpm: 126)))
   }
 
   func test_eatingBeatsPaused() {
@@ -64,5 +69,28 @@ final class PetBehaviorTests: XCTestCase {
   func test_idleWhenNothingPlayingAndNotDormant() {
     let r = PetBehaviorResolver.resolve(ctx())
     XCTAssertEqual(r, .idle)
+  }
+
+  func test_trickBehaviorsUseDedicatedSpriteLoops() {
+    XCTAssertEqual(
+      BulldogSprite.assets(for: .companion, behavior: .sparkStep),
+      ["companion-spark-step-a", "companion-spark-step-b"])
+    XCTAssertEqual(
+      BulldogSprite.assets(for: .companion, behavior: .memorySpin),
+      ["companion-memory-spin-a", "companion-memory-spin-b"])
+    XCTAssertEqual(
+      BulldogSprite.assets(for: .companion, behavior: .beatBounce),
+      ["companion-beat-bounce-a", "companion-beat-bounce-b"])
+    XCTAssertNotNil(BulldogSprite.frameInterval(for: .sparkStep))
+    XCTAssertNotNil(BulldogSprite.frameInterval(for: .memorySpin))
+    XCTAssertNotNil(BulldogSprite.frameInterval(for: .beatBounce))
+  }
+
+  func test_expressedBehaviorsUseMotionSpriteLoops() {
+    XCTAssertEqual(
+      BulldogSprite.assets(for: .companion, behavior: .expressed(.rediscovered, motion: .walk)),
+      ["companion-walk-a", "companion-walk-b"])
+    XCTAssertNotNil(BulldogSprite.frameInterval(for: .expressed(.firstListen, motion: .walk)))
+    XCTAssertNil(BulldogSprite.frameInterval(for: .expressed(.rediscovered, motion: .beatSync(bpm: 118))))
   }
 }

@@ -22,7 +22,7 @@ import AppKit
 /// is set true on load, which makes SwiftUI treat the image's alpha as a
 /// mask and fill the opaque pixels with the current `foregroundStyle`.
 /// This is the same trick SF Symbols use internally; once the flag is on,
-/// `.foregroundStyle(Dial.Palette.amber)` just works.
+/// `.foregroundStyle(Dial.Palette.accent)` just works.
 ///
 /// **Crispness.** `.interpolation(.none)` + `.resizable()` so the 256-px
 /// source PNGs downscale to 14–16pt render sizes without blurring. Pixel
@@ -68,4 +68,33 @@ struct DialIcon: View {
   /// keeping them around avoids the file-read + alpha-mask pass on every
   /// dropdown re-open.
   private static var cache: [String: NSImage] = [:]
+}
+
+/// Heavier pixel icon rendering for tiny controls. The source PNGs are
+/// intentionally crisp and thin; at 14-16pt in the transport bar they need
+/// one extra pixel of visual weight to survive the dark glass surface.
+struct DialThickIcon: View {
+  let name: String
+  var size: CGFloat = 14
+  var weight: CGFloat = 0.5
+
+  init(_ name: String, size: CGFloat = 14, weight: CGFloat = 0.5) {
+    self.name = name
+    self.size = size
+    self.weight = weight
+  }
+
+  var body: some View {
+    ZStack {
+      DialIcon(name)
+        .frame(width: size, height: size)
+      DialIcon(name)
+        .frame(width: size, height: size)
+        .offset(x: weight, y: 0)
+      DialIcon(name)
+        .frame(width: size, height: size)
+        .offset(x: 0, y: weight)
+    }
+    .frame(width: size, height: size)
+  }
 }

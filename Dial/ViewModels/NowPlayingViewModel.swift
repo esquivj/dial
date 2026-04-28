@@ -12,7 +12,7 @@ final class NowPlayingViewModel {
     var artUrl: String?
   }
   var track: Track?
-  var plays30d: Int = 0
+  var playsYTD: Int = 0
   let agg: AggregationsCache
   init(agg: AggregationsCache) { self.agg = agg }
 }

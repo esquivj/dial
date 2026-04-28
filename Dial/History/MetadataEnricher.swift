@@ -37,14 +37,16 @@ final class MetadataEnricher {
   /// actually works for the user's app under current restrictions.
   ///
   /// `batchSize` is unused (kept in the signature for ABI compatibility
-  /// with any callers that pass it explicitly).
-  func enrichMissing(batchSize: Int = 50, rateLimitPerSec: Double = 5) async throws {
+  /// with any callers that pass it explicitly). `limit` lets launch-time
+  /// warmups enrich recent tracks without turning every app start into a
+  /// multi-hour backfill job.
+  func enrichMissing(batchSize: Int = 50, rateLimitPerSec: Double = 5, limit: Int? = nil) async throws {
     enricherLog.notice("enrichMissing started")
     let missing: [String] = try await dbq.read { db in
       // Order by most-recent play DESC so HistoryView's visible rows
       // get album art first; the ~49k-track backfill takes hours, but
       // the recently-played stuff lands within seconds.
-      try String.fetchAll(db, sql: """
+      var sql = """
         SELECT p.track_uri
         FROM plays p
         LEFT JOIN tracks t ON t.uri = p.track_uri
@@ -52,11 +54,17 @@ final class MetadataEnricher {
           AND (t.uri IS NULL OR t.album_art_url IS NULL)
         GROUP BY p.track_uri
         ORDER BY MAX(p.played_at) DESC
-      """)
+      """
+      if let limit {
+        sql += "\nLIMIT \(max(0, limit))"
+      }
+      return try String.fetchAll(db, sql: sql)
     }
     let total = missing.count
-    let nominalDelay = UInt64(1_000_000_000.0 / rateLimitPerSec)
-    enricherLog.notice("\(total) missing tracks (oEmbed mode, ~\(Int(Double(total) / rateLimitPerSec))s ETA)")
+    let effectiveRateLimit = max(0.1, rateLimitPerSec)
+    let nominalDelay = UInt64(1_000_000_000.0 / effectiveRateLimit)
+    let limitLabel = limit.map { ", capped at \($0)" } ?? ""
+    enricherLog.notice("\(total) missing tracks\(limitLabel) (oEmbed mode, ~\(Int(Double(total) / effectiveRateLimit))s ETA)")
 
     var consecutiveFailures = 0
 
@@ -82,7 +90,7 @@ final class MetadataEnricher {
         }
       } catch {
         consecutiveFailures += 1
-        enricherLog.error("track \(idx + 1)/\(total) (\(uri, privacy: .public)) failed: \(String(describing: error), privacy: .public)")
+        enricherLog.warning("track \(idx + 1)/\(total) (\(uri, privacy: .public)) skipped: \(String(describing: error), privacy: .public)")
         // Bail if the endpoint is consistently failing — better to stop
         // than burn through 49k requests at full speed against a wall.
         // Next launch's enrichMissing() will re-attempt.

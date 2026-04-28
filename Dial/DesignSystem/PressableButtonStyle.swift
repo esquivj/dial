@@ -21,12 +21,28 @@ struct PressableButtonStyle: ButtonStyle {
   /// Per-press opacity dim. Subtle 0.85 reads as "pressed" without
   /// fighting the underlying color.
   var pressedOpacity: Double = 0.85
+  var pressedOffsetY: CGFloat = 0.5
 
   func makeBody(configuration: Configuration) -> some View {
-    configuration.label
-      .scaleEffect(configuration.isPressed ? 0.96 : 1.0)
-      .opacity(configuration.isPressed ? pressedOpacity : 1.0)
-      .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+    PressableBody(
+      configuration: configuration,
+      pressedOpacity: pressedOpacity,
+      pressedOffsetY: pressedOffsetY)
+  }
+
+  private struct PressableBody: View {
+    let configuration: ButtonStyle.Configuration
+    let pressedOpacity: Double
+    let pressedOffsetY: CGFloat
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+      configuration.label
+        .scaleEffect(configuration.isPressed && !reduceMotion ? 0.96 : 1.0)
+        .offset(y: configuration.isPressed && !reduceMotion ? pressedOffsetY : 0)
+        .opacity(configuration.isPressed ? pressedOpacity : 1.0)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: configuration.isPressed)
+    }
   }
 }
 

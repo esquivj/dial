@@ -4,31 +4,48 @@ import Foundation
 
 /// Real-input FFT wrapper around vDSP, plus log-spaced frequency binning.
 ///
-/// We're not building a spectrum analyser — we're driving a 32-band visualizer
+/// We're not building a spectrum analyser — we're driving a compact visualizer
 /// where each band has to "feel" representative of a frequency range you can
 /// hear. That means two things:
-///   1. Hann window the input so transient leakage doesn't smear the bins.
-///   2. Bin linearly-spaced FFT output into log-spaced bands, because the ear
-///      hears frequency logarithmically. Linear bins would make the top half
-///      of the visualizer almost always dead — there's just not much music
-///      energy above 4kHz.
+///   1. Window the input so transient leakage doesn't smear the bins.
+///   2. Bin linearly-spaced FFT output into perceptual bands, because linear
+///      bins would make the top half of the visualizer almost always dead.
 final class FFTProcessor {
+  enum WindowKind {
+    case hann
+    case blackman
+  }
+
+  enum BandScale {
+    case log
+    case mel
+  }
+
+  enum BandAggregation {
+    case peak
+    case power
+  }
+
   let fftSize: Int
+  let windowKind: WindowKind
   private let log2N: vDSP_Length
   private let setup: FFTSetup
   private let window: [Float]
+  private let coherentGain: Float
 
-  init(fftSize: Int = 1024) {
+  init(fftSize: Int = 1024, windowKind: WindowKind = .hann) {
+    precondition(fftSize > 0 && (fftSize & (fftSize - 1)) == 0, "FFT size must be a positive power of two")
     self.fftSize = fftSize
+    self.windowKind = windowKind
     self.log2N = vDSP_Length(Int(log2(Float(fftSize))))
     guard let s = vDSP_create_fftsetup(log2N, FFTRadix(kFFTRadix2)) else {
       fatalError("Failed to create vDSP FFT setup for size \(fftSize)")
     }
     self.setup = s
 
-    var w = [Float](repeating: 0, count: fftSize)
-    vDSP_hann_window(&w, vDSP_Length(fftSize), Int32(vDSP_HANN_NORM))
+    let w = Self.window(kind: windowKind, count: fftSize)
     self.window = w
+    self.coherentGain = max(0.0001, w.reduce(0, +) / Float(fftSize))
   }
 
   deinit {
@@ -41,7 +58,7 @@ final class FFTProcessor {
     guard frameCount >= fftSize else { return [] }
     let halfSize = fftSize / 2
 
-    // 1. Apply Hann window.
+    // 1. Apply the configured analysis window.
     var windowed = [Float](repeating: 0, count: fftSize)
     vDSP_vmul(samples, 1, window, 1, &windowed, 1, vDSP_Length(fftSize))
 
@@ -80,65 +97,139 @@ final class FFTProcessor {
     from magnitudes: [Float],
     count bandCount: Int,
     sampleRate: Float = 48_000,
-    // 100Hz floor (was 60Hz) — kick-drum fundamentals and sub-bass rumble
-    // dominated the leftmost bands and made the bottom of the grid feel
-    // permanently maxed out. 100Hz cuts the rumble and spreads the 32
-    // bands across more useful musical territory (bass guitar second
-    // harmonics → cymbals).
+    scale: BandScale = .log,
+    aggregation: BandAggregation = .peak,
     minFreq: Float = 100,
     maxFreq: Float = 16_000,
-    floorDb: Float = -60
+    floorDb: Float = -60,
+    ceilingDb: Float = 0
   ) -> [Float] {
     guard !magnitudes.isEmpty else {
       return [Float](repeating: 0, count: bandCount)
     }
     let nyquist = sampleRate / 2
     let binWidth = nyquist / Float(magnitudes.count)
-    let logMin = log10(minFreq)
-    let logMax = log10(maxFreq)
-    let logRange = logMax - logMin
+    let edges = frequencyEdges(count: bandCount, minFreq: minFreq, maxFreq: maxFreq, scale: scale)
 
     // Normalization factor for vDSP_fft_zrip output → amplitude-correct dBFS:
     //
     //   * vDSP's forward FFT does no 1/N scaling; raw magnitudes scale with N/2,
     //     so a unit sine through a rectangular window comes out at magnitude N/2.
-    //   * The Hann window has coherent gain 0.5 — every sample is multiplied by
-    //     a value averaging 0.5 — so windowed magnitudes are halved again. The
-    //     standard amplitude-correction factor for Hann is 2.
-    //
-    // Combined: `magnitude * 2 / (N/2)` recovers the original amplitude, where
-    // `magnitudes.count == N/2`. After this, 0 dBFS = full-scale sine wave.
+    //   * Window functions reduce coherent amplitude; divide by measured
+    //     coherent gain so Hann and Blackman land on the same dB scale.
     //
     // Without this normalization, raw magnitudes for typical music sit around
     // +30 to +50 dB into the formula below, which pegs every band to 1.0 —
     // the "all bars at full height, identical across columns" symptom.
-    let ampCorrection: Float = 2.0 / Float(magnitudes.count)
+    let ampCorrection: Float = 1.0 / (Float(magnitudes.count) * coherentGain)
+    let dbSpan = max(1, ceilingDb - floorDb)
 
     var out = [Float](repeating: 0, count: bandCount)
     for i in 0..<bandCount {
-      let freqLow = pow(10, logMin + Float(i) / Float(bandCount) * logRange)
-      let freqHigh = pow(10, logMin + Float(i + 1) / Float(bandCount) * logRange)
+      let amp = bandAmplitude(
+        magnitudes: magnitudes,
+        bandIndex: i,
+        edges: edges,
+        binWidth: binWidth,
+        aggregation: aggregation
+      ) * ampCorrection
+
+      // dB scale → 0..1, with configurable floor/ceiling like Web Audio's
+      // minDecibels/maxDecibels analyzer controls.
+      let db = 20 * log10(max(amp, 1e-6))
+      let normalized = (db - floorDb) / dbSpan
+      out[i] = max(0, min(1, normalized))
+    }
+    return out
+  }
+
+  private static func window(kind: WindowKind, count: Int) -> [Float] {
+    var result = [Float](repeating: 0, count: count)
+    switch kind {
+    case .hann:
+      vDSP_hann_window(&result, vDSP_Length(count), Int32(vDSP_HANN_NORM))
+    case .blackman:
+      for n in 0..<count {
+        let phase = 2 * Double.pi * Double(n) / Double(count)
+        result[n] = Float(0.42 - 0.5 * cos(phase) + 0.08 * cos(2 * phase))
+      }
+    }
+    return result
+  }
+
+  private func frequencyEdges(
+    count bandCount: Int,
+    minFreq: Float,
+    maxFreq: Float,
+    scale: BandScale
+  ) -> [Float] {
+    let edgeCount = bandCount + (scale == .mel ? 2 : 1)
+    return (0..<edgeCount).map { index in
+      let t = Float(index) / Float(edgeCount - 1)
+      switch scale {
+      case .log:
+        let logMin = log10(minFreq)
+        let logRange = log10(maxFreq) - logMin
+        return pow(10, logMin + t * logRange)
+      case .mel:
+        let melMin = hertzToMel(minFreq)
+        let melRange = hertzToMel(maxFreq) - melMin
+        return melToHertz(melMin + t * melRange)
+      }
+    }
+  }
+
+  private func bandAmplitude(
+    magnitudes: [Float],
+    bandIndex: Int,
+    edges: [Float],
+    binWidth: Float,
+    aggregation: BandAggregation
+  ) -> Float {
+    switch aggregation {
+    case .peak:
+      let freqLow = edges[bandIndex]
+      let freqHigh = edges[bandIndex + 1]
       let binLow = max(0, Int(freqLow / binWidth))
       let binHigh = min(magnitudes.count, max(binLow + 1, Int(freqHigh / binWidth)))
-
-      // MAX (was AVERAGE). The grid's bands are log-spaced over linear FFT
-      // bins, so the top-end bands cover many more bins than the bottom-end
-      // ones (band 31 ≈ 51 bins, band 0 ≈ 1 bin). Real music in the high
-      // bands is mostly silence with sharp peaks (cymbal sheen, sibilance);
-      // averaging 50 quiet neighbors against 1 hot bin drowned the peaks
-      // by ~30dB. MAX captures the loudest bin in the band — for the
-      // narrow lower bands max == avg, so the fix only lifts the highs.
       var peak: Float = 0
       for j in binLow..<binHigh {
         if magnitudes[j] > peak { peak = magnitudes[j] }
       }
-      let amp = peak * ampCorrection
+      return peak
 
-      // dB scale → 0..1, with `floorDb` as silence and 0dB as full scale.
-      let db = 20 * log10(max(amp, 1e-6))
-      let normalized = (db - floorDb) / -floorDb
-      out[i] = max(0, min(1, normalized))
+    case .power:
+      let left = edges[bandIndex]
+      let center = edges[bandIndex + 1]
+      let right = edges[bandIndex + 2]
+      let binLow = max(0, Int(left / binWidth))
+      let binHigh = min(magnitudes.count, max(binLow + 1, Int(ceil(right / binWidth))))
+      var weightedPower: Float = 0
+      var weightSum: Float = 0
+
+      for j in binLow..<binHigh {
+        let freq = Float(j) * binWidth
+        let weight: Float
+        if freq <= center {
+          weight = (freq - left) / max(1, center - left)
+        } else {
+          weight = (right - freq) / max(1, right - center)
+        }
+        let clamped = max(0, min(1, weight))
+        weightedPower += magnitudes[j] * magnitudes[j] * clamped
+        weightSum += clamped
+      }
+
+      if weightSum <= 0 { return 0 }
+      return sqrt(weightedPower / weightSum)
     }
-    return out
+  }
+
+  private func hertzToMel(_ hz: Float) -> Float {
+    2595 * log10(1 + hz / 700)
+  }
+
+  private func melToHertz(_ mel: Float) -> Float {
+    700 * (pow(10, mel / 2595) - 1)
   }
 }

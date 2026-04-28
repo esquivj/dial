@@ -70,4 +70,108 @@ final class SpotifyClientTests: XCTestCase {
     let tracks = try await client.tracks(uris: ["spotify:track:A"])
     XCTAssertEqual(tracks.first?.uri, "spotify:track:A")
   }
+
+  func test_libraryContains_usesCurrentLibraryEndpoint() async throws {
+    StubURLProtocol.handler = { req in
+      XCTAssertEqual(req.httpMethod, "GET")
+      XCTAssertEqual(req.url?.path, "/v1/me/library/contains")
+      XCTAssertEqual(URLComponents(url: req.url!, resolvingAgainstBaseURL: false)?
+        .queryItems?
+        .first(where: { $0.name == "uris" })?
+        .value, "spotify:track:A")
+      XCTAssertTrue(req.url!.absoluteString.contains("uris=spotify%3Atrack%3AA"))
+      let r = HTTPURLResponse(url: req.url!, statusCode: 200, httpVersion: nil, headerFields: [:])!
+      return (r, #"[true]"#.data(using: .utf8)!)
+    }
+    let store = InMemoryTokenStore()
+    try store.save(.init(accessToken: "v", refreshToken: "r", expiresAt: Int64.max))
+    let client = SpotifyClient(session: StubURLProtocol.session(),
+                               tokenStore: store,
+                               refresh: { try store.load()! })
+
+    let contains = try await client.libraryContains(uri: "spotify:track:A")
+    XCTAssertTrue(contains)
+  }
+
+  func test_saveAndRemoveLibrary_useCurrentLibraryEndpoint() async throws {
+    var calls: [(method: String?, path: String, uri: String?, rawURL: String)] = []
+    StubURLProtocol.handler = { req in
+      calls.append((
+        method: req.httpMethod,
+        path: req.url!.path,
+        uri: URLComponents(url: req.url!, resolvingAgainstBaseURL: false)?
+          .queryItems?
+          .first(where: { $0.name == "uris" })?
+          .value,
+        rawURL: req.url!.absoluteString))
+      let r = HTTPURLResponse(url: req.url!, statusCode: 200, httpVersion: nil, headerFields: [:])!
+      return (r, Data())
+    }
+    let store = InMemoryTokenStore()
+    try store.save(.init(accessToken: "v", refreshToken: "r", expiresAt: Int64.max))
+    let client = SpotifyClient(session: StubURLProtocol.session(),
+                               tokenStore: store,
+                               refresh: { try store.load()! })
+
+    try await client.saveToLibrary(uri: "spotify:track:A")
+    try await client.removeFromLibrary(uri: "spotify:track:A")
+
+    XCTAssertEqual(calls.map(\.method), ["PUT", "DELETE"])
+    XCTAssertEqual(calls.map(\.path), ["/v1/me/library", "/v1/me/library"])
+    XCTAssertEqual(calls.map(\.uri), ["spotify:track:A", "spotify:track:A"])
+    XCTAssertTrue(calls.allSatisfy { $0.rawURL.contains("uris=spotify%3Atrack%3AA") })
+  }
+
+  func test_play_usesPreferredDeviceAndSendsExplicitEmptyBody() async throws {
+    var calls: [(method: String?, path: String, deviceID: String?, contentLength: String?)] = []
+    StubURLProtocol.handler = { req in
+      calls.append((
+        method: req.httpMethod,
+        path: req.url!.path,
+        deviceID: URLComponents(url: req.url!, resolvingAgainstBaseURL: false)?
+          .queryItems?
+          .first(where: { $0.name == "device_id" })?
+          .value,
+        contentLength: req.value(forHTTPHeaderField: "Content-Length")))
+
+      let status = req.url!.path == "/v1/me/player/devices" ? 200 : 204
+      let body = req.url!.path == "/v1/me/player/devices"
+        ? #"{"devices":[{"id":"desktop-device","is_active":true,"is_restricted":false}]}"#.data(using: .utf8)!
+        : Data()
+      let r = HTTPURLResponse(url: req.url!, statusCode: status, httpVersion: nil, headerFields: [:])!
+      return (r, body)
+    }
+    let store = InMemoryTokenStore()
+    try store.save(.init(accessToken: "v", refreshToken: "r", expiresAt: Int64.max))
+    let client = SpotifyClient(session: StubURLProtocol.session(),
+                               tokenStore: store,
+                               refresh: { try store.load()! })
+
+    try await client.play()
+
+    XCTAssertEqual(calls.map(\.method), ["GET", "PUT"])
+    XCTAssertEqual(calls.map(\.path), ["/v1/me/player/devices", "/v1/me/player/play"])
+    XCTAssertEqual(calls.last?.deviceID, "desktop-device")
+    XCTAssertEqual(calls.last?.contentLength, "0")
+  }
+
+  func test_play_fallsBackToImplicitDeviceWhenDeviceLookupFails() async throws {
+    var calls: [(method: String?, path: String)] = []
+    StubURLProtocol.handler = { req in
+      calls.append((method: req.httpMethod, path: req.url!.path))
+      let status = req.url!.path == "/v1/me/player/devices" ? 500 : 204
+      let r = HTTPURLResponse(url: req.url!, statusCode: status, httpVersion: nil, headerFields: [:])!
+      return (r, Data())
+    }
+    let store = InMemoryTokenStore()
+    try store.save(.init(accessToken: "v", refreshToken: "r", expiresAt: Int64.max))
+    let client = SpotifyClient(session: StubURLProtocol.session(),
+                               tokenStore: store,
+                               refresh: { try store.load()! })
+
+    try await client.play()
+
+    XCTAssertEqual(calls.map(\.method), ["GET", "PUT"])
+    XCTAssertEqual(calls.map(\.path), ["/v1/me/player/devices", "/v1/me/player/play"])
+  }
 }

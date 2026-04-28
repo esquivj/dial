@@ -40,12 +40,12 @@ struct HistoryView: View {
   }
 
   private var header: some View {
-    HStack(spacing: 10) {
+    HStack(spacing: Dial.Layout.Header.spacing) {
       BackButton(action: onBack)
       Text("HISTORY")
         .font(Dial.Typography.monoLabel)
         .tracking(1.6)
-        .foregroundStyle(Dial.Palette.amber)
+        .foregroundStyle(Dial.Palette.accent)
       Spacer()
       // "LAST N · TOTAL" — communicates that we're showing a recent slice
       // and gives the lifetime context (e.g. "LAST 200 · 193K"). When
@@ -54,10 +54,14 @@ struct HistoryView: View {
       Text(headerCount)
         .font(Dial.Typography.monoLabel)
         .tracking(1.4)
-        .foregroundStyle(Dial.Palette.muted)
+        .foregroundStyle(Dial.Palette.textMuted)
         .contentTransition(.numericText())
     }
-    .padding(EdgeInsets(top: 8, leading: 10, bottom: 8, trailing: 14))
+    .padding(EdgeInsets(
+      top: Dial.Layout.Header.topPadding,
+      leading: Dial.Layout.Header.leadingPadding,
+      bottom: Dial.Layout.Header.bottomPadding,
+      trailing: Dial.Layout.Header.trailingPadding))
   }
 
   private var headerCount: String {
@@ -74,10 +78,10 @@ struct HistoryView: View {
       Spacer()
       Text("No plays yet")
         .font(Dial.Typography.sansTitle)
-        .foregroundStyle(Dial.Palette.ivory)
+        .foregroundStyle(Dial.Palette.textPrimary)
       Text("Play a track in Spotify and it'll show up here.")
         .font(Dial.Typography.sansCaption)
-        .foregroundStyle(Dial.Palette.muted)
+        .foregroundStyle(Dial.Palette.textMuted)
         .multilineTextAlignment(.center)
         .padding(.horizontal, 24)
       Spacer()
@@ -115,15 +119,19 @@ private struct HistoryRowView: View {
       }
       .frame(width: 28, height: 28)
       .clipShape(RoundedRectangle(cornerRadius: 3))
+      .overlay(
+        RoundedRectangle(cornerRadius: 3)
+          .stroke(Color.white.opacity(0.10), lineWidth: 0.6)
+      )
 
       VStack(alignment: .leading, spacing: 1) {
         Text(displayName)
           .font(Dial.Typography.sansCaption)
-          .foregroundStyle(Dial.Palette.ivory)
+          .foregroundStyle(Dial.Palette.textPrimary)
           .lineLimit(1)
         Text(displaySubtitle)
           .font(.system(size: 10))
-          .foregroundStyle(Dial.Palette.muted)
+          .foregroundStyle(Dial.Palette.textMuted)
           .lineLimit(1)
       }
 
@@ -132,7 +140,7 @@ private struct HistoryRowView: View {
       Text(relative(row.playedAt))
         .font(Dial.Typography.monoTiny)
         .tracking(0.6)
-        .foregroundStyle(Dial.Palette.muted)
+        .foregroundStyle(Dial.Palette.textMuted)
     }
     .padding(EdgeInsets(top: 7, leading: 14, bottom: 7, trailing: 14))
   }

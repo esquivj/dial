@@ -2,13 +2,19 @@
 import AppKit
 import Foundation
 import GRDB
+import SwiftUI
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
   var coordinator: AppCoordinator?
   private var statusBar: StatusBarController?
+  private var dockIcon: DockIconController?
 
   func applicationDidFinishLaunching(_ notification: Notification) {
+    if Self.isRunningUnitTests {
+      return
+    }
+
     // Headless import path: `--import <folder>` runs the same Importer that
     // the Settings UI uses, then exits. Skips all menubar / polling /
     // visualizer setup so the binary acts as a one-shot CLI tool. Useful
@@ -36,6 +42,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       let coord = AppCoordinator(dbq: dbq, client: client, auth: auth, tokenStore: tokens)
       self.coordinator = coord
       self.statusBar = StatusBarController(coord: coord)
+      self.dockIcon = DockIconController(coord: coord)
 
       // If a token's already in the keychain, start polling immediately.
       // Otherwise present Settings so the user can sign in — without a token,
@@ -145,18 +152,66 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     FileHandle.standardError.write(Data((s + "\n").utf8))
   }
 
+  private static var isRunningUnitTests: Bool {
+    let env = ProcessInfo.processInfo.environment
+    return env["XCTestConfigurationFilePath"] != nil
+      || NSClassFromString("XCTestCase") != nil
+      || NSClassFromString("XCTest.XCTestCase") != nil
+  }
+
   // MARK: - Settings
 
   /// Opens (or focuses) the SwiftUI Settings scene.
   private func openSettings() {
-    NSApp.activate(ignoringOtherApps: true)
-    // macOS 14+: the Settings selector is `showSettingsWindow:`. On older macOS it's `showPreferencesWindow:`.
-    let primary = Selector(("showSettingsWindow:"))
-    let fallback = Selector(("showPreferencesWindow:"))
-    if NSApp.responds(to: primary) {
-      NSApp.sendAction(primary, to: nil, from: nil)
-    } else {
-      NSApp.sendAction(fallback, to: nil, from: nil)
+    guard let coordinator else { return }
+    SettingsWindowPresenter.shared.show(coord: coordinator)
+  }
+}
+
+@MainActor
+final class SettingsWindowPresenter: NSObject, NSWindowDelegate {
+  static let shared = SettingsWindowPresenter()
+
+  private var window: NSWindow?
+
+  func show(coord: AppCoordinator) {
+    let root = SettingsView(
+      vm: coord.settings,
+      coord: coord,
+      onSignIn: { try? await coord.signIn() },
+      onImport: { folder in
+        Task { await coord.importHistory(from: folder) }
+      }
+    )
+
+    if let window {
+      (window.contentViewController as? NSHostingController<SettingsView>)?.rootView = root
+      present(window)
+      return
     }
+
+    let hosting = NSHostingController(rootView: root)
+    let window = NSWindow(contentViewController: hosting)
+    window.title = "Dial Settings"
+    window.styleMask = [.titled, .closable, .miniaturizable]
+    window.isReleasedWhenClosed = false
+    window.delegate = self
+    window.setContentSize(NSSize(width: 500, height: 460))
+    window.minSize = NSSize(width: 500, height: 460)
+    window.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
+    window.center()
+    self.window = window
+    present(window)
+  }
+
+  func windowWillClose(_ notification: Notification) {
+    window = nil
+  }
+
+  private func present(_ window: NSWindow) {
+    NSApp.activate(ignoringOtherApps: true)
+    window.level = .floating
+    window.makeKeyAndOrderFront(nil)
+    window.orderFrontRegardless()
   }
 }

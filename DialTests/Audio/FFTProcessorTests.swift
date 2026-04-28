@@ -75,4 +75,32 @@ final class FFTProcessorTests: XCTestCase {
     XCTAssertTrue(bands.allSatisfy { (0...1).contains($0) },
       "all bands must stay in [0,1] regardless of input amplitude, got \(bands)")
   }
+
+  func test_bands_melPowerModeReturnsRequestedDensity() {
+    let fft = FFTProcessor(fftSize: 2048, windowKind: .blackman)
+    let sampleRate: Float = 48_000
+    var samples = [Float](repeating: 0, count: 2048)
+    for i in 0..<2048 {
+      let t = Float(i) / sampleRate
+      samples[i] =
+        0.7 * sin(2 * .pi * 120 * t) +
+        0.3 * sin(2 * .pi * 1_200 * t) +
+        0.1 * sin(2 * .pi * 7_500 * t)
+    }
+    let mags = samples.withUnsafeBufferPointer {
+      fft.magnitudes(of: $0.baseAddress!, frameCount: 2048)
+    }
+    let bands = fft.bands(
+      from: mags,
+      count: 64,
+      sampleRate: sampleRate,
+      scale: .mel,
+      aggregation: .power,
+      floorDb: -80,
+      ceilingDb: -8)
+    XCTAssertEqual(bands.count, 64)
+    XCTAssertTrue(bands.allSatisfy { (0...1).contains($0) },
+      "mel/power bands must stay normalized, got \(bands)")
+    XCTAssertGreaterThan(bands.max() ?? 0, 0.1, "mixed sine input should light at least one mel band")
+  }
 }

@@ -17,7 +17,7 @@ struct DustTexture: View {
   var density: Double = 0.0025
   /// Dot color — muted gray reads on dark ground without standing out
   /// over inset card fills.
-  var color: Color = Dial.Palette.muted
+  var color: Color = Dial.Palette.textMuted
   /// Per-dot alpha range; each dot is randomized within these bounds.
   var alphaRange: ClosedRange<Double> = 0.10...0.20
   /// Seed for the LCG. Default keeps every instance identical.

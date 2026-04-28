@@ -17,6 +17,7 @@ final class AppCoordinator {
   let menubar: MenubarStripViewModel
   let pet: PetViewModel
   let settings: SettingsViewModel
+  let artworkCache: ArtworkCache
   /// Owns the system-audio capture + FFT pipeline that drives the spectrum
   /// visualizer. Idle until the visualizer view first appears, at which
   /// point `start()` is called and the engine triggers the Screen Recording
@@ -32,6 +33,7 @@ final class AppCoordinator {
   /// Idempotent guard so `start()` can be called from launch (when already signed in)
   /// or from `signIn()` (after auth completes) without double-tasking the polling loop.
   private var pollingStarted = false
+  private var currentTrackCountedAt: Int64?
 
   /// Timestamp of the last poll cycle that successfully returned events
   /// (any non-error response from the Spotify API). Surfaced in the
@@ -50,6 +52,7 @@ final class AppCoordinator {
     self.menubar = MenubarStripViewModel()
     self.pet = PetViewModel()
     self.settings = SettingsViewModel(auth: auth, dbq: dbq, tokenStore: tokenStore)
+    self.artworkCache = ArtworkCache()
     self.pet.syncFromStore(dbq: dbq)
   }
 
@@ -83,14 +86,22 @@ final class AppCoordinator {
       // guard sees pollingStarted = true even though the loop is dead.
       self.pollingStarted = false
     }
-    // Backfill any track URIs that are referenced from `plays` but have no
-    // metadata in `tracks`. Runs in the background, low priority — the
-    // dropdown stays usable while it works through the queue.
+    // Warm the most recent missing album art after launch settles. This used
+    // to kick off a full-library oEmbed crawl every app start; with 10k+
+    // missing tracks that quietly kept Dial busy for ages. The full backfill
+    // can still be run explicitly, but launch should stay light.
+    let dbq = self.dbq
+    let client = self.client
     Task(priority: .background) {
       coordLog.notice("enricher task starting")
       do {
-        try await MetadataEnricher(dbq: dbq, client: client).enrichMissing()
+        try await Task.sleep(nanoseconds: 15_000_000_000)
+        try Task.checkCancellation()
+        try await MetadataEnricher(dbq: dbq, client: client)
+          .enrichMissing(rateLimitPerSec: 1, limit: 75)
         coordLog.notice("enricher task finished cleanly")
+      } catch is CancellationError {
+        coordLog.notice("enricher task cancelled")
       } catch {
         coordLog.error("metadata backfill error: \(String(describing: error), privacy: .public)")
       }
@@ -106,6 +117,49 @@ final class AppCoordinator {
     start()
   }
 
+  @MainActor
+  func reconnectForLibraryAccess() async throws {
+    _ = try await settings.auth.signIn()
+    settings.markSignedIn()
+    start()
+  }
+
+  func importHistory(from folder: URL) async {
+    let urls = (try? FileManager.default.contentsOfDirectory(
+      at: folder, includingPropertiesForKeys: nil)) ?? []
+    let endsongs = urls.filter {
+      let n = $0.lastPathComponent
+      return n.hasPrefix("endsong_") || n.hasPrefix("Streaming_History_Audio_")
+    }.sorted { $0.lastPathComponent < $1.lastPathComponent }
+
+    guard !endsongs.isEmpty else { return }
+    let total = endsongs.count
+
+    await MainActor.run { settings.importProgress = 0.001 }
+
+    let importer = Importer(dbq: dbq, engine: engine)
+    for (idx, f) in endsongs.enumerated() {
+      if let rows = try? EndsongFile.parse(at: f) {
+        _ = try? importer.importBatch(rows, sourcePath: f.path)
+      }
+      let progress = Double(idx + 1) / Double(total)
+      await MainActor.run { settings.importProgress = progress }
+    }
+
+    let last = (try? ImportsLogDAO(dbq: dbq).last()) ?? nil
+    await MainActor.run {
+      settings.lastImport = last
+      settings.importProgress = 0
+      pet.syncFromStore(dbq: dbq)
+      aggCache.refresh(
+        trackUri: nowPlaying.track?.uri,
+        artistUri: nowPlaying.track?.artistUri,
+        currentPlayAt: currentTrackCountedAt)
+      nowPlaying.playsYTD = aggCache.playsYTD
+      menubar.playsYTD = aggCache.playsYTD
+    }
+  }
+
   private func handle(_ event: PlaybackEvent) async {
     // Mark "polling is alive" on every event we receive — the API responded
     // and we got something to handle. This is the heartbeat the diagnostics
@@ -114,6 +168,7 @@ final class AppCoordinator {
     lastSuccessfulPoll = Date()
     switch event {
     case let .started(uri, name, artistName, artistUri, albumName, artUrl, durationMs, _):
+      currentTrackCountedAt = nil
       // Persist track metadata so the SQL joins in `artistRank7d`,
       // `artistLifetimePlays`, and the PetEngine variety detection work.
       // Without this, the `tracks` table stays empty for live-only sessions.
@@ -139,9 +194,14 @@ final class AppCoordinator {
         albumName: albumName, artUrl: artUrl)
       nowPlaying.track = track
       menubar.track = track
+      artworkCache.prefetch(artUrl)
       menubar.state = .playing
-      aggCache.refresh(trackUri: uri, artistUri: artistUri)
-      nowPlaying.plays30d = aggCache.plays30d
+      menubar.durationMs = durationMs
+      refreshLikedState(for: uri)
+      aggCache.refresh(trackUri: uri, artistUri: artistUri, currentPlayAt: nil)
+      nowPlaying.playsYTD = aggCache.playsYTD
+      menubar.playsYTD = aggCache.playsYTD
+      updatePetMemoryText()
       // BPM lookup is best-effort for the beat-sync animation.
       if let trackId = uri.split(separator: ":").last,
          let features = try? await client.audioFeatures(trackId: String(trackId)) {
@@ -158,7 +218,11 @@ final class AppCoordinator {
       resolvePetBehavior()
 
     case .noPlayback:
+      currentTrackCountedAt = nil
       menubar.state = .nothingPlaying
+      menubar.likedTrackState = .unknown
+      menubar.progressMs = 0
+      menubar.durationMs = 0
       resolvePetBehavior()
 
     case let .progress(ms):
@@ -170,23 +234,43 @@ final class AppCoordinator {
       menubar.repeatMode = repeatMode
 
     case let .countedPlay(uri, ms, at):
+      let xpBefore = pet.xp
       // Don't swallow this one with `try?`. If the play failed to record
       // (DB locked, XP overflow, FK violation), we should NOT then refresh
       // aggregations against a write that didn't land, sync the pet from
       // a state that didn't change, and — most misleadingly — fire the
       // "eating" celebration animation. That'd lie to the user about what
       // happened. Skip the entire downstream celebration on error.
+      let didRecord: Bool
       do {
-        try engine.recordPlay(
+        didRecord = try engine.recordPlay(
           .init(playedAt: at, trackUri: uri, msPlayed: ms, source: "live"))
-        coordLog.notice("recorded live play: \(uri, privacy: .public) (\(ms)ms)")
       } catch {
         coordLog.error("recordPlay failed for \(uri, privacy: .public): \(String(describing: error), privacy: .public)")
         return
       }
-      aggCache.refresh(trackUri: uri, artistUri: nowPlaying.track?.artistUri)
-      nowPlaying.plays30d = aggCache.plays30d
+      guard didRecord else {
+        coordLog.notice("ignored duplicate live play: \(uri, privacy: .public) (\(ms)ms)")
+        currentTrackCountedAt = nil
+        aggCache.refresh(trackUri: uri, artistUri: nowPlaying.track?.artistUri, currentPlayAt: nil)
+        nowPlaying.playsYTD = aggCache.playsYTD
+        menubar.playsYTD = aggCache.playsYTD
+        updatePetMemoryText()
+        resolvePetBehavior()
+        return
+      }
+      coordLog.notice("recorded live play: \(uri, privacy: .public) (\(ms)ms)")
+      currentTrackCountedAt = at
+      aggCache.refresh(trackUri: uri, artistUri: nowPlaying.track?.artistUri, currentPlayAt: at)
+      nowPlaying.playsYTD = aggCache.playsYTD
+      menubar.playsYTD = aggCache.playsYTD
       pet.syncFromStore(dbq: dbq)
+      let xpDelta = max(0, pet.xp - xpBefore)
+      let trackName = nowPlaying.track?.name ?? "this play"
+      pet.lastFeedingText = xpDelta > 0
+        ? "+\(xpDelta.formatted()) XP from \(trackName)"
+        : "Fed by \(trackName)"
+      updatePetMemoryText()
       // Tamagotchi-style: a counted play "feeds" the pet — flip on the
       // eating flag for ~600ms, then auto-clear so it returns to walk/idle.
       pet.isEating = true
@@ -200,17 +284,105 @@ final class AppCoordinator {
   }
 
   private func resolvePetBehavior() {
+    guard settings.petEnabled else {
+      pet.behavior = .idle
+      updatePetReactionText()
+      return
+    }
     let ctx = PetContext(
       playing: menubar.state == .playing,
       paused:  menubar.state == .paused,
-      firstListen: aggCache.firstListen,
-      rediscovered: aggCache.rediscovered,
-      eating: pet.isEating,
-      leveledUp: pet.justLeveledUp,
+      firstListen: settings.petFirstListenAnimation && aggCache.firstListen,
+      rediscovered: settings.petRediscoveryAnimation && aggCache.rediscovered,
+      eating: settings.petFeedingAnimation && pet.isEating,
+      leveledUp: settings.petLevelUpAnimation && pet.justLeveledUp,
       lastPlayAt: pet.lastPlayAt,
       now: Int64(Date().timeIntervalSince1970),
       bpm: pet.currentBPM
     )
     pet.behavior = PetBehaviorResolver.resolve(ctx)
+    updatePetReactionText()
+  }
+
+  private func updatePetMemoryText() {
+    guard let insight = aggCache.currentBadgeInsight else {
+      pet.lastMemoryText = nil
+      return
+    }
+    pet.lastMemoryText = "\(insight.kind.label): \(insight.detail)"
+  }
+
+  private func updatePetReactionText() {
+    guard settings.petEnabled else {
+      pet.reactionText = "Pet disabled."
+      return
+    }
+
+    switch pet.behavior {
+    case .levelUp:
+      pet.reactionText = "Stage up: \(pet.stage.rawValue.capitalized)."
+    case .firstListen:
+      pet.reactionText = "New to your history."
+    case .rediscovered:
+      pet.reactionText = aggCache.currentBadgeInsight?.detail ?? "An old favorite came back."
+    case let .expressed(expression, _):
+      switch expression {
+      case .levelUp:
+        pet.reactionText = "Stage up: \(pet.stage.rawValue.capitalized)."
+      case .firstListen:
+        pet.reactionText = "New to your history."
+      case .rediscovered:
+        pet.reactionText = aggCache.currentBadgeInsight?.detail ?? "An old favorite came back."
+      }
+    case .eating:
+      pet.reactionText = pet.lastFeedingText ?? "Fed by this play."
+    case .paused:
+      pet.reactionText = "Paused with \(nowPlaying.track?.name ?? "this track")."
+    case .dormant:
+      pet.reactionText = "Dormant. Play something to wake it."
+    case let .beatSync(bpm):
+      pet.reactionText = "Synced to \(Int(bpm.rounded())) BPM."
+    case .sparkStep:
+      pet.reactionText = "Spark Step."
+    case .memorySpin:
+      pet.reactionText = "Memory Spin."
+    case .beatBounce:
+      pet.reactionText = "Beat Bounce."
+    case .walk:
+      pet.reactionText = aggCache.currentBadgeInsight.map {
+        "\($0.kind.label): \($0.detail)"
+      } ?? "Listening."
+    case .idle:
+      pet.reactionText = "Waiting for playback."
+    }
+  }
+
+  private func refreshLikedState(for uri: String) {
+    guard uri.hasPrefix("spotify:track:") else {
+      menubar.likedTrackState = .unknown
+      return
+    }
+
+    menubar.likedTrackState = .checking
+    Task { [weak self] in
+      guard let self else { return }
+      do {
+        let isLiked = try await self.client.libraryContains(uri: uri)
+        await MainActor.run {
+          guard self.menubar.track?.uri == uri else { return }
+          self.menubar.likedTrackState = isLiked ? .liked : .notLiked
+        }
+      } catch SpotifyAPIError.httpStatus(403) {
+        await MainActor.run {
+          guard self.menubar.track?.uri == uri else { return }
+          self.menubar.likedTrackState = .needsReconnect
+        }
+      } catch {
+        await MainActor.run {
+          guard self.menubar.track?.uri == uri else { return }
+          self.menubar.likedTrackState = .unknown
+        }
+      }
+    }
   }
 }

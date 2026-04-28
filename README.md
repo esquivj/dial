@@ -5,7 +5,7 @@ A native macOS menubar companion for Spotify. Shows what you're playing, what it
 ## What's in it
 
 - **Menubar strip** — tiny pixel pet + current track + 30-day play count. Pet bobs to BPM and reacts to events (first listen pops, rediscovery floats thought-dots, streak dances).
-- **Dropdown HUD** (320×360) — instrument-panel readouts: `PLAYS · 30D`, `RANK · 7D`, contextual badge chip, artist rank, last-60-min session timeline, transport controls.
+- **Dropdown HUD** (320×360) — instrument-panel readouts: `PLAYS · YTD`, `RANK · 7D`, contextual badge chip, artist rank, last-60-min session timeline, transport controls.
 - **Pet system** — 6 life stages (egg → elder), blend XP from listening time + variety + streaks, 7 animated behaviors with priority resolution.
 - **Local SQLite store** — every counted play, plus tracks/artists/imports_log/pet_state. WAL journal mode, 500 ms busy timeout.
 - **Spotify OAuth (PKCE)** — Keychain-stored tokens, auto-refresh on 401.
@@ -40,7 +40,7 @@ The Xcode project is generated from `project.yml` (committed) — never edit `Di
 xcodebuild -project Dial.xcodeproj -scheme Dial -destination 'platform=macOS' test
 ```
 
-Currently 57 tests covering store, aggregations, auth, polling, pet engine, sprite rendering, and end-to-end flow.
+Currently 73 tests covering store, aggregations, auth, polling, pet engine, sprite rendering, and end-to-end flow.
 
 ## Manual QA
 

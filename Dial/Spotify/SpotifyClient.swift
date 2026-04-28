@@ -1,6 +1,10 @@
 // Dial/Spotify/SpotifyClient.swift
 import Foundation
 
+enum SpotifyAPIError: Error, Equatable {
+  case httpStatus(Int)
+}
+
 final class SpotifyClient {
   private let session: URLSession
   private let tokenStore: TokenStore
@@ -29,15 +33,25 @@ final class SpotifyClient {
     retryOn401: Bool = true,
     retryOn429: Bool = true
   ) async throws -> (Data, HTTPURLResponse) {
-    let token = try tokenStore.load()
     var req = URLRequest(url: url)
+    req.httpMethod = "GET"
+    return try await authedRequest(req, retryOn401: retryOn401, retryOn429: retryOn429)
+  }
+
+  fileprivate func authedRequest(
+    _ request: URLRequest,
+    retryOn401: Bool = true,
+    retryOn429: Bool = true
+  ) async throws -> (Data, HTTPURLResponse) {
+    let token = try tokenStore.load()
+    var req = request
     req.setValue("Bearer \(token?.accessToken ?? "")", forHTTPHeaderField: "Authorization")
     let (data, resp) = try await session.data(for: req)
     let http = resp as! HTTPURLResponse
 
     if http.statusCode == 401, retryOn401 {
       _ = try await refresh()
-      return try await authedGET(url, retryOn401: false, retryOn429: retryOn429)
+      return try await authedRequest(request, retryOn401: false, retryOn429: retryOn429)
     }
     if http.statusCode == 429, retryOn429 {
       // Cap at 60s so a misconfigured Retry-After (or the rare HTTP-date
@@ -47,9 +61,15 @@ final class SpotifyClient {
       let waitSec = Self.retryAfterSeconds(from: http) ?? 5
       let capped = min(max(waitSec, 1), 60)
       try await Task.sleep(nanoseconds: UInt64(capped * 1_000_000_000))
-      return try await authedGET(url, retryOn401: retryOn401, retryOn429: false)
+      return try await authedRequest(request, retryOn401: retryOn401, retryOn429: false)
     }
     return (data, http)
+  }
+
+  fileprivate static func validate(_ response: HTTPURLResponse) throws {
+    guard (200...299).contains(response.statusCode) else {
+      throw SpotifyAPIError.httpStatus(response.statusCode)
+    }
   }
 
   /// Spotify always returns Retry-After as an integer second count, but the
@@ -74,12 +94,14 @@ final class SpotifyClient {
     let url = URL(string: "https://api.spotify.com/v1/me/player")!
     let (data, http) = try await authedGET(url)
     if http.statusCode == 204 { return nil }
+    try Self.validate(http)
     return try JSONDecoder().decode(CurrentlyPlaying.self, from: data)
   }
 
   func audioFeatures(trackId: String) async throws -> AudioFeatures {
     let url = URL(string: "https://api.spotify.com/v1/audio-features/\(trackId)")!
-    let (data, _) = try await authedGET(url)
+    let (data, http) = try await authedGET(url)
+    try Self.validate(http)
     return try JSONDecoder().decode(AudioFeatures.self, from: data)
   }
 }
@@ -107,9 +129,39 @@ extension SpotifyClient {
       .map { $0.replacingOccurrences(of: "spotify:track:", with: "") }
       .joined(separator: ",")
     let url = URL(string: "https://api.spotify.com/v1/tracks?ids=\(ids)")!
-    let (data, _) = try await authedGET(url)
+    let (data, http) = try await authedGET(url)
+    try Self.validate(http)
     struct R: Decodable { let tracks: [TrackMeta?] }
     return try JSONDecoder().decode(R.self, from: data).tracks.compactMap { $0 }
+  }
+}
+
+// MARK: - Library / Liked Songs
+
+extension SpotifyClient {
+  func libraryContains(uri: String) async throws -> Bool {
+    guard uri.hasPrefix("spotify:track:") else { return false }
+    let (data, http) = try await authedGET(Self.libraryURL(path: "/me/library/contains", uri: uri))
+    try Self.validate(http)
+    return try JSONDecoder().decode([Bool].self, from: data).first ?? false
+  }
+
+  func saveToLibrary(uri: String) async throws {
+    try await sendEmpty(method: "PUT", url: Self.libraryURL(path: "/me/library", uri: uri))
+  }
+
+  func removeFromLibrary(uri: String) async throws {
+    try await sendEmpty(method: "DELETE", url: Self.libraryURL(path: "/me/library", uri: uri))
+  }
+
+  fileprivate static func libraryURL(path: String, uri: String) -> URL {
+    var allowed = CharacterSet.urlQueryAllowed
+    allowed.remove(charactersIn: ":")
+    let encoded = uri.addingPercentEncoding(withAllowedCharacters: allowed) ?? uri
+
+    var comps = URLComponents(string: "https://api.spotify.com/v1\(path)")!
+    comps.percentEncodedQueryItems = [.init(name: "uris", value: encoded)]
+    return comps.url!
   }
 }
 
@@ -142,7 +194,23 @@ extension SpotifyClient {
 // MARK: - Transport controls
 
 extension SpotifyClient {
-  func play()  async throws { try await sendEmpty(method: "PUT",  path: "/me/player/play") }
+  func play() async throws {
+    if let deviceID = try? await preferredPlaybackDeviceID() {
+      do {
+        try await sendEmpty(
+          method: "PUT",
+          path: "/me/player/play",
+          queryItems: [.init(name: "device_id", value: deviceID)])
+        return
+      } catch {
+        // Device lists can be stale right after Spotify starts or changes
+        // output. Fall back to Spotify's implicit "current active device"
+        // resume path before surfacing the failure to the UI.
+      }
+    }
+    try await sendEmpty(method: "PUT", path: "/me/player/play")
+  }
+
   func pause() async throws { try await sendEmpty(method: "PUT",  path: "/me/player/pause") }
   func next()  async throws { try await sendEmpty(method: "POST", path: "/me/player/next") }
   func prev()  async throws { try await sendEmpty(method: "POST", path: "/me/player/previous") }
@@ -162,12 +230,53 @@ extension SpotifyClient {
     try await sendEmpty(method: "PUT", path: "/me/player/repeat?state=\(mode)")
   }
 
-  fileprivate func sendEmpty(method: String, path: String) async throws {
-    let url = URL(string: "https://api.spotify.com/v1\(path)")!
+  fileprivate func sendEmpty(
+    method: String,
+    path: String,
+    queryItems: [URLQueryItem] = []
+  ) async throws {
+    var comps = URLComponents(string: "https://api.spotify.com/v1\(path)")!
+    if !queryItems.isEmpty { comps.queryItems = queryItems }
+    let url = comps.url!
     var req = URLRequest(url: url)
     req.httpMethod = method
-    let token = try tokenStore.load()
-    req.setValue("Bearer \(token?.accessToken ?? "")", forHTTPHeaderField: "Authorization")
-    _ = try await session.data(for: req)
+    req.setValue("0", forHTTPHeaderField: "Content-Length")
+    req.httpBody = Data()
+    let (_, http) = try await authedRequest(req)
+    try Self.validate(http)
+  }
+
+  fileprivate func sendEmpty(method: String, url: URL) async throws {
+    var req = URLRequest(url: url)
+    req.httpMethod = method
+    req.setValue("0", forHTTPHeaderField: "Content-Length")
+    req.httpBody = Data()
+    let (_, http) = try await authedRequest(req)
+    try Self.validate(http)
+  }
+
+  private func preferredPlaybackDeviceID() async throws -> String? {
+    let url = URL(string: "https://api.spotify.com/v1/me/player/devices")!
+    let (data, http) = try await authedGET(url)
+    try Self.validate(http)
+    let response = try JSONDecoder().decode(PlaybackDevicesResponse.self, from: data)
+    return response.devices.first(where: { $0.isActive && !$0.isRestricted })?.id
+      ?? response.devices.first(where: { !$0.isRestricted })?.id
+  }
+}
+
+private struct PlaybackDevicesResponse: Decodable {
+  let devices: [PlaybackDevice]
+}
+
+private struct PlaybackDevice: Decodable {
+  let id: String?
+  let isActive: Bool
+  let isRestricted: Bool
+
+  enum CodingKeys: String, CodingKey {
+    case id
+    case isActive = "is_active"
+    case isRestricted = "is_restricted"
   }
 }

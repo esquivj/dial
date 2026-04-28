@@ -8,26 +8,29 @@ import SwiftUI
 struct BackButton: View {
   let action: () -> Void
   @State private var hover = false
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   var body: some View {
     Button(action: action) {
       HStack(spacing: 4) {
-        Image(systemName: "chevron.left")
-          .font(.system(size: 13, weight: .semibold))
+        DialIcon("chevron.left")
+          .frame(width: 10, height: 10)
         Text("BACK")
           .font(Dial.Typography.monoLabel)
           .tracking(1.2)
       }
-      .foregroundStyle(Dial.Palette.ivory.opacity(hover ? 1.0 : 0.7))
+      .foregroundStyle(Dial.Palette.textPrimary.opacity(hover ? 1.0 : 0.7))
       .padding(.horizontal, 8)
       .padding(.vertical, 5)
       .contentShape(Rectangle())
       .background(
         RoundedRectangle(cornerRadius: 4)
-          .fill(Dial.Palette.amber.opacity(hover ? 0.08 : 0))
+          .fill(Dial.Palette.accent.opacity(hover ? 0.08 : 0))
       )
     }
     .buttonStyle(.pressable)
+    .accessibilityLabel("Back")
     .onHover { hover = $0 }
+    .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: hover)
   }
 }

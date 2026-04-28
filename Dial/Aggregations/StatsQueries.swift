@@ -35,7 +35,7 @@ struct StatsQueries {
   /// (handled downstream) instead of crashing the query.
   func recentPlays(limit: Int = 200) throws -> [HistoryRow] {
     try dbq.read { db in
-      try Row.fetchAll(db, sql: """
+      return try Row.fetchAll(db, sql: """
         SELECT p.id, p.played_at, p.track_uri,
                COALESCE(t.name, '') AS name,
                COALESCE(
@@ -73,9 +73,11 @@ struct StatsQueries {
     var id: String { uri }
   }
 
-  func topTracks(limit: Int = 10) throws -> [TopRow] {
+  func topTracks(limit: Int = 10, since: Int64? = nil) throws -> [TopRow] {
     try dbq.read { db in
-      try Row.fetchAll(db, sql: """
+      let filter = since == nil ? "" : "WHERE p.played_at >= ?"
+      let arguments = since.map { [$0, Int64(limit)] } ?? [Int64(limit)]
+      return try Row.fetchAll(db, sql: """
         SELECT p.track_uri AS uri,
                COALESCE(t.name, p.track_uri) AS name,
                t.album_art_url AS art_url,
@@ -85,10 +87,11 @@ struct StatsQueries {
                COUNT(*) AS c
         FROM plays p
         LEFT JOIN tracks t ON t.uri = p.track_uri
+        \(filter)
         GROUP BY p.track_uri
         ORDER BY c DESC, MAX(p.played_at) DESC
         LIMIT ?
-      """, arguments: [limit]).map { row in
+      """, arguments: StatementArguments(arguments)).map { row in
         TopRow(
           uri: row["uri"], name: row["name"], count: row["c"],
           artUrl: row["art_url"], subtitle: row["artist_name"]
@@ -107,19 +110,22 @@ struct StatsQueries {
   /// the same artist (e.g. "Junior H") appearing multiple times in
   /// top-artists with different play counts that don't sum to the artist's
   /// actual total. Renaming the alias avoids the collision.
-  func topArtists(limit: Int = 10) throws -> [TopRow] {
+  func topArtists(limit: Int = 10, since: Int64? = nil) throws -> [TopRow] {
     try dbq.read { db in
-      try Row.fetchAll(db, sql: """
+      let rangeFilter = since == nil ? "" : "AND p.played_at >= ?"
+      let arguments = since.map { [$0, Int64(limit)] } ?? [Int64(limit)]
+      return try Row.fetchAll(db, sql: """
         SELECT
           json_extract(t.artists_json, '$[0].uri')  AS artist_uri,
           json_extract(t.artists_json, '$[0].name') AS name,
           COUNT(*) AS c
         FROM plays p JOIN tracks t ON t.uri = p.track_uri
         WHERE t.artists_json IS NOT NULL AND json_valid(t.artists_json) = 1
+          \(rangeFilter)
         GROUP BY artist_uri
         ORDER BY c DESC, MAX(p.played_at) DESC
         LIMIT ?
-      """, arguments: [limit]).map { row in
+      """, arguments: StatementArguments(arguments)).map { row in
         TopRow(uri: row["artist_uri"] ?? "", name: row["name"] ?? "Unknown", count: row["c"],
                artUrl: nil, subtitle: nil)
       }
@@ -135,8 +141,11 @@ struct StatsQueries {
     let uniqueArtists: Int
   }
 
-  func totals() throws -> Totals {
+  func totals(since: Int64? = nil) throws -> Totals {
     try dbq.read { db in
+      let playsFilter = since == nil ? "" : "WHERE played_at >= ?"
+      let artistRangeFilter = since == nil ? "" : "AND p.played_at >= ?"
+      let arguments = since.map { StatementArguments([$0]) } ?? StatementArguments()
       // One scan of `plays` for the three play-derived metrics — was three
       // separate scans, which at 193k rows is 3× the work for no reason.
       // COUNT, SUM, and COUNT(DISTINCT) all share the same row stream and
@@ -146,7 +155,8 @@ struct StatsQueries {
                COALESCE(SUM(ms_played), 0) AS total_ms,
                COUNT(DISTINCT track_uri) AS uniq_tracks
         FROM plays
-      """)
+        \(playsFilter)
+      """, arguments: arguments)
       // Artists live in a different table, so this stays as a separate
       // query. Filter to rows with VALID `artists_json` — some imported
       // rows have malformed JSON (unescaped backslashes in URIs) which
@@ -156,15 +166,139 @@ struct StatsQueries {
       // to all zeros — making Stats look completely broken to the user.
       let artists = try Int.fetchOne(db, sql: """
         SELECT COUNT(DISTINCT json_extract(artists_json, '$[0].uri'))
-        FROM tracks
-        WHERE artists_json IS NOT NULL AND json_valid(artists_json) = 1
-      """) ?? 0
+        FROM plays p JOIN tracks t ON t.uri = p.track_uri
+        WHERE t.artists_json IS NOT NULL AND json_valid(t.artists_json) = 1
+          \(artistRangeFilter)
+      """, arguments: arguments) ?? 0
       return Totals(
         plays: row?["plays"] ?? 0,
         listeningMs: row?["total_ms"] ?? 0,
         uniqueTracks: row?["uniq_tracks"] ?? 0,
         uniqueArtists: artists)
     }
+  }
+
+  // MARK: - Rhythm
+
+  struct RhythmBucket: Identifiable, Hashable {
+    let index: Int
+    let label: String
+    let count: Int
+    let occurrences: Int
+    let value: Double
+    var id: Int { index }
+  }
+
+  func weekdayRhythm(
+    since: Int64? = nil,
+    now: Int64 = Int64(Date().timeIntervalSince1970)
+  ) throws -> [RhythmBucket] {
+    try dbq.read { db in
+      let filter = since == nil ? "" : "WHERE played_at >= ?"
+      let arguments = since.map { StatementArguments([$0]) } ?? StatementArguments()
+      let rows = try Row.fetchAll(db, sql: """
+        SELECT CAST(strftime('%w', played_at, 'unixepoch', 'localtime') AS INTEGER) AS dow,
+               COUNT(*) AS c
+        FROM plays
+        \(filter)
+        GROUP BY dow
+      """, arguments: arguments)
+      let counts = Dictionary(uniqueKeysWithValues: rows.map { row -> (Int, Int) in
+        let day: Int = row["dow"]
+        let count: Int = row["c"]
+        return (day, count)
+      })
+      let firstPlay = try Int64.fetchOne(db, sql: "SELECT MIN(played_at) FROM plays")
+      let start = since ?? firstPlay ?? now
+      let occurrences = Self.weekdayOccurrences(from: min(start, now), through: now)
+      let labels = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"]
+      let sqliteDays = [1, 2, 3, 4, 5, 6, 0]
+      return labels.enumerated().map { idx, label in
+        let dow = sqliteDays[idx]
+        let count = counts[dow, default: 0]
+        let occurrenceCount = max(1, occurrences[dow, default: 1])
+        return RhythmBucket(
+          index: idx,
+          label: label,
+          count: count,
+          occurrences: occurrenceCount,
+          value: Double(count) / Double(occurrenceCount))
+      }
+    }
+  }
+
+  func recentDailyRhythm(
+    days: Int = 7,
+    now: Int64 = Int64(Date().timeIntervalSince1970)
+  ) throws -> [RhythmBucket] {
+    let clampedDays = max(1, days)
+    let endDate = Date(timeIntervalSince1970: TimeInterval(now))
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = .current
+    let endDay = calendar.startOfDay(for: endDate)
+    let startDay = calendar.date(byAdding: .day, value: -(clampedDays - 1), to: endDay) ?? endDay
+    let startEpoch = Int64(startDay.timeIntervalSince1970)
+
+    return try dbq.read { db in
+      let rows = try Row.fetchAll(db, sql: """
+        SELECT strftime('%Y-%m-%d', played_at, 'unixepoch', 'localtime') AS day,
+               COUNT(*) AS c
+        FROM plays
+        WHERE played_at >= ? AND played_at <= ?
+        GROUP BY day
+      """, arguments: [startEpoch, now])
+      let counts = Dictionary(uniqueKeysWithValues: rows.map { row -> (String, Int) in
+        let day: String = row["day"]
+        let count: Int = row["c"]
+        return (day, count)
+      })
+
+      let formatter = DateFormatter()
+      formatter.calendar = calendar
+      formatter.locale = Locale(identifier: "en_US_POSIX")
+      formatter.timeZone = calendar.timeZone
+      formatter.dateFormat = "EEE"
+
+      return (0..<clampedDays).map { offset in
+        let date = calendar.date(byAdding: .day, value: offset, to: startDay) ?? startDay
+        let key = Self.localDayKey(for: date, calendar: calendar)
+        let count = counts[key, default: 0]
+        let isToday = calendar.isDate(date, inSameDayAs: endDate)
+        let label = isToday ? "TODAY" : formatter.string(from: date).uppercased()
+        return RhythmBucket(
+          index: offset,
+          label: label,
+          count: count,
+          occurrences: 1,
+          value: Double(count))
+      }
+    }
+  }
+
+  private static func weekdayOccurrences(from startEpoch: Int64, through endEpoch: Int64) -> [Int: Int] {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = .current
+    var cursor = calendar.startOfDay(for: Date(timeIntervalSince1970: TimeInterval(startEpoch)))
+    let endDay = calendar.startOfDay(for: Date(timeIntervalSince1970: TimeInterval(endEpoch)))
+    var counts: [Int: Int] = [:]
+
+    while cursor <= endDay {
+      // SQLite's %w uses Sunday = 0. Calendar uses Sunday = 1, Monday = 2.
+      let sqliteDow = (calendar.component(.weekday, from: cursor) + 6) % 7
+      counts[sqliteDow, default: 0] += 1
+      guard let next = calendar.date(byAdding: .day, value: 1, to: cursor) else { break }
+      cursor = next
+    }
+    return counts
+  }
+
+  private static func localDayKey(for date: Date, calendar: Calendar) -> String {
+    let components = calendar.dateComponents([.year, .month, .day], from: date)
+    return String(
+      format: "%04d-%02d-%02d",
+      components.year ?? 0,
+      components.month ?? 0,
+      components.day ?? 0)
   }
 
   // MARK: - Enrichment progress
@@ -195,6 +329,82 @@ struct StatsQueries {
       return EnrichmentProgress(
         total: row?["total"] ?? 0,
         enriched: row?["enriched"] ?? 0)
+    }
+  }
+
+  // MARK: - Badge memories
+
+  struct BadgeSummary: Identifiable, Hashable {
+    let category: BadgeCategory
+    let count: Int
+    var id: BadgeCategory { category }
+  }
+
+  struct BadgeMemoryRow: Identifiable, Hashable {
+    let id: Int64
+    let kind: BadgeMemoryKind
+    let category: BadgeCategory
+    let earnedAt: Int64
+    let trackUri: String?
+    let trackName: String?
+    let artistName: String?
+    let albumName: String?
+  }
+
+  func badgeSummaries(since: Int64? = nil) throws -> [BadgeSummary] {
+    try dbq.read { db in
+      let filter = since == nil ? "" : "WHERE earned_at >= ?"
+      let arguments = since.map { StatementArguments([$0]) } ?? StatementArguments()
+      let counts = try Row.fetchAll(db, sql: """
+        SELECT category, COUNT(*) AS c
+        FROM badge_events
+        \(filter)
+        GROUP BY category
+      """, arguments: arguments).reduce(into: [BadgeCategory: Int]()) { acc, row in
+        let raw: String = row["category"]
+        guard let category = BadgeCategory(rawValue: raw) else { return }
+        acc[category] = row["c"]
+      }
+      return BadgeCategory.allCases.compactMap { category in
+        guard let count = counts[category], count > 0 else { return nil }
+        return BadgeSummary(category: category, count: count)
+      }
+    }
+  }
+
+  func recentBadgeMemories(limit: Int = 5) throws -> [BadgeMemoryRow] {
+    try dbq.read { db in
+      try Row.fetchAll(db, sql: """
+        SELECT b.id, b.kind, b.category, b.earned_at, b.track_uri,
+               COALESCE(t.name, b.track_uri) AS track_name,
+               COALESCE(
+                 CASE WHEN json_valid(t.artists_json) = 1
+                      THEN json_extract(t.artists_json, '$[0].name')
+                      ELSE NULL END,
+                 ''
+               ) AS artist_name,
+               COALESCE(b.album_name, t.album_name) AS album_name
+        FROM badge_events b
+        LEFT JOIN tracks t ON t.uri = b.track_uri
+        ORDER BY b.earned_at DESC, b.id DESC
+        LIMIT ?
+      """, arguments: [limit]).compactMap { row in
+        let rawKind: String = row["kind"]
+        let rawCategory: String = row["category"]
+        guard let kind = BadgeMemoryKind(rawValue: rawKind),
+              let category = BadgeCategory(rawValue: rawCategory)
+        else { return nil }
+        let artistName: String = row["artist_name"]
+        return BadgeMemoryRow(
+          id: row["id"],
+          kind: kind,
+          category: category,
+          earnedAt: row["earned_at"],
+          trackUri: row["track_uri"],
+          trackName: row["track_name"],
+          artistName: artistName.isEmpty ? nil : artistName,
+          albumName: row["album_name"])
+      }
     }
   }
 

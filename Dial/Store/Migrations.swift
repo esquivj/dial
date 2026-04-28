@@ -84,6 +84,32 @@ enum Migrations {
           )
       """)
     }
+
+    m.registerMigration("v3_badge_events") { db in
+      try db.create(table: "badge_events") { t in
+        t.autoIncrementedPrimaryKey("id")
+        t.column("kind", .text).notNull()
+        t.column("category", .text).notNull()
+        t.column("track_uri", .text)
+        t.column("artist_uri", .text)
+        t.column("album_name", .text)
+        t.column("earned_at", .integer).notNull()
+        t.column("payload_json", .text)
+        t.column("scope_key", .text).notNull().unique()
+      }
+      try db.create(index: "badge_events_by_time", on: "badge_events", columns: ["earned_at"])
+      try db.create(index: "badge_events_by_category", on: "badge_events", columns: ["category", "earned_at"])
+      try db.create(index: "badge_events_by_kind", on: "badge_events", columns: ["kind", "earned_at"])
+    }
+
+    m.registerMigration("v4_pet_trick_unlocks") { db in
+      try db.create(table: "pet_trick_unlocks") { t in
+        t.column("trick", .text).primaryKey()
+        t.column("unlocked_at", .integer).notNull()
+        t.column("source_badge", .text)
+      }
+      try db.create(index: "pet_trick_unlocks_by_time", on: "pet_trick_unlocks", columns: ["unlocked_at"])
+    }
     return m
   }
 }

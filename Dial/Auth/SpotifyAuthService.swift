@@ -22,7 +22,9 @@ final class SpotifyAuthService: NSObject {
     "user-read-currently-playing",
     "user-read-playback-state",
     "user-modify-playback-state",
-    "user-read-recently-played"
+    "user-read-recently-played",
+    "user-library-read",
+    "user-library-modify"
   ]
   private let tokenStore: TokenStore
 

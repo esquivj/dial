@@ -2,13 +2,6 @@
 import SwiftUI
 
 /// Crystal Y2K palette — dark mode, cyan-LCD-on-black aesthetic.
-/// Pivoted to cyan-blue (#1FB6FF) as primary to match the Digivice-style
-/// translucent toy reference. Token *names* preserved; their roles now
-/// read as:
-///   amber  → primary accent (cyan-blue LCD readout)
-///   orange → secondary accent (hot pink — Y2K complement)
-///   ivory  → primary text on dark
-///   muted  → secondary text / labels
 enum Dial {
   enum Palette {
     /// Near-black with a teal shift — main background. Pure #000 reads
@@ -25,21 +18,28 @@ enum Dial {
     /// palette: cooler, more "powered LCD on a translucent toy device"
     /// than the prior mint reading. Contrast against `ground` is well
     /// above WCAG-AA at small text sizes.
-    static let amber    = Color(red: 0x1F/255, green: 0xB6/255, blue: 0xFF/255)
+    static let accent   = Color(red: 0x1F/255, green: 0xB6/255, blue: 0xFF/255)
     /// Hot pink — secondary, Y2K complement to mint.
     /// #FF4DD8 (was magenta #E84B98). Brightened to keep complementary
     /// tension against the brighter mint primary; muddier pinks read as
     /// "wine" rather than "neon" against #00FFA3.
     /// Used for ON STREAK / firstListen and other secondary moments.
-    static let orange   = Color(red: 0xFF/255, green: 0x4D/255, blue: 0xD8/255)
+    static let accentAlt = Color(red: 0xFF/255, green: 0x4D/255, blue: 0xD8/255)
     /// Cool off-white — primary text on dark.
-    static let ivory    = Color(red: 0xE8/255, green: 0xEB/255, blue: 0xED/255)
+    static let textPrimary = Color(red: 0xE8/255, green: 0xEB/255, blue: 0xED/255)
     /// Cool gray — secondary text, labels. Brightened from #6B7178 to
     /// #898F98 to clear WCAG-AA 4.5:1 contrast against `ground` for
     /// small text (the previous value was 3.93:1, technically failing).
     /// Still reads as "muted" against the cyan accent; the hue stays
     /// cool-neutral so it doesn't compete with the cyan/magenta.
-    static let muted    = Color(red: 0x89/255, green: 0x8F/255, blue: 0x98/255)
+    static let textMuted = Color(red: 0x89/255, green: 0x8F/255, blue: 0x98/255)
+
+    // Legacy aliases for old call sites and historical tests. New code
+    // should use semantic names above.
+    static let amber = accent
+    static let orange = accentAlt
+    static let ivory = textPrimary
+    static let muted = textMuted
 
     /// Hairline divider — subtle dark line on the dark ground.
     static let hairline = Color(red: 0x25/255, green: 0x2A/255, blue: 0x30/255)
@@ -48,18 +48,18 @@ enum Dial {
     /// Sits between ground and surface.
     static let subtle   = Color(red: 0x0F/255, green: 0x13/255, blue: 0x16/255)
 
-    /// Pale green-cream — the "powered-on Tamagotchi LCD" color. Used as
+    /// Muted green-gray — the "powered-on Tamagotchi LCD" color. Used as
     /// the inside-fill of the pet's LCD bezel in TrackHero / PetView so
     /// the black-and-white pet sprite reads against a literally lit screen
-    /// rather than against pure dark device chrome. Sits outside the
-    /// cyan/magenta accent system intentionally — the pet is its own
-    /// identity, separate from the rest of the UI's tone palette.
-    static let lcd      = Color(red: 0xC5/255, green: 0xCC/255, blue: 0xA0/255)
+    /// rather than against pure dark device chrome. Duller than the main
+    /// cyan system on purpose: the pet should feel embedded in old handheld
+    /// LCD glass, not like another active control.
+    static let lcd      = Color(red: 0xB5/255, green: 0xBA/255, blue: 0x91/255)
   }
 
   enum Typography {
     static let monoLabel   = Font.custom("IBMPlexMono-Regular", size: 9)
-    /// Hero numeric values (PLAYS · 30D, RANK · 7D). 20 (was 28) — 28pt
+    /// Hero numeric values (PLAYS · YTD, RANK · 7D). 20 (was 28) — 28pt
     /// values were dominating the HUD's vertical real estate, especially
     /// when the values were "0" or "—" so the size shouted at empty
     /// content. 20 still reads as a "stat hero" without carrying its own

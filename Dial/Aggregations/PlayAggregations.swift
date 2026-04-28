@@ -15,6 +15,15 @@ struct PlayAggregations {
     }
   }
 
+  func playsYTD(trackUri: String) throws -> Int {
+    let cutoff = Self.startOfYearEpoch(for: now())
+    return try dbq.read { db in
+      try Int.fetchOne(db,
+        sql: "SELECT COUNT(*) FROM plays WHERE track_uri = ? AND played_at >= ?",
+        arguments: [trackUri, cutoff]) ?? 0
+    }
+  }
+
   /// 1-based rank within last 7d among all tracks played in that window.
   /// Ties broken by most-recent play.
   func rank7d(trackUri: String) throws -> Int? {
@@ -30,6 +39,31 @@ struct PlayAggregations {
         ) WHERE track_uri = ?
         """, arguments: [cutoff, trackUri])
     }
+  }
+
+  func lastPlayedAt(trackUri: String, before currentPlayAt: Int64? = nil) throws -> Int64? {
+    let upperBound = currentPlayAt ?? now()
+    return try dbq.read { db in
+      try Int64.fetchOne(db, sql: """
+        SELECT played_at
+        FROM plays
+        WHERE track_uri = ?
+          AND played_at < ?
+        ORDER BY played_at DESC, id DESC
+        LIMIT 1
+        """, arguments: [trackUri, upperBound])
+    }
+  }
+}
+
+private extension PlayAggregations {
+  static func startOfYearEpoch(for epoch: Int64) -> Int64 {
+    let date = Date(timeIntervalSince1970: TimeInterval(epoch))
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = .current
+    let components = calendar.dateComponents([.year], from: date)
+    let start = calendar.date(from: components) ?? date
+    return Int64(start.timeIntervalSince1970)
   }
 }
 
@@ -48,12 +82,44 @@ extension PlayAggregations {
 
   func rediscovered(trackUri: String) throws -> Bool {
     let ninetyDays: Int64 = 90 * 86_400
-    let cutoff = now() - ninetyDays
+    let anchor = now()
     return try dbq.read { db in
-      let previous = try Int64.fetchOne(db,
-        sql: "SELECT MAX(played_at) FROM plays WHERE track_uri = ? AND played_at < ?",
-        arguments: [trackUri, cutoff])
-      return previous != nil
+      let recentRediscovery = try Int.fetchOne(db, sql: """
+        SELECT 1
+        FROM badge_events
+        WHERE track_uri = ?
+          AND kind = ?
+          AND earned_at >= ?
+        LIMIT 1
+        """, arguments: [
+          trackUri,
+          BadgeMemoryKind.rediscovered.rawValue,
+          anchor - 24 * 60 * 60,
+        ])
+      if recentRediscovery != nil { return true }
+
+      let latest = try Int64.fetchAll(db, sql: """
+        SELECT played_at
+        FROM plays
+        WHERE track_uri = ?
+        ORDER BY played_at DESC, id DESC
+        LIMIT 2
+        """, arguments: [trackUri])
+
+      if latest.count >= 2 {
+        let latestPlay = latest[0]
+        let priorPlay = latest[1]
+        if latestPlay >= anchor - 24 * 60 * 60,
+           latestPlay - priorPlay >= ninetyDays {
+          return true
+        }
+      }
+
+      if let lastKnownPlay = latest.first {
+        return anchor - lastKnownPlay >= ninetyDays
+      }
+
+      return false
     }
   }
 
@@ -62,6 +128,17 @@ extension PlayAggregations {
     guard plays >= 10 else { return false }
     guard let r = try rank7d(trackUri: trackUri) else { return false }
     return r <= 5
+  }
+
+  func currentBadgeInsight(trackUri: String, currentPlayAt: Int64?) throws -> BadgeInsight? {
+    let anchorAt = currentPlayAt ?? now()
+    return try dbq.read { db in
+      try BadgeResolver.currentInsight(
+        trackUri: trackUri,
+        anchorAt: anchorAt,
+        countedCurrentPlay: currentPlayAt != nil,
+        in: db)
+    }
   }
 }
 

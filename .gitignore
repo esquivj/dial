@@ -26,6 +26,10 @@ Package.resolved
 # Coverage artifacts (xcodebuild leaves these in the repo root)
 *.profraw
 
+# Local generation/audit scratch
+output/
+tmp/
+
 # Editor / agent local config (per-machine, not part of the project)
 .claude/
 .agents/

@@ -1,5 +1,6 @@
 // Dial/App/StatusBarController.swift
 import AppKit
+import Observation
 import SwiftUI
 
 /// Owns the `NSStatusItem` (the menubar strip) and the `DropdownPanel`
@@ -36,6 +37,7 @@ import SwiftUI
 final class StatusBarController {
   private let item: NSStatusItem
   private let panel: DropdownPanel
+  private let panelVisibility = DropdownVisibility()
   private weak var coord: AppCoordinator?
 
   /// Click + key dismiss monitors. Allocated lazily when the panel
@@ -48,19 +50,21 @@ final class StatusBarController {
   init(coord: AppCoordinator) {
     self.coord = coord
     self.item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-    // Panel size 360×380 — matches the compact body. 380pt gives the
-    // status bar breathing room from the top corner curves while
-    // keeping the LCD panel content tight (no empty Spacer below
-    // the spectrum).
+    // Panel size tracks DropdownView exactly so the transparent NSPanel
+    // does not leave an invisible click area around the device shell.
     self.panel = DropdownPanel(
-      rootView: DropdownView(coord: coord),
-      size: NSSize(width: 360, height: 380))
+      rootView: DropdownView(coord: coord, visibility: panelVisibility),
+      size: NSSize(width: DropdownLayout.width, height: DropdownLayout.height))
 
     if let button = item.button {
       // MenubarStripView no longer takes a pet — the bulldog moved out of
       // the menubar (where it was unreadably small) into the dropdown's
       // StatusRail and its own dedicated PetView screen.
-      let host = NSHostingView(rootView: MenubarStripView(vm: coord.menubar))
+      let host = NSHostingView(rootView: MenubarStripView(
+        vm: coord.menubar,
+        settings: coord.settings,
+        pet: coord.pet,
+        artworkCache: coord.artworkCache))
       host.translatesAutoresizingMaskIntoConstraints = false
       button.addSubview(host)
       NSLayoutConstraint.activate([
@@ -75,9 +79,95 @@ final class StatusBarController {
       // Without this, NSStatusBarButton only forwards left-click.
       button.sendAction(on: [.leftMouseUp, .rightMouseUp])
     }
+
+    observeStatusItemLength()
   }
 
   // MARK: - Click routing
+
+  private func observeStatusItemLength() {
+    guard let coord else { return }
+    withObservationTracking {
+      _ = coord.settings.menuBarDisplayMode
+      _ = coord.settings.menuBarTitleWidth
+      _ = coord.settings.showAlbumArtInMenuBar
+      _ = coord.settings.petEnabled
+      _ = coord.menubar.state
+      _ = coord.menubar.track?.name
+      _ = coord.menubar.track?.artistName
+      _ = coord.menubar.track?.artUrl
+      _ = coord.menubar.playsYTD
+    } onChange: { [weak self] in
+      Task { @MainActor [weak self] in
+        self?.updateStatusItemLength()
+        self?.observeStatusItemLength()
+      }
+    }
+    updateStatusItemLength()
+  }
+
+  private func updateStatusItemLength() {
+    guard let coord else {
+      item.length = 34
+      return
+    }
+
+    let titleWidth = CGFloat(coord.settings.menuBarTitleWidth)
+    let horizontalPadding: CGFloat = 8
+    let iconSlot: CGFloat = 22
+    let iconGap: CGFloat = 5
+
+    let width: CGFloat = {
+      switch coord.settings.menuBarDisplayMode {
+      case .albumArtTitle, .petTitle:
+        return horizontalPadding + iconSlot + iconGap + currentTitleTextWidth(max: titleWidth)
+      case .albumArtTrackArtist:
+        return horizontalPadding + iconSlot + iconGap + currentTrackArtistTextWidth(max: titleWidth)
+      case .titlePlayCount:
+        let playCountWidth: CGFloat = coord.menubar.state == .playing ? 34 : 0
+        return horizontalPadding + currentTitleTextWidth(max: titleWidth) + playCountWidth
+      case .petOnly, .iconOnly:
+        return horizontalPadding + iconSlot
+      case .tinyChaos:
+        return horizontalPadding + iconSlot + 4 + iconSlot + 4 + 24
+      }
+    }()
+
+    item.length = max(30, min(320, width))
+  }
+
+  private func currentTitleTextWidth(max maxWidth: CGFloat) -> CGFloat {
+    guard let coord else { return 0 }
+    let text: String = {
+      switch coord.menubar.state {
+      case .playing:        return coord.menubar.track?.name ?? ""
+      case .paused:         return "Paused"
+      case .nothingPlaying: return "Dial"
+      }
+    }()
+    return clampedMenuBarTextWidth(text, max: maxWidth)
+  }
+
+  private func currentTrackArtistTextWidth(max maxWidth: CGFloat) -> CGFloat {
+    guard let coord else { return 0 }
+    let text: String = {
+      switch coord.menubar.state {
+      case .playing:
+        let title = coord.menubar.track?.name ?? ""
+        let artist = coord.menubar.track?.artistName ?? ""
+        return artist.isEmpty ? title : "\(title) • \(artist)"
+      case .paused:
+        return "Paused"
+      case .nothingPlaying:
+        return "Dial"
+      }
+    }()
+    return clampedMenuBarTextWidth(text, max: maxWidth)
+  }
+
+  private func clampedMenuBarTextWidth(_ text: String, max maxWidth: CGFloat) -> CGFloat {
+    MenuBarTextMetrics.width(for: text, max: maxWidth)
+  }
 
   @objc private func handleClick(_ sender: AnyObject) {
     guard let event = NSApp.currentEvent else {
@@ -99,15 +189,19 @@ final class StatusBarController {
     if panel.isVisible {
       hidePanel()
     } else {
-      showPanel()
+      showPanel(screen: coord?.settings.defaultDropdownScreen.screen ?? .hud)
     }
   }
 
   /// Show the panel positioned directly under the status item button,
   /// clamped to screen bounds so it doesn't overflow when the menubar
   /// item is near the right edge of the display.
-  private func showPanel() {
+  private func showPanel(screen: DropdownScreen? = nil) {
+    if let screen {
+      coord?.dropdownScreen = screen
+    }
     guard let button = item.button, let buttonWindow = button.window else { return }
+    panelVisibility.isVisible = true
 
     let buttonFrameInWindow = button.convert(button.bounds, to: nil)
     let buttonFrameOnScreen = buttonWindow.convertToScreen(buttonFrameInWindow)
@@ -133,6 +227,7 @@ final class StatusBarController {
   }
 
   private func hidePanel() {
+    panelVisibility.isVisible = false
     panel.orderOut(nil)
     stopDismissMonitors()
   }
@@ -149,14 +244,9 @@ final class StatusBarController {
       self?.hidePanel()
     }
 
-    // Local: clicks inside our app but outside the device body. The
-    // panel is 380×420 but the device body is 320×360 centered, leaving
-    // a 30pt transparent margin on every side. Clicks IN that margin
-    // (but still within the panel window) should dismiss — the user is
-    // clicking "outside the device," they just happen to be inside the
-    // panel's transparent area. Without this carve-out, clicking near
-    // the device wouldn't dismiss because the global monitor only fires
-    // for events outside our app.
+    // Local: clicks inside our app but outside the panel dismiss it.
+    // The SwiftUI shell fills the NSPanel now, so anything inside the
+    // panel bounds should pass through to SwiftUI.
     //
     // Other carve-outs:
     //   * Clicks on the device body itself pass through to SwiftUI
@@ -214,13 +304,7 @@ final class StatusBarController {
   }
 
   /// Whether the event's location falls inside the visible device area.
-  /// Panel is 420 wide but only the central 360pt is the actual device
-  /// body — the 30pt left/right margins host decorative chassis buttons.
-  /// Clicks on those margins (whether on a side button or in empty
-  /// chassis space) should NOT dismiss — the side buttons read as
-  /// hardware controls, dismiss-on-click would feel buggy. So we treat
-  /// the entire panel area (body + chassis margins) as "inside" and
-  /// rely on the global monitor for actual outside-the-app dismiss.
+  /// The shell fills the panel, so the full panel bounds count as inside.
   private func eventIsInsideDeviceBody(_ event: NSEvent) -> Bool {
     let panelSize = panel.frame.size
     let bodyFrame = NSRect(origin: .zero, size: panelSize)
@@ -291,32 +375,24 @@ final class StatusBarController {
 
   // MARK: - Menu actions
 
-  @objc private func openSettings() {
-    NSApp.activate(ignoringOtherApps: true)
-    // macOS 14+: Settings selector is `showSettingsWindow:`. On older macOS
-    // it's `showPreferencesWindow:`. Try the modern one first.
-    let primary = Selector(("showSettingsWindow:"))
-    let fallback = Selector(("showPreferencesWindow:"))
-    if NSApp.responds(to: primary) {
-      NSApp.sendAction(primary, to: nil, from: nil)
-    } else {
-      NSApp.sendAction(fallback, to: nil, from: nil)
-    }
+  @MainActor @objc private func openSettings() {
+    guard let coord else { return }
+    SettingsWindowPresenter.shared.show(coord: coord)
   }
 
   @objc private func openHistory() {
-    coord?.dropdownScreen = .history
-    if !panel.isVisible { showPanel() }
+    if !panel.isVisible { showPanel(screen: .history) }
+    else { coord?.dropdownScreen = .history }
   }
 
   @objc private func openStats() {
-    coord?.dropdownScreen = .stats
-    if !panel.isVisible { showPanel() }
+    if !panel.isVisible { showPanel(screen: .stats) }
+    else { coord?.dropdownScreen = .stats }
   }
 
   @objc private func openPet() {
-    coord?.dropdownScreen = .pet
-    if !panel.isVisible { showPanel() }
+    if !panel.isVisible { showPanel(screen: .pet) }
+    else { coord?.dropdownScreen = .pet }
   }
 
   /// Seek the current track back to 0:00. Best-effort — if no track is

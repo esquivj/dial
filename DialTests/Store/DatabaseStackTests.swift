@@ -7,7 +7,7 @@ final class DatabaseStackTests: XCTestCase {
   func test_migration_createsAllTables() throws {
     let dbq = try InMemoryDatabase.make()
     try dbq.read { db in
-      for table in ["plays", "tracks", "artists", "imports_log", "pet_state"] {
+      for table in ["plays", "tracks", "artists", "imports_log", "pet_state", "badge_events", "pet_trick_unlocks"] {
         XCTAssertTrue(try db.tableExists(table), "missing table \(table)")
       }
     }

@@ -58,6 +58,7 @@ final class Importer {
           continue   // duplicate — skip
         }
         inserted += 1
+        try BadgeResolver.recordMemories(for: play, mode: .imported, in: db)
         try applyXPInTxn(for: play, in: db)
       }
       var entry = ImportLogEntry(
@@ -75,22 +76,15 @@ final class Importer {
   /// Total imported XP is capped at the companion threshold.
   private func applyXPInTxn(for play: Play, in db: Database) throws {
     var state = try PetState.fetchOne(db, key: 1)!
-    let day = StreakCalendar.ymd(from: play.playedAt)
-    let streak = StreakCalendar().apply(
-      playDate: day,
-      priorAnchor: state.streakAnchorDate,
-      priorDays: state.streakDays)
-
     let xpDelta = XPFormula.compute(
       msPlayed: play.msPlayed,
       variety: .none,
-      streakDays: streak.days)
+      streakDays: 0)
 
-    state.xp = min(state.xp + xpDelta, 25_000)   // companion cap on imports
-    state.streakAnchorDate = streak.anchor
-    state.streakDays = streak.days
-    state.lastPlayAt = play.playedAt
-    state.stage = PetStageTable.stage(forXP: state.xp, elderUnlocked: false)
+    if state.xp < 25_000 {
+      state.xp = min(state.xp + xpDelta, 25_000)   // companion cap on imports
+    }
+    state.stage = PetStageTable.stage(forXP: state.xp, elderUnlocked: state.elderUnlockedAt != nil)
     try state.update(db)
   }
 }

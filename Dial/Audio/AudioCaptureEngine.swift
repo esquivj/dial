@@ -35,6 +35,11 @@ final class AudioCaptureEngine: NSObject, SCStreamOutput, SCStreamDelegate, @unc
   /// counts we see from SCStream.
   var onSamples: (@Sendable ([Float]) -> Void)?
 
+  /// Cheap gate checked before extracting/copying audio samples. This lets
+  /// the visualizer keep ScreenCaptureKit alive for permission stability
+  /// without allocating buffers while no HUD view is watching.
+  var shouldProcessSamples: (@Sendable () -> Bool)?
+
   /// Called on the SCStream's internal queue when the system stops the
   /// stream out from under us — most commonly because the user revoked
   /// Screen Recording permission while we were running, but also covers
@@ -99,6 +104,7 @@ final class AudioCaptureEngine: NSObject, SCStreamOutput, SCStreamDelegate, @unc
     of type: SCStreamOutputType
   ) {
     guard type == .audio else { return }
+    guard shouldProcessSamples?() ?? true else { return }
     guard let samples = Self.extractLeftChannel(from: sampleBuffer) else { return }
     onSamples?(samples)
   }

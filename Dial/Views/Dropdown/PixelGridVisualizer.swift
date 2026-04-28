@@ -4,33 +4,34 @@ import SwiftUI
 
 /// LED-grid spectrum visualizer that renders directly from `VisualizerEngine`'s
 /// FFT bands. Visual contract:
-///   - 32 columns × 7 rows of cells, sized to fill the available width
-///   - All cells in mint (`Dial.Palette.amber`) at varied alpha to suggest
+///   - Configurable columns × 8 rows of compact cells, sized to fill the width
+///   - All cells in mint (`Dial.Palette.accent`) at varied alpha to suggest
 ///     intensity — peak (1.0) > hot top band (0.95) > bulk lit (0.80) >
 ///     off ghost (0.06). Single-color matches mockup render.
 ///   - Unlit cells stay faintly visible at ~6% opacity so the grid reads as
 ///     a populated LED matrix at rest, not a black void
 ///
-/// Renders inside a `TimelineView(.animation)` so paint is decoupled from
-/// the audio thread's update cadence — keeps redraws steady at 30fps even
-/// when audio buffers arrive irregularly.
+/// Renders from throttled spectrum snapshots. The engine owns cadence; the
+/// view should not force a display-link redraw loop of its own.
 struct PixelGridVisualizer: View {
   @Bindable var engine: VisualizerEngine
 
-  private let columns = VisualizerEngine.bandCount  // 32
-  private let rows = 7
-  private let gap: CGFloat = 1
+  private let rows = Dial.Layout.Spectrum.rows
+  private let gap = Dial.Layout.Spectrum.cellGap
   /// Top 30% of any column gets a brighter alpha — reads as the bar entering
   /// "hot" territory, like the lit zone on a VU meter. Within the mint family
   /// rather than a magenta accent (mockup is single-tone).
-  private let hotZoneFraction: Double = 0.30
+  private let hotZoneFraction = Dial.Layout.Spectrum.hotZoneFraction
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 6) {
+    VStack(alignment: .leading, spacing: Dial.Layout.Spectrum.labelGridSpacing) {
       header
       grid
     }
-    .padding(EdgeInsets(top: 0, leading: 14, bottom: 12, trailing: 14))
+    // The readout cards above this row have a soft shadow. Give the
+    // spectrum label its own gutter so the copy does not visually crash
+    // into that chrome.
+    .padding(Dial.Layout.Spectrum.padding)
   }
 
   // MARK: - Header (label row matches SessionTimeline's prior rhythm)
@@ -40,11 +41,11 @@ struct PixelGridVisualizer: View {
       Text("SPECTRUM")
         .font(Dial.Typography.monoLabel)
         .tracking(1.4)
-        .foregroundStyle(Dial.Palette.muted)
+        .foregroundStyle(Dial.Palette.textMuted)
       Spacer()
       Text(rightLabel)
         .font(Dial.Typography.monoLabel)
-        .foregroundStyle(Dial.Palette.muted)
+        .foregroundStyle(Dial.Palette.textMuted)
         .contentTransition(.opacity)
     }
   }
@@ -62,12 +63,20 @@ struct PixelGridVisualizer: View {
 
   private var grid: some View {
     GeometryReader { proxy in
+      let bands = engine.bands
+      let peaks = engine.peaks
+      let columns = max(1, min(engine.bandCount, bands.count, peaks.count))
       let cellSize = max(2, (proxy.size.width - gap * CGFloat(columns - 1)) / CGFloat(columns))
+      let showPeakMarkers = engine.showPeakMarkers
       ZStack {
-        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: false)) { _ in
-          Canvas { ctx, _ in
-            draw(into: ctx, cellSize: cellSize)
-          }
+        Canvas { ctx, _ in
+          draw(
+            into: ctx,
+            cellSize: cellSize,
+            columns: columns,
+            bands: bands,
+            peaks: peaks,
+            showPeakMarkers: showPeakMarkers)
         }
         if engine.state == .denied || engine.state == .error {
           permissionOverlay
@@ -77,21 +86,29 @@ struct PixelGridVisualizer: View {
     .frame(height: CGFloat(rows) * cellHeight + CGFloat(rows - 1) * gap)
   }
 
-  /// Cell height tracks cell width — square cells read most LED-like.
-  /// Computed via a sentinel width to avoid a chicken-and-egg with frame.
-  private var cellHeight: CGFloat { 7 }
+  /// Slightly shorter than the computed cell width at the HUD's normal size.
+  /// Keeps detailed densities from making the spectrum strip taller.
+  private var cellHeight: CGFloat { Dial.Layout.Spectrum.cellHeight }
 
   // MARK: - Painting
 
-  private func draw(into ctx: GraphicsContext, cellSize: CGFloat) {
+  private func draw(
+    into ctx: GraphicsContext,
+    cellSize: CGFloat,
+    columns: Int,
+    bands: [Float],
+    peaks: [Float],
+    showPeakMarkers: Bool
+  ) {
     let cellH = cellHeight
     let cellW = cellSize
-    let mint = Dial.Palette.amber
+    let cornerRadius = min(0.8, min(cellW, cellH) * 0.16)
+    let mint = Dial.Palette.accent
 
     for col in 0..<columns {
-      let height = engine.bands[col]
+      let height = bands[col]
       let litRows = Int((Double(height) * Double(rows)).rounded())
-      let peakLevel = engine.peaks[col]
+      let peakLevel = peaks[col]
       let peakRow = max(0, min(rows - 1, Int((Double(peakLevel) * Double(rows)).rounded()) - 1))
       let hasPeak = peakLevel > 0.02
 
@@ -100,10 +117,10 @@ struct PixelGridVisualizer: View {
         let y = (CGFloat(rows - 1 - row)) * (cellH + gap)
         let x = CGFloat(col) * (cellW + gap)
         let rect = CGRect(x: x, y: y, width: cellW, height: cellH)
-        let path = Path(roundedRect: rect, cornerRadius: 1)
+        let path = Path(roundedRect: rect, cornerRadius: cornerRadius)
 
         let isLit = row < litRows
-        let isPeak = hasPeak && row == peakRow
+        let isPeak = showPeakMarkers && hasPeak && row == peakRow
         let isHot = isLit && (Double(row) / Double(rows)) >= (1 - hotZoneFraction)
 
         // Single-color spectrum (mint at varied alpha). Mockup spec shows
@@ -137,11 +154,11 @@ struct PixelGridVisualizer: View {
         Text(engine.state == .denied ? "ENABLE VISUALIZER" : "VISUALIZER OFFLINE")
           .font(Dial.Typography.monoLabel)
           .tracking(1.4)
-          .foregroundStyle(Dial.Palette.amber)
+          .foregroundStyle(Dial.Palette.accent)
         if engine.state == .denied {
           Text("System Settings → Screen Recording")
             .font(Dial.Typography.monoLabel)
-            .foregroundStyle(Dial.Palette.muted)
+            .foregroundStyle(Dial.Palette.textMuted)
         }
       }
       .frame(maxWidth: .infinity, maxHeight: .infinity)

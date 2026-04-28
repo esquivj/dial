@@ -2,9 +2,24 @@ import SwiftUI
 
 enum DropdownScreen: Equatable { case hud, history, stats, pet }
 
+enum DropdownLayout {
+  static let width = Dial.Layout.Dropdown.width
+  static let height = Dial.Layout.Dropdown.height
+}
+
+@Observable
+final class DropdownVisibility {
+  var isVisible = false
+}
+
 struct DropdownView: View {
   @Bindable var coord: AppCoordinator
+  @Bindable var visibility: DropdownVisibility
   @State private var showingGlossary = false
+
+  private var deviceShape: RoundedRectangle {
+    RoundedRectangle(cornerRadius: Dial.Layout.Dropdown.cornerRadius, style: .continuous)
+  }
 
   // Screen state lives on the coordinator (`coord.dropdownScreen`) so the
   // status item's right-click menu can drive it from outside the view tree.
@@ -12,6 +27,15 @@ struct DropdownView: View {
   // @State (NSPopover reuses the hosting controller).
 
   var body: some View {
+    if visibility.isVisible {
+      visibleBody
+    } else {
+      Color.clear
+        .frame(width: DropdownLayout.width, height: DropdownLayout.height)
+    }
+  }
+
+  private var visibleBody: some View {
     Group {
       if coord.settings.signedIn {
         signedInView
@@ -19,88 +43,10 @@ struct DropdownView: View {
         connectView
       }
     }
-    // Device body: 360×380. Square-ish; the extra 20pt over a true
-    // square gives the status bar more breathing room from the top
-    // corner curves without bloating the body or reintroducing empty
-    // Spacer below the spectrum.
-    .frame(width: 360, height: 380)
-    .background(
-      // Layered device body, bottom to top:
-      //   1. Solid ground (teal-shifted for material identity)
-      //   2. Convex linear gradient — mint glow catching the upper curve,
-      //      fading through clear, deepening to black at the underside.
-      //   3. Radial vignette — darkens the corners, leaves the center
-      //      neutral. The render's body reads as a 3D glass slab because
-      //      its corners are visibly darker than its middle (light falls
-      //      off as the curve recedes from the viewer). This single
-      //      gradient does most of the "this is glass with depth" work.
-      //   4. Dust texture stippling
-      ZStack {
-        Dial.Palette.ground
-        LinearGradient(
-          colors: [
-            Dial.Palette.amber.opacity(0.12),
-            Color.clear,
-            Color.clear,
-            Color.black.opacity(0.28),
-          ],
-          startPoint: .top, endPoint: .bottom)
-        RadialGradient(
-          colors: [
-            Color.clear,
-            Color.clear,
-            Color.black.opacity(0.40),
-          ],
-          center: .center,
-          startRadius: 100,
-          endRadius: 240)
-        DustTexture()
-      }
-    )
-    .clipShape(RoundedRectangle(cornerRadius: 40))
-    // Inner top shadow — the device body's own lip casts a soft shadow
-    // into the cavity. Sells the "this is a glass slab with a recessed
-    // interior" reading that all the inner containers then sit inside.
-    .overlay(
-      RoundedRectangle(cornerRadius: 40)
-        .stroke(Color.black.opacity(0.35), lineWidth: 3)
-        .blur(radius: 2)
-        .offset(y: 2)
-        .mask(RoundedRectangle(cornerRadius: 40))
-        .allowsHitTesting(false)
-    )
-    // Plasticky outer shell — translucent white gradient stroke matches
-    // the inner panels' chrome language. Earlier this was mint top →
-    // black bottom, which read as "neon LED edge" rather than "clear
-    // plastic shell." White-on-white gradient (bright top catch, faint
-    // bottom) reads as "translucent plastic catching ambient light from
-    // above." 1.4pt line width gives the shell visible "thickness."
-    .overlay(
-      RoundedRectangle(cornerRadius: 40)
-        .stroke(LinearGradient(colors: [
-          Color.white.opacity(0.65),
-          Color.white.opacity(0.30),
-          Color.white.opacity(0.15),
-          Color.white.opacity(0.08),
-        ], startPoint: .top, endPoint: .bottom), lineWidth: 1.4)
-    )
-    .overlay(
-      // Top-arc gel sheen — bright specular highlight where the curve
-      // catches light. 0.70 (was 0.40) — needs to be visibly brighter
-      // than the new 0.65 base stroke or the sheen disappears into it.
-      RoundedRectangle(cornerRadius: 39)
-        .trim(from: 0.05, to: 0.45)
-        .stroke(Color.white.opacity(0.70), lineWidth: 1.4)
-        .blur(radius: 0.6)
-        .padding(0.5)
-        .allowsHitTesting(false)
-    )
-    // Outer aura removed — there's no reason for the entire panel to
-    // emit mint light into surrounding space. The device body's chrome
-    // (plasticky stroke + sheen) does enough to read as "lit object";
-    // the aura on top was decorative bloat. Padding also removed since
-    // there's no shadow that needs room to render — the panel now
-    // matches the body dimensions exactly.
+    // Popover shell: calm continuous plastic. The transport cradle keeps
+    // the custom hardware curve; the window itself should not compete.
+    .frame(width: DropdownLayout.width, height: DropdownLayout.height)
+    .dialChassisPlastic(shape: deviceShape)
   }
 
   // MARK: - Signed-in body (HUD / History / Stats / Glossary)
@@ -119,30 +65,29 @@ struct DropdownView: View {
     // this pass — the prior 6pt VStack spacing + 8pt horizontal padding
     // left the LCD floating in too much surrounding margin. The render
     // is edge-to-edge dense; ours read loose by comparison.
-    VStack(spacing: 4) {
+    VStack(spacing: Dial.Layout.Dropdown.shellSpacing) {
       if coord.dropdownScreen == .hud {
         StatusRail(
           vm: coord.menubar,
           showingGlossary: $showingGlossary,
           onOpenHistory: { withAnimation(.easeInOut(duration: 0.18)) { coord.dropdownScreen = .history } },
-          onOpenStats: { withAnimation(.easeInOut(duration: 0.18)) { coord.dropdownScreen = .stats } }
+          onOpenStats: { withAnimation(.easeInOut(duration: 0.18)) { coord.dropdownScreen = .stats } },
+          onOpenSettings: openSettings
         )
       }
 
-      screenContent
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .overlay(LCDScanlines())
-        .lcdPanel()
-        .padding(.horizontal, 6)
+      screenPanel
 
-      if coord.dropdownScreen == .hud {
+      if coord.dropdownScreen == .hud && coord.settings.showTransportInHUD {
         // Transport panel uses the special capsule shape — horizontally
         // pill-shaped with fully rounded short edges. Distinct from the
         // rectangular LCD panel above so the eye reads it as the device's
         // dedicated playback-controls cradle.
-        ControlsBar(menubar: coord.menubar, client: coord.client)
+        ControlsBar(
+          menubar: coord.menubar,
+          client: coord.client)
           .transportPanel()
-          .padding(.horizontal, 6)
+          .padding(.horizontal, Dial.Layout.Transport.panelHorizontalPadding)
           .modifier(StaggeredAppear(delay: 0.20))
       }
     }
@@ -150,8 +95,30 @@ struct DropdownView: View {
     // crowding the status bar against the body's upper corner curves;
     // 8pt gives "NOW PLAYING" and the time clear breathing room from
     // the top edge.
-    .padding(.top, 8)
-    .padding(.bottom, 10)
+    .padding(.top, Dial.Layout.Dropdown.outerTopPadding)
+    .padding(.bottom, Dial.Layout.Dropdown.outerBottomPadding)
+    .frame(maxHeight: .infinity, alignment: .top)
+  }
+
+  @ViewBuilder
+  private var screenPanel: some View {
+    if hudScreenHugsContent {
+      screenContent
+        .frame(maxWidth: .infinity, alignment: .top)
+        .overlay(LCDScanlines())
+        .lcdPanel()
+        .padding(.horizontal, Dial.Layout.Dropdown.panelHorizontalPadding)
+    } else {
+      screenContent
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .overlay(LCDScanlines())
+        .lcdPanel()
+        .padding(.horizontal, Dial.Layout.Dropdown.panelHorizontalPadding)
+    }
+  }
+
+  private var hudScreenHugsContent: Bool {
+    coord.dropdownScreen == .hud && !showingGlossary
   }
 
   /// What lives inside the "screen" area — glossary overlay or one of the
@@ -170,11 +137,16 @@ struct DropdownView: View {
         HistoryView(dbq: coord.dbq, onBack: { withAnimation(.easeInOut(duration: 0.18)) { coord.dropdownScreen = .hud } })
           .transition(.move(edge: .trailing).combined(with: .opacity))
       case .stats:
-        StatsView(dbq: coord.dbq, onBack: { withAnimation(.easeInOut(duration: 0.18)) { coord.dropdownScreen = .hud } })
+        StatsView(
+          dbq: coord.dbq,
+          artworkCache: coord.artworkCache,
+          onBack: { withAnimation(.easeInOut(duration: 0.18)) { coord.dropdownScreen = .hud } })
           .transition(.move(edge: .trailing).combined(with: .opacity))
       case .pet:
         PetView(
           pet: coord.pet,
+          aggCache: coord.aggCache,
+          menubar: coord.menubar,
           dbq: coord.dbq,
           onBack: { withAnimation(.easeInOut(duration: 0.18)) { coord.dropdownScreen = .hud } }
         )
@@ -191,13 +163,20 @@ struct DropdownView: View {
       TrackHero(
         vm: coord.nowPlaying,
         pet: coord.pet,
+        menubar: coord.menubar,
+        settings: coord.settings,
+        artworkCache: coord.artworkCache,
+        client: coord.client,
+        onReconnect: { try await coord.reconnectForLibraryAccess() },
+        badgeInsight: coord.settings.showBadgesInHUD ? activeBadgeInsight : nil,
+        showPet: coord.settings.petEnabled && coord.settings.showPetInHUD,
         onOpenPet: { withAnimation(.easeInOut(duration: 0.18)) { coord.dropdownScreen = .pet } }
       )
       .modifier(StaggeredAppear(delay: 0.00))
-      ReadoutsRow(vm: coord.nowPlaying)
-        .modifier(StaggeredAppear(delay: 0.05))
-      BadgeRow(kind: activeBadge, detail: badgeDetail)
-        .modifier(StaggeredAppear(delay: 0.10))
+      if coord.settings.showReadoutsInHUD {
+        ReadoutsRow(vm: coord.nowPlaying)
+          .modifier(StaggeredAppear(delay: animationDelay(1)))
+      }
       // ArtistContext (artist rank + lifetime plays) used to live here as a
       // 4th data row, but stacking three numeric rows (Readouts + Badge +
       // Artist) before the visualizer was the AI-slop "metric grid" tell —
@@ -219,18 +198,29 @@ struct DropdownView: View {
       // the view is mounted, so when the popover is closed the engine stops
       // burning CPU on FFT work nobody is observing. Stream stays alive
       // either way (permission stability > tiny capture cost).
-      PixelGridVisualizer(engine: coord.visualizer)
-        .modifier(StaggeredAppear(delay: 0.15))
-        .task { await coord.visualizer.start() }
-        .onAppear { coord.visualizer.attach() }
-        .onDisappear { coord.visualizer.detach() }
-      // Flex spacer absorbs any leftover vertical room so the LCD content
-      // stays top-aligned and the screen area fills the bezel cleanly,
-      // regardless of how many optional rows above (BadgeRow / ArtistContext)
-      // are mounted.
-      Spacer(minLength: 0)
+      if coord.settings.showVisualizerInHUD {
+        PixelGridVisualizer(engine: coord.visualizer)
+          .modifier(StaggeredAppear(delay: animationDelay(2)))
+          .task {
+            configureSpectrum()
+            await coord.visualizer.start()
+          }
+          .onAppear {
+            configureSpectrum()
+            coord.visualizer.attach()
+          }
+          .onChange(of: spectrumSettingsFingerprint) { _, _ in
+            configureSpectrum()
+          }
+          .onDisappear { coord.visualizer.detach() }
+      }
     }
-    .frame(maxHeight: .infinity, alignment: .top)
+    // Match the info/glossary screen's optical placement: content should sit
+    // inside the LCD glass, not start flush at y=0. Kept at 6pt (not the
+    // glossary's 16pt) because the player has more fixed-height hardware.
+    .padding(.top, Dial.Layout.Dropdown.hudContentTopPadding)
+    .padding(.bottom, Dial.Layout.Dropdown.hudContentBottomPadding)
+    .frame(maxWidth: .infinity, alignment: .top)
   }
 
   // MARK: - Pre-auth (Connect button)
@@ -244,7 +234,8 @@ struct DropdownView: View {
         vm: coord.menubar,
         showingGlossary: $showingGlossary,
         onOpenHistory: { withAnimation(.easeInOut(duration: 0.18)) { coord.dropdownScreen = .history } },
-        onOpenStats: { withAnimation(.easeInOut(duration: 0.18)) { coord.dropdownScreen = .stats } }
+        onOpenStats: { withAnimation(.easeInOut(duration: 0.18)) { coord.dropdownScreen = .stats } },
+        onOpenSettings: openSettings
       )
 
       if showingGlossary {
@@ -255,13 +246,13 @@ struct DropdownView: View {
         VStack(alignment: .leading, spacing: 8) {
           Text("Welcome to Dial")
             .font(Dial.Typography.sansTitle)
-            .foregroundStyle(Dial.Palette.ivory)
+            .foregroundStyle(Dial.Palette.textPrimary)
           Text("""
           A menubar companion for Spotify. Connect your account to start \
           tracking what you play and let the pet hatch.
           """)
           .font(Dial.Typography.sansCaption)
-          .foregroundStyle(Dial.Palette.muted)
+          .foregroundStyle(Dial.Palette.textMuted)
           .fixedSize(horizontal: false, vertical: true)
         }
         .padding(.horizontal, 18)
@@ -277,9 +268,9 @@ struct DropdownView: View {
             .foregroundStyle(Dial.Palette.ground)
             .padding(.vertical, 10)
             .frame(maxWidth: .infinity)
-            .background(Dial.Palette.amber)
+            .background(Dial.Palette.accent)
             .clipShape(RoundedRectangle(cornerRadius: 4))
-            .shadow(color: Dial.Palette.amber.opacity(0.4), radius: 8, x: 0, y: 0)
+            .shadow(color: Color.black.opacity(0.32), radius: 3, x: 0, y: 1.5)
         }
         .buttonStyle(.pressable)
         .padding(.horizontal, 18)
@@ -289,30 +280,56 @@ struct DropdownView: View {
         Text("OAuth opens in your browser. Token stays in your Keychain.")
           .font(Dial.Typography.monoLabel)
           .tracking(0.6)
-          .foregroundStyle(Dial.Palette.muted)
+          .foregroundStyle(Dial.Palette.textMuted)
           .padding(.horizontal, 18)
           .padding(.bottom, 16)
       }
     }
   }
 
+  private func openSettings() {
+    SettingsWindowPresenter.shared.show(coord: coord)
+  }
+
   // MARK: - Badge resolution
 
-  private var activeBadge: BadgeKind {
-    if coord.aggCache.firstListen { return .firstListen }
-    if coord.aggCache.rediscovered { return .rediscovered }
-    if coord.aggCache.onStreak    { return .onStreak }
-    return .none
-  }
-
-  private var badgeDetail: String {
-    switch activeBadge {
-    case .firstListen:  "You've never played this before"
-    case .rediscovered: "Haven't heard in a while"
-    case .onStreak:     "Most-played track this week"
-    case .none:         ""
+  private var activeBadgeInsight: BadgeInsight? {
+    guard let insight = coord.aggCache.currentBadgeInsight else { return nil }
+    switch insight.kind.category {
+    case .discovery:
+      return coord.settings.discoveryBadgesEnabled ? insight : nil
+    case .pattern:
+      return coord.settings.patternBadgesEnabled ? insight : nil
+    case .milestone:
+      return coord.settings.milestoneBadgesEnabled ? insight : nil
     }
   }
+
+  private func animationDelay(_ index: Int) -> Double {
+    switch coord.settings.animationLevel {
+    case .low:    return 0
+    case .normal: return Double(index) * 0.05
+    case .extra:  return Double(index) * 0.08
+    }
+  }
+
+  private var spectrumSettingsFingerprint: String {
+    [
+      coord.settings.spectrumStyle.rawValue,
+      coord.settings.spectrumDensity.rawValue,
+      coord.settings.spectrumMotion.rawValue,
+      coord.settings.spectrumPeakMarkers ? "peaks" : "no-peaks",
+    ].joined(separator: ":")
+  }
+
+  private func configureSpectrum() {
+    coord.visualizer.configure(
+      style: coord.settings.spectrumStyle,
+      density: coord.settings.spectrumDensity,
+      motion: coord.settings.spectrumMotion,
+      showPeakMarkers: coord.settings.spectrumPeakMarkers)
+  }
+
 }
 
 /// Subtle entrance animation for stacked HUD sections. Each section fades

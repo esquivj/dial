@@ -7,7 +7,7 @@ private let petLog = Logger(subsystem: "com.dial.Dial", category: "PetEngine")
 
 /// Inserts a `Play` and awards pet XP atomically. Used by:
 ///  - `PlayRecorder` callsite: live polling counted plays
-///  - `Importer`:               imported history (with the companion XP cap)
+///  - historical/import flows when they need the same insert/accounting path
 final class PetEngine {
   private let dbq: DatabaseQueue
   private let clock: () -> Int64
@@ -35,50 +35,67 @@ final class PetEngine {
   /// Imports (`source: "import"`) bypass this check — duplicates there
   /// are already deduped by the unique `(played_at, track_uri, ms_played)`
   /// index on the plays table.
-  func recordPlay(_ play: Play) throws {
+  @discardableResult
+  func recordPlay(_ play: Play) throws -> Bool {
     try dbq.write { db in
       if play.source == "live",
          try Self.duplicateLivePlayExists(of: play, in: db) {
         petLog.notice("dedup: skipping duplicate live play for \(play.trackUri, privacy: .public) (mid-track restart)")
-        return
+        return false
       }
       var p = play
       try p.insert(db)
+      let isImport = p.source == "import"
+      try BadgeResolver.recordMemories(
+        for: p,
+        mode: isImport ? .imported : .live,
+        in: db)
 
       var state = try PetState.fetchOne(db, key: 1)!
 
-      let variety = try Self.variety(for: p, in: db)
-      let day = StreakCalendar.ymd(from: p.playedAt)
-      let streak = StreakCalendar().apply(
-        playDate: day,
-        priorAnchor: state.streakAnchorDate,
-        priorDays: state.streakDays)
+      let variety = isImport ? VarietyBonus.none : try Self.variety(for: p, in: db)
+      let streak: StreakCalendar.Result?
+      if isImport {
+        streak = nil
+      } else {
+        let day = StreakCalendar.ymd(from: p.playedAt)
+        streak = StreakCalendar().apply(
+          playDate: day,
+          priorAnchor: state.streakAnchorDate,
+          priorDays: state.streakDays)
+      }
 
       let xpDelta = XPFormula.compute(
         msPlayed: p.msPlayed,
         variety: variety,
-        streakDays: streak.days)
+        streakDays: streak?.days ?? 0)
 
       let proposed = state.xp + xpDelta
-      if p.source == "import" {
-        state.xp = min(proposed, importedXPCap)
+      if isImport {
+        if state.xp < importedXPCap {
+          state.xp = min(proposed, importedXPCap)
+        }
       } else {
         state.xp = proposed
       }
 
-      state.streakAnchorDate = streak.anchor
-      state.streakDays = streak.days
-      state.lastPlayAt = p.playedAt
+      if let streak {
+        state.streakAnchorDate = streak.anchor
+        state.streakDays = streak.days
+        state.lastPlayAt = p.playedAt
+      }
 
       // Elder unlock: 30 calendar days after install.
-      let elderUnlocked = (clock() - state.installedAt) >= elderLockDays * 86_400
-      if elderUnlocked, state.elderUnlockedAt == nil { state.elderUnlockedAt = clock() }
+      let liveElderUnlocked = !isImport && (clock() - state.installedAt) >= elderLockDays * 86_400
+      if liveElderUnlocked, state.elderUnlockedAt == nil { state.elderUnlockedAt = clock() }
+      let elderUnlocked = state.elderUnlockedAt != nil || liveElderUnlocked
 
       let newStage = PetStageTable.stage(forXP: state.xp, elderUnlocked: elderUnlocked)
       if newStage == .hatching, state.hatchedAt == nil { state.hatchedAt = clock() }
       state.stage = newStage
 
       try state.update(db)
+      return true
     }
   }
 

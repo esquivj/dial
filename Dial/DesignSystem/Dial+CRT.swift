@@ -68,7 +68,7 @@ struct RecessedScreen: ViewModifier {
 
 /// LCD panel — slightly-lighter inset rectangle that sits inside the
 /// device body and contains the actual content (track row, stats, badge,
-/// spectrum). The mockup render's body is divided into three visual zones:
+/// spectrum). The body is divided into three visual zones:
 ///
 ///   * Status zone (top): items float directly on the device body
 ///   * LCD zone (middle): an inset rectangle one shade lighter than the
@@ -79,55 +79,22 @@ struct RecessedScreen: ViewModifier {
 /// surface." With it the device gains the legibility of "device chrome
 /// surrounding a screen" — which is the actual aesthetic move.
 ///
-/// Implemented as: rounded surface fill + thin mint hairline + soft inner
-/// top shadow (light falls into the recessed cavity).
+/// Implemented through the shared recessed-panel material so the LCD and
+/// transport cradle use one lighting model.
 struct LCDPanel: ViewModifier {
-  /// Corner radius — smaller than the outer device body's (40pt) so the
+  /// Corner radius — smaller than the outer device body's so the
   /// LCD reads as concentrically inset. 10pt is the sweet spot for a
   /// content-sized panel.
   var cornerRadius: CGFloat = 10
-  /// Plasticky-translucent stroke opacity. 0.45 (was 0.22) — clearly
-  /// reads as "translucent plastic edge" rather than "barely-there
-  /// hairline." Same hue (white) as the outer device shell so all
-  /// panel chrome shares one material language.
-  var strokeOpacity: Double = 0.45
+  var fill: Color = Dial.Palette.subtle
+  var strokeOpacity: Double = DialMaterial.Recessed.strokeOpacity
 
   func body(content: Content) -> some View {
     content
-      .background(
-        RoundedRectangle(cornerRadius: cornerRadius)
-          .fill(Dial.Palette.surface)
-      )
-      // Clip content to the rounded shape — without this, child views
-      // (HistoryView/StatsView headers, scroll rows, etc.) render past
-      // the rounded corners into the device body's dark area, leaving
-      // text and rows visible "outside" the LCD panel boundary.
-      .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
-      .overlay(
-        // Plasticky-translucent white stroke. Wider 0.8pt line (was 0.5)
-        // gives the panel a visible "shell edge thickness" matching the
-        // outer device body's plastic chrome treatment.
-        RoundedRectangle(cornerRadius: cornerRadius)
-          .stroke(Color.white.opacity(strokeOpacity), lineWidth: 0.8)
-      )
-      .overlay(
-        // Top-arc gel sheen — brighter specular at the upper curve
-        // where light catches. Reinforces the "lit plastic shell" feel.
-        RoundedRectangle(cornerRadius: cornerRadius)
-          .trim(from: 0.05, to: 0.45)
-          .stroke(Color.white.opacity(0.55), lineWidth: 0.8)
-          .blur(radius: 0.4)
-          .allowsHitTesting(false)
-      )
-      .overlay(
-        // Inner top shadow — light catches the upper rim of the recess.
-        RoundedRectangle(cornerRadius: cornerRadius)
-          .stroke(Color.black.opacity(0.45), lineWidth: 2.5)
-          .blur(radius: 1.5)
-          .offset(y: 1.5)
-          .mask(RoundedRectangle(cornerRadius: cornerRadius))
-          .allowsHitTesting(false)
-      )
+      .dialRecessedPanel(
+        shape: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous),
+        fill: fill,
+        strokeOpacity: strokeOpacity)
   }
 }
 
@@ -135,16 +102,20 @@ extension View {
   /// Wrap content in an LCD panel — the slightly-lighter inset zone that
   /// distinguishes "screen content" from "device body chrome." See
   /// `LCDPanel` for the visual contract.
-  func lcdPanel(cornerRadius: CGFloat = 10, strokeOpacity: Double = 0.18) -> some View {
-    self.modifier(LCDPanel(cornerRadius: cornerRadius, strokeOpacity: strokeOpacity))
+  func lcdPanel(
+    cornerRadius: CGFloat = 10,
+    fill: Color = Dial.Palette.subtle,
+    strokeOpacity: Double = DialMaterial.Recessed.strokeOpacity
+  ) -> some View {
+    self.modifier(LCDPanel(cornerRadius: cornerRadius, fill: fill, strokeOpacity: strokeOpacity))
   }
 
   /// Wrap content in a transport panel — same chrome system as `lcdPanel`
-  /// but using a horizontal Capsule (fully rounded short edges) instead
-  /// of a rounded rectangle. Matches the Digivice render's "playback
-  /// button cradle" silhouette: distinct from the LCD panel above so
-  /// the eye reads it as a separate functional zone (controls vs screen).
-  func transportPanel(strokeOpacity: Double = 0.45) -> some View {
+  /// but using the special flat-top / curved-bottom panel silhouette
+  /// instead of a rounded rectangle. Matches the Digivice render's
+  /// "playback button cradle" shape: distinct from the LCD panel above
+  /// so the eye reads it as a separate functional zone.
+  func transportPanel(strokeOpacity: Double = DialMaterial.Recessed.strokeOpacity) -> some View {
     self.modifier(TransportPanel(strokeOpacity: strokeOpacity))
   }
 }
@@ -159,7 +130,7 @@ extension View {
 /// Geometry:
 ///   * Top corners: small radius (6pt)
 ///   * Top edge: flat
-///   * Sides: straight vertical for 55% of the height
+///   * Sides: straight vertical for 80% of the height by default
 ///   * Bottom: single quadratic bezier curve sweeping right-to-left,
 ///     peaking at the rect's bottom edge — gives the "more curved bottom"
 ///     reading without extending past the input rect bounds
@@ -171,11 +142,18 @@ struct TransportPanelShape: Shape {
   /// Earlier 0.55 was too aggressive — the bottom read as a deep scoop
   /// rather than a subtle curve.
   var sideHeightFraction: CGFloat = 0.80
+  /// Optional absolute curve depth in points. Use this for large shells:
+  /// a percentage of 380pt gets cartoonishly deep, while a 12-16pt curve
+  /// keeps the same visual detail as the transport panel.
+  var bottomCurveDepth: CGFloat?
 
   func path(in rect: CGRect) -> Path {
     var path = Path()
     let r = topCornerRadius
-    let sideEnd = rect.height * sideHeightFraction
+    let depth = bottomCurveDepth.map {
+      min(max(0, $0), max(0, rect.height - r))
+    }
+    let sideEnd = depth.map { rect.height - $0 } ?? rect.height * sideHeightFraction
     // Control point y for the bottom curve, derived so the curve's
     // midpoint sits exactly at rect.height (the bottom edge). Quadratic
     // bezier midpoint y = (start + control + end) / 4 simplifies to
@@ -210,50 +188,16 @@ struct TransportPanelShape: Shape {
   }
 }
 
-/// Transport panel — uses `TransportPanelShape` with the same chrome
-/// composition as `LCDPanel`. The custom shape (flat top + curved bottom)
-/// is what makes this container read as "special" against the rectangular
-/// LCD panel above.
+/// Transport panel — uses `TransportPanelShape` with the same recessed
+/// material as `LCDPanel`. The custom shape is what makes this container
+/// read as the dedicated playback cradle.
 struct TransportPanel: ViewModifier {
-  /// Plasticky white stroke opacity — matches LCDPanel's default so the
-  /// two panels share visual language even though their shapes differ.
-  var strokeOpacity: Double = 0.45
+  var strokeOpacity: Double = DialMaterial.Recessed.strokeOpacity
 
   func body(content: Content) -> some View {
     let shape = TransportPanelShape()
 
     return content
-      .background(
-        shape.fill(Dial.Palette.surface)
-      )
-      // Clip child content to the special transport shape so playback
-      // buttons and shuffle/repeat icons don't render past the curved
-      // bottom edge into the device body.
-      .clipShape(shape)
-      .overlay(
-        // Plasticky-translucent white stroke — same hue and weight as
-        // LCDPanel for chrome consistency.
-        shape.stroke(Color.white.opacity(strokeOpacity), lineWidth: 0.8)
-      )
-      .overlay(
-        // Top-arc sheen — bright highlight along the flat top edge.
-        // Trim values are tuned for this shape's path parametrization
-        // (path starts at top-left, goes clockwise; the top edge +
-        // top-right corner cover roughly the first ~20% of the path).
-        shape
-          .trim(from: 0.02, to: 0.22)
-          .stroke(Color.white.opacity(0.55), lineWidth: 0.8)
-          .blur(radius: 0.4)
-          .allowsHitTesting(false)
-      )
-      .overlay(
-        // Inner top shadow — light catches the upper rim of the recess.
-        shape
-          .stroke(Color.black.opacity(0.45), lineWidth: 2.5)
-          .blur(radius: 1.5)
-          .offset(y: 1.5)
-          .mask(shape)
-          .allowsHitTesting(false)
-      )
+      .dialRecessedPanel(shape: shape, strokeOpacity: strokeOpacity)
   }
 }
