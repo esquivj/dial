@@ -13,7 +13,7 @@ struct PetBondInputs: Equatable {
 }
 
 enum PetBondPrimaryAction: Equatable {
-  case rememberThis
+  case reactToBadge
   case teachTrick(PetTrick)
   case wakeUp
   case showFavorite
@@ -23,7 +23,7 @@ enum PetBondPrimaryAction: Equatable {
 
   var label: String {
     switch self {
-    case .rememberThis: return "REMEMBER THIS"
+    case .reactToBadge: return "REACT TO BADGE"
     case .teachTrick(let trick): return "TEACH \(trick.shortLabel.uppercased())"
     case .wakeUp: return "WAKE UP"
     case .showFavorite: return "SHOW FAVORITE"
@@ -103,7 +103,7 @@ struct PetBondSnapshot: Equatable {
     currentBadge: BadgeInsight?,
     unlockedTricks: [PetTrick]
   ) -> PetBondPrimaryAction {
-    if currentBadge != nil { return .rememberThis }
+    if currentBadge != nil { return .reactToBadge }
     if discoveryScore >= 0.85, let trick = PetTrick.nextLocked(unlocked: unlockedTricks) {
       return .teachTrick(trick)
     }
@@ -137,7 +137,7 @@ struct PetBondSnapshot: Equatable {
     todayMinutes: Double
   ) -> String {
     if let currentBadge {
-      return "\(currentBadge.kind.label): \(currentBadge.detail)"
+      return badgeReason(currentBadge)
     }
 
     switch mood {
@@ -154,6 +154,29 @@ struct PetBondSnapshot: Equatable {
     default:
       let minutes = Int(todayMinutes.rounded())
       return minutes > 0 ? "\(minutes) min logged today." : "Waiting for the first play today."
+    }
+  }
+
+  private static func badgeReason(_ badge: BadgeInsight) -> String {
+    switch badge.kind {
+    case .firstListen:
+      return "This track just entered your history."
+    case .newArtist:
+      return "This artist just entered your history."
+    case .rediscovered:
+      return badge.detail
+    case .deepCut:
+      return "Rare track from an artist you play a lot."
+    case .onStreak:
+      return "This track is hot in your recent rotation."
+    case .repeatTrack:
+      return "You are running this one back."
+    case .albumMode:
+      return "You are moving through the album."
+    case .play10, .play50, .play100:
+      return badge.detail
+    case .anniversary:
+      return "This track came back on the same date."
     }
   }
 

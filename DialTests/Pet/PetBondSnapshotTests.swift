@@ -14,7 +14,7 @@ final class PetBondSnapshotTests: XCTestCase {
       currentTrackName: "Track",
       unlockedTricks: []))
 
-    XCTAssertEqual(snapshot.primaryAction, .rememberThis)
+    XCTAssertEqual(snapshot.primaryAction, .reactToBadge)
     XCTAssertEqual(snapshot.moodLabel, "Rediscovered")
   }
 

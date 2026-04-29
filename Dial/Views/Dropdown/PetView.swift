@@ -18,24 +18,25 @@ struct PetView: View {
   let dbq: DatabaseQueue
   let onBack: () -> Void
 
-  @State private var lifetimePlays: Int = 0
   @State private var todayListeningMs: Int64 = 0
   @State private var recentBadgeCounts: [BadgeCategory: Int] = [:]
   @State private var unlockedTricks: [PetTrickUnlock] = []
+  @State private var artifacts: [Artifact] = []
   @State private var petState: PetState? = nil
   @State private var actionFeedback: String?
   @State private var interactionBehavior: PetBehavior?
   @State private var actionPulse = false
   @State private var feedbackTask: Task<Void, Never>?
+  @Environment(\.dialTheme) private var theme
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
       header
       Rectangle().fill(Dial.Palette.hairline).frame(height: 1)
-      ScrollView {
-        content
-      }
+      content
     }
+    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     .task(id: ObjectIdentifier(dbq)) {
       reload()
     }
@@ -52,10 +53,10 @@ struct PetView: View {
   private var header: some View {
     HStack(spacing: Dial.Layout.Header.spacing) {
       BackButton(action: onBack)
-      Text("PET")
+      Text("ROOM")
         .font(Dial.Typography.monoLabel)
         .tracking(1.6)
-        .foregroundStyle(Dial.Palette.accent)
+        .foregroundStyle(theme.accent)
       Spacer()
       Text(pet.stage.rawValue.uppercased())
         .font(Dial.Typography.monoLabel)
@@ -73,188 +74,239 @@ struct PetView: View {
   // MARK: - Content
 
   private var content: some View {
-    VStack(alignment: .leading, spacing: Dial.Layout.SecondaryScreen.petSectionSpacing) {
-      spriteCard
-      bondLoopSection
+    VStack(alignment: .leading, spacing: 5) {
+      petCompanionPanel
+      artifactShelf
       xpSection
-      statsList
     }
-    .padding(Dial.Layout.SecondaryScreen.petContentPadding)
+    .padding(EdgeInsets(top: 7, leading: 8, bottom: 7, trailing: 8))
     .frame(maxWidth: .infinity, alignment: .leading)
   }
 
-  // MARK: - Sprite
+  // MARK: - Companion
 
-  /// Larger LCD-within-LCD frame. The dedicated pet screen should let the
-  /// sprite become the object, while still leaving visible screen padding
-  /// so it feels housed inside old handheld glass.
-  private var spriteCard: some View {
-    HStack {
-      Spacer(minLength: 0)
-      ZStack {
-        // Tamagotchi-style "powered LCD" inside the bezel (matches the
-        // smaller pet block in TrackHero) — black-and-white pet silhouette
-        // on a muted green-gray lit screen.
-        RoundedRectangle(cornerRadius: 8)
-          .fill(Dial.Palette.lcd)
-        BulldogSprite(stage: pet.stage, behavior: displayBehavior, height: 88)
-          .frame(width: 90, height: 90)
-          .scaleEffect(actionPulse ? 1.045 : 1)
-          .animation(.easeOut(duration: 0.16), value: actionPulse)
+  /// Keep the pet as a housed object, not a full-width stats widget. The LCD
+  /// belongs to the creature; mood/action live around it on the device surface.
+  private var petCompanionPanel: some View {
+    let snapshot = bondSnapshot
+    let panelShape = RoundedRectangle(cornerRadius: Dial.Radius.control, style: .continuous)
+
+    return VStack(spacing: 5) {
+      RoomSceneView(
+        pet: pet,
+        behavior: displayBehavior,
+        artifacts: artifacts,
+        actionPulse: actionPulse)
+
+      VStack(alignment: .leading, spacing: 6) {
+        HStack(alignment: .top, spacing: 8) {
+          VStack(alignment: .leading, spacing: 3) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+              if let badge = aggCache.currentBadgeInsight {
+                BadgePixelIcon(kind: badge.kind, color: badge.kind.category == .pattern ? theme.accentAlt : theme.accent, size: 11)
+              }
+              Text(snapshot.moodLabel)
+                .font(Dial.Typography.sansCaption)
+                .foregroundStyle(Dial.Palette.textPrimary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.86)
+            }
+
+            Text(actionFeedback ?? snapshot.reason)
+              .font(Dial.Typography.monoSmall)
+              .foregroundStyle(actionFeedback == nil ? Dial.Palette.textMuted : theme.accent)
+              .lineLimit(1)
+              .minimumScaleFactor(0.78)
+              .contentTransition(.opacity)
+          }
+
+          Spacer(minLength: 8)
+
+          VStack(alignment: .trailing, spacing: 2) {
+            Text(percent(snapshot.bondScore))
+              .font(Dial.Typography.sansCaption)
+              .foregroundStyle(theme.accent)
+              .monospacedDigit()
+            Text("BOND")
+              .font(Dial.Typography.monoTiny)
+              .tracking(0.8)
+              .foregroundStyle(Dial.Palette.textMuted)
+          }
+          .frame(width: 46, alignment: .trailing)
+        }
+
+        HStack(spacing: 8) {
+          roomAction(snapshot)
+          roomBondGauge(snapshot)
+        }
       }
-      .frame(width: 116, height: 116)
-      .dialRaisedGel(
-        shape: RoundedRectangle(cornerRadius: 8, style: .continuous),
-        fill: Dial.Palette.lcd,
-        edgeOpacity: 0.36,
-        fillTopOpacity: 0.07,
-        fillBottomOpacity: 0.025,
-        sheenOpacity: 0.44,
-        sheenLineWidth: 1.1,
-        contactShadowOpacity: 0,
-        innerShadowOpacity: 0.20)
-      .overlay(
-        RoundedRectangle(cornerRadius: 6)
-          .inset(by: 4)
-          .stroke(Dial.Palette.accent.opacity(0.24), lineWidth: 0.7)
-      )
-      .shadow(color: Color.black.opacity(0.45), radius: 5, x: 0, y: 2)
-      Spacer(minLength: 0)
     }
+    .padding(EdgeInsets(top: 7, leading: 8, bottom: 7, trailing: 8))
+    .frame(maxWidth: .infinity)
+    .dialRecessedPanel(
+      shape: panelShape,
+      fill: Dial.Palette.subtle,
+      strokeOpacity: 0.24)
+    .accessibilityElement(children: .combine)
+    .accessibilityLabel("Room")
+    .accessibilityValue("\(snapshot.moodLabel). \(snapshot.reason)")
   }
 
-  // MARK: - Bond loop
-
-  private var bondLoopSection: some View {
-    let snapshot = bondSnapshot
-
-    return VStack(alignment: .leading, spacing: 9) {
-      HStack(alignment: .firstTextBaseline, spacing: 8) {
-        Text(snapshot.moodLabel)
-          .font(Dial.Typography.sansTitle)
-          .foregroundStyle(Dial.Palette.textPrimary)
-          .lineLimit(1)
-        Spacer(minLength: 8)
-        Text("\(percent(snapshot.bondScore)) BOND")
+  private var artifactShelf: some View {
+    HStack(alignment: .center, spacing: 7) {
+      VStack(alignment: .leading, spacing: 2) {
+        Text("ARTIFACTS")
           .font(Dial.Typography.monoTiny)
           .tracking(0.8)
           .foregroundStyle(Dial.Palette.textMuted)
+        Text(artifacts.isEmpty ? "EMPTY" : "\(artifacts.count) KEPT")
+          .font(Dial.Typography.monoSmall)
+          .foregroundStyle(theme.accent)
           .monospacedDigit()
       }
+      .frame(width: 72, alignment: .leading)
 
-      Text(actionFeedback ?? snapshot.reason)
-        .font(Dial.Typography.sansCaption)
-        .foregroundStyle(actionFeedback == nil ? Dial.Palette.textMuted : Dial.Palette.accent)
-        .lineLimit(2)
-        .minimumScaleFactor(0.82)
-        .contentTransition(.opacity)
-
-      VStack(spacing: 6) {
-        PetBondMeter(label: "Bond", value: snapshot.bondScore, color: Dial.Palette.accent)
-        PetBondMeter(label: "Discovery", value: snapshot.discoveryScore, color: Dial.Palette.accentAlt)
-        PetBondMeter(label: "Energy", value: snapshot.energyScore, color: energyColor(snapshot.energyScore))
-      }
-
-      Button {
-        runPrimaryAction(snapshot)
-      } label: {
-        HStack(spacing: 7) {
-          DialThickIcon(iconName(for: snapshot.primaryAction), size: 12, weight: 0.55)
-          Text(snapshot.primaryAction.label)
-            .font(Dial.Typography.monoLabel)
-            .tracking(1.1)
+      if artifacts.isEmpty {
+        Text("Earn badges to leave objects in the room.")
+          .font(Dial.Typography.monoSmall)
+          .foregroundStyle(Dial.Palette.textMuted.opacity(0.76))
+          .lineLimit(1)
+          .minimumScaleFactor(0.78)
+      } else {
+        HStack(spacing: 4) {
+          ForEach(Array(artifacts.prefix(6))) { artifact in
+            ArtifactSprite(kind: artifact.kind, color: artifactColor(artifact), size: 20)
+              .frame(width: 28, height: 28)
+              .dialPrintedChip(
+                shape: RoundedRectangle(cornerRadius: Dial.Radius.tiny, style: .continuous),
+                color: artifactColor(artifact),
+                fillOpacity: 0.045,
+                edgeOpacity: 0.18)
+              .help(artifact.detail ?? artifact.kind.label)
+          }
           Spacer(minLength: 0)
         }
-        .foregroundStyle(Dial.Palette.textPrimary)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 7)
-        .background(Dial.Palette.surface.opacity(0.90))
-        .clipShape(RoundedRectangle(cornerRadius: 5))
-        .overlay(
-          RoundedRectangle(cornerRadius: 5)
-            .stroke(Dial.Palette.hairline.opacity(0.95), lineWidth: 1)
-        )
-      }
-      .buttonStyle(.pressable)
-
-      if !unlockedTricks.isEmpty {
-        unlockedTricksStrip
       }
     }
+    .padding(.horizontal, 8)
+    .padding(.vertical, 4)
     .frame(maxWidth: .infinity, alignment: .leading)
+    .frame(height: 36)
+    .dialPrintedChip(
+      shape: RoundedRectangle(cornerRadius: Dial.Radius.tiny, style: .continuous),
+      color: theme.accent,
+      fillOpacity: 0.035,
+      edgeOpacity: 0.12)
   }
 
-  private var unlockedTricksStrip: some View {
-    VStack(alignment: .leading, spacing: 5) {
-      Text("Tricks")
-        .font(Dial.Typography.monoTiny)
-        .tracking(0.9)
-        .foregroundStyle(Dial.Palette.textMuted)
-      HStack(spacing: 6) {
-        ForEach(unlockedTricks) { unlock in
-          Text(unlock.trick.label)
-            .font(Dial.Typography.monoTiny)
-            .tracking(0.5)
-            .foregroundStyle(Dial.Palette.textPrimary.opacity(0.88))
-            .lineLimit(1)
-            .padding(.horizontal, 7)
-            .padding(.vertical, 4)
-            .background(Dial.Palette.surface.opacity(0.82))
-            .clipShape(RoundedRectangle(cornerRadius: 4))
-            .overlay(
-              RoundedRectangle(cornerRadius: 4)
-                .stroke(Dial.Palette.hairline.opacity(0.88), lineWidth: 1)
-            )
-        }
-        Spacer(minLength: 0)
+  private func roomAction(_ snapshot: PetBondSnapshot) -> some View {
+    Button {
+      runPrimaryAction(snapshot)
+    } label: {
+      HStack(spacing: 7) {
+        DialThickIcon(iconName(for: snapshot.primaryAction), size: 12, weight: 0.55)
+        Text(snapshot.primaryAction.label)
+          .font(Dial.Typography.monoLabel)
+          .tracking(1.0)
+          .lineLimit(1)
+          .minimumScaleFactor(0.78)
       }
+      .foregroundStyle(Dial.Palette.textPrimary)
+      .padding(.horizontal, 7)
+      .padding(.vertical, 5)
+      .frame(width: 106, height: 24, alignment: .leading)
+      .background(Dial.Palette.surface.opacity(0.82))
+      .clipShape(RoundedRectangle(cornerRadius: Dial.Radius.tiny, style: .continuous))
+      .overlay(
+        RoundedRectangle(cornerRadius: Dial.Radius.tiny, style: .continuous)
+          .stroke(Dial.Palette.hairline.opacity(0.88), lineWidth: 1)
+      )
     }
+    .buttonStyle(.pressable)
+  }
+
+  private func roomBondGauge(_ snapshot: PetBondSnapshot) -> some View {
+    HStack(spacing: 7) {
+      Text("BOND")
+        .font(Dial.Typography.monoTiny)
+        .tracking(0.8)
+        .foregroundStyle(Dial.Palette.textMuted)
+
+      GeometryReader { proxy in
+        ZStack(alignment: .leading) {
+          RoundedRectangle(cornerRadius: Dial.Radius.pixel)
+            .fill(Dial.Palette.surface.opacity(0.92))
+          RoundedRectangle(cornerRadius: Dial.Radius.pixel)
+            .fill(theme.accent)
+            .frame(width: max(4, proxy.size.width * CGFloat(min(1, max(0, snapshot.bondScore)))))
+        }
+      }
+      .frame(height: 5)
+
+      Text(percent(snapshot.bondScore))
+        .font(Dial.Typography.monoTiny)
+        .foregroundStyle(Dial.Palette.textPrimary.opacity(0.82))
+        .monospacedDigit()
+        .frame(width: 32, alignment: .trailing)
+    }
+    .frame(maxWidth: .infinity)
+    .frame(height: 16)
+    .accessibilityElement(children: .combine)
+    .accessibilityLabel("Bond \(percent(snapshot.bondScore))")
   }
 
   // MARK: - XP
 
   private var xpSection: some View {
-    VStack(alignment: .leading, spacing: 7) {
+    VStack(alignment: .leading, spacing: 4) {
       HStack(alignment: .firstTextBaseline) {
         // Body-content label, mixed-case sansCaption (was mono-caps).
-        Text("Evolution")
-          .font(Dial.Typography.sansCaption)
+        Text("EVOLUTION")
+          .font(Dial.Typography.monoTiny)
+          .tracking(0.8)
           .foregroundStyle(Dial.Palette.textMuted)
         Spacer()
         Text(evolutionStatus)
           .font(Dial.Typography.monoSmall)
-          .foregroundStyle(Dial.Palette.accent)
+          .foregroundStyle(theme.accent)
           .monospacedDigit()
           .contentTransition(.numericText())
       }
       progressBar
       stageRail
       Text(xpDetailText)
-        .font(.system(size: 10))
+        .font(Dial.Typography.monoSmall)
         .foregroundStyle(Dial.Palette.textMuted.opacity(0.76))
         .lineLimit(1)
         .minimumScaleFactor(0.78)
     }
+    .padding(.horizontal, 8)
+    .padding(.vertical, 5)
     .accessibilityElement(children: .combine)
     .accessibilityLabel("Evolution progress")
     .accessibilityValue(accessibilityXPValue)
     .frame(maxWidth: .infinity, alignment: .leading)
+    .dialPrintedChip(
+      shape: RoundedRectangle(cornerRadius: Dial.Radius.tiny, style: .continuous),
+      color: theme.accent,
+      fillOpacity: 0.035,
+      edgeOpacity: 0.12)
   }
 
   private var progressBar: some View {
     GeometryReader { proxy in
       let fillWidth = visibleXPFillWidth(in: proxy.size.width)
       ZStack(alignment: .leading) {
-        RoundedRectangle(cornerRadius: 4)
+        RoundedRectangle(cornerRadius: Dial.Radius.tiny)
           .fill(Dial.Palette.surface.opacity(0.9))
           .overlay(
-            RoundedRectangle(cornerRadius: 4)
+            RoundedRectangle(cornerRadius: Dial.Radius.tiny)
               .stroke(Dial.Palette.hairline.opacity(0.95), lineWidth: 1)
           )
           .frame(height: xpBarHeight)
 
-        RoundedRectangle(cornerRadius: 4)
-          .fill(Dial.Palette.accent)
+        RoundedRectangle(cornerRadius: Dial.Radius.tiny)
+          .fill(theme.accent)
           .frame(width: fillWidth, height: xpBarHeight)
 
         if fillWidth > 0 {
@@ -282,45 +334,14 @@ struct PetView: View {
         Text(stageName(next))
           .font(Dial.Typography.monoTiny)
           .tracking(0.8)
-          .foregroundStyle(Dial.Palette.accent.opacity(0.9))
+          .foregroundStyle(theme.accent.opacity(0.9))
       } else {
         Text("MAX")
           .font(Dial.Typography.monoTiny)
           .tracking(0.8)
-          .foregroundStyle(Dial.Palette.accent.opacity(0.9))
+          .foregroundStyle(theme.accent.opacity(0.9))
       }
       Spacer(minLength: 8)
-    }
-  }
-
-  // MARK: - Stats
-
-  private var statsList: some View {
-    VStack(spacing: 10) {
-      statRow("Live streak", value: "\(pet.streakDays) \(pet.streakDays == 1 ? "day" : "days")")
-      statRow("Hatched", value: hatchedLabel)
-      if !isElder, let until = daysUntilElder {
-        statRow("Days until elder", value: "\(until) \(until == 1 ? "day" : "days")")
-      }
-      statRow("Lifetime plays", value: lifetimePlays.formatted(.number.notation(.compactName)))
-    }
-  }
-
-  /// Mixed-case sansCaption labels (was mono-caps) — these are body content
-  /// inside a screen, not device chrome. The 1.4-tracked mono-caps treatment
-  /// is reserved for actual chrome (PET title, NOW PLAYING, SPECTRUM, etc.)
-  /// so it doesn't get diluted by appearing on every label everywhere.
-  private func statRow(_ label: String, value: String) -> some View {
-    HStack {
-      Text(label)
-        .font(Dial.Typography.sansCaption)
-        .foregroundStyle(Dial.Palette.textMuted)
-      Spacer()
-      Text(value)
-        .font(Dial.Typography.monoSmall)
-        .foregroundStyle(Dial.Palette.textPrimary)
-        .monospacedDigit()
-        .contentTransition(.numericText())
     }
   }
 
@@ -329,7 +350,6 @@ struct PetView: View {
   private func reload() {
     let queries = StatsQueries(dbq: dbq)
     petState = (try? PetStateDAO(dbq: dbq).get()) ?? nil
-    lifetimePlays = (try? queries.totals().plays) ?? 0
     todayListeningMs = (try? queries.totals(since: startOfTodayEpoch()).listeningMs) ?? 0
     let recentCutoff = Int64(Date().timeIntervalSince1970) - 7 * 86_400
     let summaries = (try? queries.badgeSummaries(since: recentCutoff)) ?? []
@@ -337,6 +357,7 @@ struct PetView: View {
       acc[summary.category] = summary.count
     }
     unlockedTricks = (try? PetTrickUnlocksDAO(dbq: dbq).all()) ?? []
+    artifacts = (try? ArtifactsDAO(dbq: dbq).syncFromMemoriesAndTricks()) ?? []
   }
 
   // MARK: - Computed
@@ -362,13 +383,25 @@ struct PetView: View {
     "\(Int((value * 100).rounded()))%"
   }
 
-  private func energyColor(_ value: Double) -> Color {
-    value < 0.22 ? Dial.Palette.textMuted : Dial.Palette.accent
+  private func artifactColor(_ artifact: Artifact) -> Color {
+    switch artifact.source {
+    case .badge:
+      switch artifact.kind {
+      case .firstListenSpark, .newArtistToken, .streakFlame:
+        return theme.accentAlt
+      case .play10Trophy, .play50Trophy, .play100Trophy, .anniversaryRelic:
+        return Dial.Palette.textPrimary
+      default:
+        return theme.accent
+      }
+    case .trick:
+      return theme.accentAlt
+    }
   }
 
   private func iconName(for action: PetBondPrimaryAction) -> String {
     switch action {
-    case .rememberThis: return "clock.arrow.circlepath"
+    case .reactToBadge: return "sparkles"
     case .teachTrick: return "sparkles"
     case .wakeUp: return "flame.fill"
     case .showFavorite: return "heart.fill"
@@ -383,9 +416,9 @@ struct PetView: View {
 
     let reaction: (text: String, behavior: PetBehavior)
     switch snapshot.primaryAction {
-    case .rememberThis:
+    case .reactToBadge:
       reaction = (
-        aggCache.currentBadgeInsight.map { "Memory held: \($0.kind.label)." } ?? "Memory held.",
+        aggCache.currentBadgeInsight.map { "Reacting to \($0.kind.label)." } ?? "Reacting.",
         behaviorForCurrentBadge()
       )
     case .teachTrick(let trick):
@@ -410,7 +443,11 @@ struct PetView: View {
 
     actionFeedback = reaction.text
     interactionBehavior = reaction.behavior
-    withAnimation(.easeOut(duration: 0.16)) { actionPulse = true }
+    if reduceMotion {
+      actionPulse = true
+    } else {
+      withAnimation(.easeOut(duration: 0.16)) { actionPulse = true }
+    }
 
     feedbackTask = Task { @MainActor in
       try? await Task.sleep(nanoseconds: 180_000_000)
@@ -537,13 +574,6 @@ struct PetView: View {
 
   private var isElder: Bool { pet.stage == .elder }
 
-  private var hatchedLabel: String {
-    guard let hatched = petState?.hatchedAt else { return "INCUBATING" }
-    let now = Int64(Date().timeIntervalSince1970)
-    let days = max(0, (now - hatched) / 86_400)
-    return "\(days) \(days == 1 ? "DAY" : "DAYS") AGO"
-  }
-
   /// Elder unlocks 30 days after install (per PetEngine). Returns nil
   /// once already elder.
   private var daysUntilElder: Int64? {
@@ -560,41 +590,5 @@ struct PetView: View {
 
   private func stageName(_ stage: PetStage) -> String {
     stage.rawValue.uppercased()
-  }
-}
-
-private struct PetBondMeter: View {
-  let label: String
-  let value: Double
-  let color: Color
-
-  var body: some View {
-    HStack(spacing: 8) {
-      Text(label)
-        .font(Dial.Typography.monoTiny)
-        .tracking(0.7)
-        .foregroundStyle(Dial.Palette.textMuted)
-        .frame(width: 58, alignment: .leading)
-
-      GeometryReader { proxy in
-        ZStack(alignment: .leading) {
-          RoundedRectangle(cornerRadius: 3)
-            .fill(Dial.Palette.surface.opacity(0.92))
-          RoundedRectangle(cornerRadius: 3)
-            .fill(color)
-            .frame(width: max(4, proxy.size.width * CGFloat(min(1, max(0, value)))))
-        }
-      }
-      .frame(height: 6)
-
-      Text("\(Int((value * 100).rounded()))")
-        .font(Dial.Typography.monoTiny)
-        .foregroundStyle(Dial.Palette.textPrimary.opacity(0.82))
-        .monospacedDigit()
-        .frame(width: 24, alignment: .trailing)
-    }
-    .frame(height: 12)
-    .accessibilityElement(children: .combine)
-    .accessibilityLabel("\(label) \(Int((value * 100).rounded())) percent")
   }
 }

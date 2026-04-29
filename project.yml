@@ -47,6 +47,9 @@ targets:
           - "Resources/Pets/**"
           - "Resources/Icons/**"
           - "Resources/Badges/**"
+          - "Resources/Artifacts/**"
+          - "Resources/RoomObjects/**"
+          - "Resources/Brand/**"
       # Resources are added back via the explicit `sources` entries below
       # with `buildPhase: resources`. The earlier `resources:` key was a
       # no-op with this xcodegen version — files were registered in the
@@ -59,6 +62,12 @@ targets:
       - path: Dial/Resources/Icons
         buildPhase: resources
       - path: Dial/Resources/Badges
+        buildPhase: resources
+      - path: Dial/Resources/Artifacts
+        buildPhase: resources
+      - path: Dial/Resources/RoomObjects
+        buildPhase: resources
+      - path: Dial/Resources/Brand
         buildPhase: resources
     info:
       path: Dial/App/Info.plist

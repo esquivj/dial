@@ -275,7 +275,7 @@ private struct BulldogSpriteImage: View {
         .scaledToFit()
         .frame(height: height)
     } else {
-      RoundedRectangle(cornerRadius: 2)
+      RoundedRectangle(cornerRadius: Dial.Radius.pixel)
         .fill(Dial.Palette.accent.opacity(0.4))
         .frame(width: height * 0.5, height: height)
         .overlay(
