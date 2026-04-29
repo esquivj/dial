@@ -50,6 +50,8 @@ final class StatusBarController {
   init(coord: AppCoordinator) {
     self.coord = coord
     self.item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+    self.item.autosaveName = "DialStatusItem"
+    self.item.isVisible = true
     // Panel size tracks DropdownView exactly so the transparent NSPanel
     // does not leave an invisible click area around the device shell.
     self.panel = DropdownPanel(
@@ -64,6 +66,7 @@ final class StatusBarController {
         vm: coord.menubar,
         settings: coord.settings,
         pet: coord.pet,
+        nowPlaying: coord.nowPlaying,
         artworkCache: coord.artworkCache))
       host.translatesAutoresizingMaskIntoConstraints = false
       button.addSubview(host)
@@ -90,8 +93,10 @@ final class StatusBarController {
     withObservationTracking {
       _ = coord.settings.menuBarDisplayMode
       _ = coord.settings.menuBarTitleWidth
+      _ = coord.settings.hudColorMode
       _ = coord.settings.showAlbumArtInMenuBar
       _ = coord.settings.petEnabled
+      _ = coord.nowPlaying.soundTheme
       _ = coord.menubar.state
       _ = coord.menubar.track?.name
       _ = coord.menubar.track?.artistName
@@ -112,7 +117,7 @@ final class StatusBarController {
       return
     }
 
-    let titleWidth = CGFloat(coord.settings.menuBarTitleWidth)
+    let titleWidth = CGFloat(MenuBarTextMetrics.clampedSettingWidth(coord.settings.menuBarTitleWidth))
     let horizontalPadding: CGFloat = 8
     let iconSlot: CGFloat = 22
     let iconGap: CGFloat = 5

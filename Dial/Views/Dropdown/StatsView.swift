@@ -11,10 +11,12 @@ struct StatsView: View {
   @State private var totals = StatsQueries.Totals(plays: 0, listeningMs: 0, uniqueTracks: 0, uniqueArtists: 0)
   @State private var topTracks: [StatsQueries.TopRow] = []
   @State private var topArtists: [StatsQueries.TopRow] = []
+  @State private var topGenres: [StatsQueries.GenreRow] = []
   @State private var rhythmBuckets: [StatsQueries.RhythmBucket] = []
   @State private var badgeSummaries: [StatsQueries.BadgeSummary] = []
   @State private var recentBadges: [StatsQueries.BadgeMemoryRow] = []
   @State private var selectedRange: StatsRange = .ytd
+  @Environment(\.dialTheme) private var theme
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   var body: some View {
@@ -23,12 +25,12 @@ struct StatsView: View {
       Rectangle().fill(Dial.Palette.hairline).frame(height: 1)
       ScrollView {
         VStack(alignment: .leading, spacing: Dial.Layout.SecondaryScreen.sectionSpacing) {
-          hero
-          rangeSnapshot
-          memoriesSection
+          overviewPanel
+          genreSignalSection
           rhythmSection
           topTracksSection
           topArtistsSection
+          memoriesSection
         }
         .padding(Dial.Layout.SecondaryScreen.contentPadding)
       }
@@ -50,7 +52,7 @@ struct StatsView: View {
       Text("STATS")
         .font(Dial.Typography.monoLabel)
         .tracking(1.6)
-        .foregroundStyle(Dial.Palette.accent)
+        .foregroundStyle(theme.accent)
       Spacer()
       rangeControl
     }
@@ -72,11 +74,11 @@ struct StatsView: View {
           Text(range.label)
             .font(Dial.Typography.monoTiny)
             .tracking(0.9)
-            .foregroundStyle(selectedRange == range ? Dial.Palette.ground : Dial.Palette.textMuted)
+            .foregroundStyle(selectedRange == range ? theme.ground : Dial.Palette.textMuted)
             .frame(width: 34, height: 18)
             .background(
-              RoundedRectangle(cornerRadius: 4)
-                .fill(selectedRange == range ? Dial.Palette.accent : Dial.Palette.surface)
+              RoundedRectangle(cornerRadius: Dial.Radius.tiny)
+                .fill(selectedRange == range ? theme.accent : Dial.Palette.surface)
             )
         }
         .buttonStyle(.pressable)
@@ -86,60 +88,105 @@ struct StatsView: View {
     }
     .padding(2)
     .background(
-      RoundedRectangle(cornerRadius: 6)
+      RoundedRectangle(cornerRadius: Dial.Radius.media)
         .fill(Dial.Palette.ground.opacity(0.55))
         .overlay(
-          RoundedRectangle(cornerRadius: 6)
+          RoundedRectangle(cornerRadius: Dial.Radius.media)
             .stroke(Dial.Palette.hairline, lineWidth: 1))
     )
   }
 
-  // MARK: Hero
+  // MARK: Overview
 
-  private var hero: some View {
-    VStack(alignment: .leading, spacing: 2) {
-      Text(selectedRange.heroTitle)
-        .font(Dial.Typography.monoLabel)
-        .tracking(1.6)
-        .foregroundStyle(Dial.Palette.textMuted)
-      Text(hoursFormatted(totals.listeningMs))
-        .font(.custom("IBMPlexMono-Medium", size: 40))
-        .foregroundStyle(Dial.Palette.accent)
-        .lineLimit(1)
-        .minimumScaleFactor(0.6)
-      Text("total listening time")
-        .font(.system(size: 10))
-        .foregroundStyle(Dial.Palette.textMuted)
-      if selectedRange != .all {
-        Text(selectedRange.context)
-          .font(.system(size: 10))
-          .foregroundStyle(Dial.Palette.textMuted.opacity(0.72))
+  private var overviewPanel: some View {
+    VStack(alignment: .leading, spacing: 10) {
+      HStack(alignment: .top, spacing: 12) {
+        VStack(alignment: .leading, spacing: 2) {
+          Text(selectedRange.heroTitle)
+            .font(Dial.Typography.monoLabel)
+            .tracking(1.6)
+            .foregroundStyle(Dial.Palette.textMuted)
+          Text(hoursFormatted(totals.listeningMs))
+            .font(.custom("GeistMono-Medium", size: 34))
+            .foregroundStyle(theme.accent)
+            .lineLimit(1)
+            .minimumScaleFactor(0.58)
+            .monospacedDigit()
+          Text(overviewCaption)
+            .font(Dial.Typography.monoSmall)
+            .foregroundStyle(Dial.Palette.textMuted.opacity(0.76))
+            .lineLimit(1)
+        }
+        Spacer(minLength: 8)
+        VStack(alignment: .trailing, spacing: 8) {
+          overviewSideStat("PLAYS", totals.plays.formatted(.number))
+          overviewSideStat("REPEAT", repeatRate())
+        }
+        .frame(width: 78, alignment: .trailing)
+      }
+
+      Rectangle()
+        .fill(Dial.Palette.hairline.opacity(0.78))
+        .frame(height: 1)
+
+      HStack(spacing: 0) {
+        overviewBottomStat("TRACKS", totals.uniqueTracks.formatted(.number))
+        overviewDivider
+        overviewBottomStat("ARTISTS", totals.uniqueArtists.formatted(.number))
+        overviewDivider
+        overviewBottomStat("BADGES", totalBadgeCount.formatted(.number))
       }
     }
+    .padding(EdgeInsets(top: 11, leading: 11, bottom: 10, trailing: 11))
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .dialRecessedPanel(
+      shape: RoundedRectangle(cornerRadius: Dial.Radius.control, style: .continuous),
+      fill: Dial.Palette.subtle,
+      strokeOpacity: 0.24,
+      topSheenOpacity: 0.16,
+      innerShadowOpacity: 0.34)
   }
 
-  // MARK: Range snapshot
+  private var overviewCaption: String {
+    selectedRange == .all ? "total listening time" : "total listening time · \(selectedRange.context)"
+  }
 
-  private var rangeSnapshot: some View {
-    HStack(spacing: 16) {
-      stat("PLAYS", totals.plays.formatted(.number))
-      stat("TRACKS", totals.uniqueTracks.formatted(.number))
-      stat("ARTISTS", totals.uniqueArtists.formatted(.number))
-      stat("REPEAT", repeatRate())
-      Spacer()
+  private var overviewDivider: some View {
+    Rectangle()
+      .fill(Dial.Palette.hairline.opacity(0.72))
+      .frame(width: 1, height: 28)
+      .padding(.horizontal, 9)
+  }
+
+  private func overviewSideStat(_ label: String, _ value: String) -> some View {
+    VStack(alignment: .trailing, spacing: 2) {
+      Text(label)
+        .font(Dial.Typography.monoTiny)
+        .tracking(1.0)
+        .foregroundStyle(Dial.Palette.textMuted.opacity(0.78))
+      Text(value)
+        .font(.custom("GeistMono-Medium", size: 14))
+        .foregroundStyle(Dial.Palette.textPrimary)
+        .lineLimit(1)
+        .minimumScaleFactor(0.62)
+        .monospacedDigit()
     }
   }
 
-  private func stat(_ label: String, _ value: String) -> some View {
+  private func overviewBottomStat(_ label: String, _ value: String) -> some View {
     VStack(alignment: .leading, spacing: 1) {
       Text(label)
         .font(Dial.Typography.monoTiny)
-        .tracking(1.2)
-        .foregroundStyle(Dial.Palette.textMuted)
+        .tracking(1.0)
+        .foregroundStyle(Dial.Palette.textMuted.opacity(0.74))
       Text(value)
-        .font(.custom("IBMPlexMono-Medium", size: 18))
+        .font(.custom("GeistMono-Medium", size: 15))
         .foregroundStyle(Dial.Palette.textPrimary)
+        .lineLimit(1)
+        .minimumScaleFactor(0.66)
+        .monospacedDigit()
     }
+    .frame(maxWidth: .infinity, alignment: .leading)
   }
 
   // MARK: Memories
@@ -188,7 +235,7 @@ struct StatsView: View {
   private func memoryPill(_ summary: StatsQueries.BadgeSummary) -> some View {
     HStack(spacing: 5) {
       Circle()
-        .fill(memoryColor(summary.category))
+        .fill(memoryColor(summary.category, theme: theme))
         .frame(width: 5, height: 5)
       Text(summary.category.label.uppercased())
         .font(Dial.Typography.monoTiny)
@@ -200,8 +247,8 @@ struct StatsView: View {
     .foregroundStyle(Dial.Palette.textPrimary.opacity(0.85))
     .padding(EdgeInsets(top: 4, leading: 6, bottom: 4, trailing: 7))
     .dialPrintedChip(
-      shape: RoundedRectangle(cornerRadius: 3, style: .continuous),
-      color: memoryColor(summary.category),
+      shape: RoundedRectangle(cornerRadius: Dial.Radius.printed, style: .continuous),
+      color: memoryColor(summary.category, theme: theme),
       fillOpacity: 0.045,
       edgeOpacity: 0.20)
   }
@@ -224,12 +271,30 @@ struct StatsView: View {
         }
         .padding(EdgeInsets(top: 8, leading: 10, bottom: 8, trailing: 10))
         .background(Dial.Palette.surface.opacity(0.55))
-        .clipShape(RoundedRectangle(cornerRadius: 5))
+        .clipShape(RoundedRectangle(cornerRadius: Dial.Radius.media))
 
         Text(rhythmFootnote)
-          .font(.system(size: 10))
+          .font(Dial.Typography.monoSmall)
           .foregroundStyle(Dial.Palette.textMuted.opacity(0.68))
           .lineLimit(1)
+      }
+    }
+  }
+
+  // MARK: Sound signal
+
+  private var genreSignalSection: some View {
+    VStack(alignment: .leading, spacing: 7) {
+      sectionHeader("SOUND SIGNAL", detail: topGenres.isEmpty ? "NO TAGS" : "PLAYS")
+      if topGenres.isEmpty {
+        emptyHint("Add a Last.fm key in Settings to teach Dial your sound")
+      } else {
+        let maxPlays = max(1, topGenres.map(\.playCount).max() ?? 1)
+        VStack(spacing: 6) {
+          ForEach(topGenres.prefix(5)) { row in
+            GenreSignalRow(row: row, maxPlayCount: maxPlays)
+          }
+        }
       }
     }
   }
@@ -276,7 +341,7 @@ struct StatsView: View {
               Spacer()
               Text(row.count.formatted(.number))
                 .font(Dial.Typography.monoTiny)
-                .foregroundStyle(Dial.Palette.accent)
+                .foregroundStyle(theme.accent)
                 .monospacedDigit()
                 .frame(width: 44, alignment: .trailing)
             }
@@ -313,7 +378,7 @@ struct StatsView: View {
 
   private func emptyHint(_ text: String = "Not enough data yet") -> some View {
     Text(text)
-      .font(.system(size: 10))
+      .font(Dial.Typography.monoSmall)
       .foregroundStyle(Dial.Palette.textMuted.opacity(0.7))
       .padding(.vertical, 4)
   }
@@ -369,6 +434,7 @@ struct StatsView: View {
     totals = (try? q.totals(since: since)) ?? totals
     topTracks = (try? q.topTracks(since: since)) ?? []
     topArtists = (try? q.topArtists(since: since)) ?? []
+    topGenres = (try? q.topGenres(since: since)) ?? []
     if selectedRange == .seven {
       rhythmBuckets = (try? q.recentDailyRhythm(days: 7)) ?? []
     } else {
@@ -436,20 +502,21 @@ private struct RhythmBar: View {
   let bucket: StatsQueries.RhythmBucket
   let maxValue: Double
   let isDaily: Bool
+  @Environment(\.dialTheme) private var theme
 
   var body: some View {
     VStack(spacing: 4) {
       ZStack(alignment: .bottom) {
-        RoundedRectangle(cornerRadius: 2)
+        RoundedRectangle(cornerRadius: Dial.Radius.pixel)
           .fill(Dial.Palette.ground.opacity(0.7))
           .frame(width: 24, height: 42)
-        RoundedRectangle(cornerRadius: 2)
-          .fill(isPeak ? Dial.Palette.accent : Dial.Palette.textMuted.opacity(0.5))
+        RoundedRectangle(cornerRadius: Dial.Radius.pixel)
+          .fill(isPeak ? theme.accent : Dial.Palette.textMuted.opacity(0.5))
           .frame(width: 24, height: height)
       }
       Text(bucket.label)
         .font(Dial.Typography.monoTiny)
-        .foregroundStyle(isPeak ? Dial.Palette.accent : Dial.Palette.textMuted.opacity(0.75))
+        .foregroundStyle(isPeak ? theme.accent : Dial.Palette.textMuted.opacity(0.75))
         .lineLimit(1)
         .minimumScaleFactor(0.75)
     }
@@ -475,16 +542,63 @@ private struct RhythmBar: View {
   }
 }
 
+private struct GenreSignalRow: View {
+  let row: StatsQueries.GenreRow
+  let maxPlayCount: Int
+  @Environment(\.dialTheme) private var theme
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 4) {
+      HStack(spacing: 8) {
+        Text(row.genre.capitalized)
+          .font(Dial.Typography.sansCaption)
+          .foregroundStyle(Dial.Palette.textPrimary)
+          .lineLimit(1)
+        Spacer(minLength: 8)
+        Text(row.playCount.formatted(.number))
+          .font(Dial.Typography.monoTiny)
+          .foregroundStyle(theme.accent)
+          .monospacedDigit()
+      }
+      GeometryReader { proxy in
+        let width = proxy.size.width * CGFloat(row.playCount) / CGFloat(max(1, maxPlayCount))
+        ZStack(alignment: .leading) {
+          RoundedRectangle(cornerRadius: Dial.Radius.pixel)
+            .fill(Dial.Palette.surface.opacity(0.72))
+          RoundedRectangle(cornerRadius: Dial.Radius.pixel)
+            .fill(theme.accent.opacity(0.78))
+            .frame(width: max(4, width))
+        }
+      }
+      .frame(height: 4)
+      Text(detailText)
+        .font(Dial.Typography.monoSmall)
+        .foregroundStyle(Dial.Palette.textMuted.opacity(0.72))
+        .lineLimit(1)
+    }
+    .padding(EdgeInsets(top: 6, leading: 8, bottom: 6, trailing: 8))
+    .background(Dial.Palette.surface.opacity(0.48))
+    .clipShape(RoundedRectangle(cornerRadius: Dial.Radius.media))
+  }
+
+  private var detailText: String {
+    let artists = "\(row.artistCount.formatted(.number)) \(row.artistCount == 1 ? "artist" : "artists")"
+    let details = row.detailTags.prefix(3).joined(separator: " / ")
+    return details.isEmpty ? artists : "\(artists) · \(details)"
+  }
+}
+
 private struct FeaturedBadgeMemory: View {
   let row: StatsQueries.BadgeMemoryRow
+  @Environment(\.dialTheme) private var theme
 
   var body: some View {
     HStack(spacing: 10) {
-      BadgePixelIcon(kind: row.kind, color: memoryColor(row.category), size: 22)
+      BadgePixelIcon(kind: row.kind, color: memoryColor(row.category, theme: theme), size: 22)
         .frame(width: 30, height: 30)
         .dialPrintedChip(
-          shape: RoundedRectangle(cornerRadius: 5, style: .continuous),
-          color: memoryColor(row.category),
+          shape: RoundedRectangle(cornerRadius: Dial.Radius.tiny, style: .continuous),
+          color: memoryColor(row.category, theme: theme),
           fillOpacity: 0.05,
           edgeOpacity: 0.20)
       VStack(alignment: .leading, spacing: 2) {
@@ -492,7 +606,7 @@ private struct FeaturedBadgeMemory: View {
           Text(row.kind.label.uppercased())
             .font(Dial.Typography.monoTiny)
             .tracking(1.0)
-            .foregroundStyle(memoryColor(row.category))
+            .foregroundStyle(memoryColor(row.category, theme: theme))
           Text(row.category.label.uppercased())
             .font(Dial.Typography.monoTiny)
             .tracking(0.8)
@@ -503,7 +617,7 @@ private struct FeaturedBadgeMemory: View {
           .foregroundStyle(Dial.Palette.textPrimary)
           .lineLimit(1)
         Text(relativeBadgeTime(row.earnedAt))
-          .font(.system(size: 10))
+          .font(Dial.Typography.monoSmall)
           .foregroundStyle(Dial.Palette.textMuted.opacity(0.76))
           .lineLimit(1)
       }
@@ -512,10 +626,10 @@ private struct FeaturedBadgeMemory: View {
     .padding(EdgeInsets(top: 8, leading: 8, bottom: 8, trailing: 8))
     .background(Dial.Palette.surface.opacity(0.55))
     .overlay(
-      RoundedRectangle(cornerRadius: 6)
+      RoundedRectangle(cornerRadius: Dial.Radius.media)
         .stroke(Dial.Palette.hairline.opacity(0.9), lineWidth: 1)
     )
-    .clipShape(RoundedRectangle(cornerRadius: 6))
+    .clipShape(RoundedRectangle(cornerRadius: Dial.Radius.media))
   }
 
   private var subtitle: String {
@@ -527,11 +641,12 @@ private struct FeaturedBadgeMemory: View {
 
 private struct BadgeMemoryRowView: View {
   let row: StatsQueries.BadgeMemoryRow
+  @Environment(\.dialTheme) private var theme
 
   var body: some View {
     HStack(spacing: 10) {
       Circle()
-        .fill(memoryColor(row.category))
+        .fill(memoryColor(row.category, theme: theme))
         .frame(width: 6, height: 6)
       VStack(alignment: .leading, spacing: 1) {
         Text(row.kind.label)
@@ -539,7 +654,7 @@ private struct BadgeMemoryRowView: View {
           .foregroundStyle(Dial.Palette.textPrimary)
           .lineLimit(1)
         Text(subtitle)
-          .font(.system(size: 10))
+          .font(Dial.Typography.monoSmall)
           .foregroundStyle(Dial.Palette.textMuted)
           .lineLimit(1)
       }
@@ -567,10 +682,10 @@ private func relativeBadgeTime(_ unix: Int64) -> String {
   return f.localizedString(for: date, relativeTo: Date())
 }
 
-private func memoryColor(_ category: BadgeCategory) -> Color {
+private func memoryColor(_ category: BadgeCategory, theme: DialTheme) -> Color {
   switch category {
-  case .discovery: return Dial.Palette.accent
-  case .pattern: return Dial.Palette.accentAlt
+  case .discovery: return theme.accent
+  case .pattern: return theme.accentAlt
   case .milestone: return Dial.Palette.textPrimary
   }
 }
@@ -579,6 +694,7 @@ private struct TopTrackRow: View {
   let rank: Int
   let row: StatsQueries.TopRow
   @Bindable var artworkCache: ArtworkCache
+  @Environment(\.dialTheme) private var theme
 
   var body: some View {
     HStack(spacing: 10) {
@@ -598,9 +714,9 @@ private struct TopTrackRow: View {
         }
       }
       .frame(width: 28, height: 28)
-      .clipShape(RoundedRectangle(cornerRadius: 3))
+      .clipShape(RoundedRectangle(cornerRadius: Dial.Radius.printed))
       .overlay(
-        RoundedRectangle(cornerRadius: 3)
+        RoundedRectangle(cornerRadius: Dial.Radius.printed)
           .stroke(Color.white.opacity(0.10), lineWidth: 0.6)
       )
       VStack(alignment: .leading, spacing: 1) {
@@ -610,15 +726,15 @@ private struct TopTrackRow: View {
           .lineLimit(1)
         if let subtitle = row.subtitle, !subtitle.isEmpty {
           Text(subtitle)
-            .font(.system(size: 10))
+            .font(Dial.Typography.monoSmall)
             .foregroundStyle(Dial.Palette.textMuted)
             .lineLimit(1)
         }
       }
       Spacer()
       Text(row.count.formatted(.number))
-        .font(.custom("IBMPlexMono-Medium", size: 16))
-        .foregroundStyle(Dial.Palette.accent)
+        .font(.custom("GeistMono-Medium", size: 16))
+        .foregroundStyle(theme.accent)
         .monospacedDigit()
         .frame(width: 44, alignment: .trailing)
     }

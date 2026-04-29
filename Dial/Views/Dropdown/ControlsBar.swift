@@ -3,6 +3,7 @@ import SwiftUI
 struct ControlsBar: View {
   @Bindable var menubar: MenubarStripViewModel
   let client: SpotifyClient
+  @Environment(\.dialTheme) private var theme
 
   var body: some View {
     VStack(spacing: Dial.Layout.Transport.stackSpacing) {
@@ -14,21 +15,27 @@ struct ControlsBar: View {
 
   private var transportButtons: some View {
     ZStack {
-      HStack {
+      TransportWellRow()
+
+      HStack(spacing: 0) {
         shuffleButton
-        Spacer(minLength: 0)
+
+        Spacer(minLength: 12)
+
+        HStack(spacing: TransportHardware.centralSpacing) {
+          previousButton
+          playPauseButton
+          nextButton
+        }
+
+        Spacer(minLength: 12)
+
         repeatButton
       }
-      .padding(.horizontal, Dial.Layout.Transport.edgeButtonInset)
-
-      HStack(spacing: Dial.Layout.Transport.clusterSpacing) {
-        previousButton
-        playPauseButton
-        nextButton
-      }
+      .padding(.horizontal, TransportHardware.deckHorizontalPadding)
     }
-    .foregroundStyle(Dial.Palette.textPrimary.opacity(0.85))
-    .frame(maxWidth: .infinity, minHeight: Dial.Layout.Transport.minButtonRowHeight)
+    .foregroundStyle(theme.textPrimary.opacity(0.85))
+    .frame(maxWidth: .infinity, minHeight: TransportHardware.rowHeight)
   }
 
   private var shuffleButton: some View {
@@ -43,11 +50,11 @@ struct ControlsBar: View {
       }
     } label: {
       DialThickIcon("shuffle", size: 14)
-        .foregroundStyle(menubar.shuffle ? Dial.Palette.accent : Dial.Palette.textMuted)
-        .frame(width: Dial.Layout.Transport.iconHitSize, height: Dial.Layout.Transport.iconHitSize)
+        .foregroundStyle(menubar.shuffle ? theme.accent : theme.textMuted)
+        .frame(width: 16, height: 16)
         .contentShape(Rectangle())
     }
-    .buttonStyle(.pressable)
+    .buttonStyle(ToyUtilityStyle(active: menubar.shuffle))
     .help(menubar.shuffle ? "Shuffle on" : "Shuffle off")
     .accessibilityLabel(menubar.shuffle ? "Turn shuffle off" : "Turn shuffle on")
   }
@@ -56,7 +63,7 @@ struct ControlsBar: View {
     Button { Task { try? await client.prev() } } label: {
       DialThickIcon("backward.fill", size: 14)
     }
-    .buttonStyle(GelTransportStyle())
+    .buttonStyle(ToyTransportStyle())
     .help("Previous track")
     .accessibilityLabel("Previous track")
   }
@@ -84,7 +91,7 @@ struct ControlsBar: View {
         .transition(.opacity.combined(with: .scale(scale: 0.92)))
         .animation(.easeOut(duration: 0.12), value: menubar.state)
     }
-    .buttonStyle(GelTransportStyle(prominent: true))
+    .buttonStyle(ToyTransportStyle(prominent: true))
     .help(menubar.state == .playing ? "Pause" : "Play")
     .accessibilityLabel(menubar.state == .playing ? "Pause" : "Play")
   }
@@ -93,7 +100,7 @@ struct ControlsBar: View {
     Button { Task { try? await client.next() } } label: {
       DialThickIcon("forward.fill", size: 14)
     }
-    .buttonStyle(GelTransportStyle())
+    .buttonStyle(ToyTransportStyle())
     .help("Next track")
     .accessibilityLabel("Next track")
   }
@@ -121,10 +128,10 @@ struct ControlsBar: View {
         .id(menubar.repeatMode)
         .transition(.opacity.combined(with: .scale(scale: 0.92)))
         .animation(.easeOut(duration: 0.12), value: menubar.repeatMode)
-        .frame(width: Dial.Layout.Transport.iconHitSize, height: Dial.Layout.Transport.iconHitSize)
+        .frame(width: 16, height: 16)
         .contentShape(Rectangle())
     }
-    .buttonStyle(.pressable)
+    .buttonStyle(ToyUtilityStyle(active: menubar.repeatMode != .off))
     .help(repeatHelp)
     .accessibilityLabel(repeatAccessibilityLabel)
   }
@@ -134,9 +141,9 @@ struct ControlsBar: View {
   /// muted when off.
   private var repeatColor: Color {
     switch menubar.repeatMode {
-    case .off:     return Dial.Palette.textMuted
-    case .context: return Dial.Palette.accent
-    case .track:   return Dial.Palette.accentAlt
+    case .off:     return theme.textMuted
+    case .context: return theme.accent
+    case .track:   return theme.accentAlt
     }
   }
 
@@ -164,6 +171,7 @@ private struct PlaybackScrubber: View {
   @State private var draggingFraction: Double?
   @State private var hovering = false
   @State private var seekTask: Task<Void, Never>?
+  @Environment(\.dialTheme) private var theme
 
   private var durationMs: Int { max(0, menubar.durationMs) }
   private var isSeekable: Bool { menubar.hasSeekableTrack }
@@ -185,7 +193,7 @@ private struct PlaybackScrubber: View {
       }
       .font(Dial.Typography.monoLabel)
       .tracking(0.4)
-      .foregroundStyle(isSeekable ? Dial.Palette.textPrimary.opacity(0.78) : Dial.Palette.textMuted.opacity(0.6))
+      .foregroundStyle(isSeekable ? theme.textPrimary.opacity(0.78) : theme.textMuted.opacity(0.6))
       .monospacedDigit()
     }
     .opacity(isSeekable ? 1 : 0.55)
@@ -235,16 +243,21 @@ private struct PlaybackScrubber: View {
 
       ZStack(alignment: .leading) {
         Capsule()
-          .fill(Color.white.opacity(0.12))
+          .fill(Color.black.opacity(0.36))
           .frame(height: Dial.Layout.Transport.trackHeight)
+          .overlay(
+            Capsule()
+              .stroke(Color.white.opacity(0.10), lineWidth: 0.7)
+          )
 
         Capsule()
-          .fill(Dial.Palette.accent.opacity(0.82))
+          .fill(theme.accent.opacity(0.86))
           .frame(width: max(Dial.Layout.Transport.trackHeight, fillWidth), height: Dial.Layout.Transport.trackHeight)
 
         Circle()
-          .fill(Dial.Palette.textPrimary)
-          .overlay(Circle().stroke(Dial.Palette.accent.opacity(0.55), lineWidth: 0.8))
+          .fill(theme.buttonChrome)
+          .overlay(Circle().stroke(theme.accent.opacity(0.55), lineWidth: 0.8))
+          .shadow(color: Color.black.opacity(0.45), radius: 1.5, x: 0, y: 1)
           .frame(width: thumbSize, height: thumbSize)
           .offset(x: min(max(0, fillWidth - thumbSize / 2), width - thumbSize))
       }
@@ -305,90 +318,269 @@ private struct PlaybackScrubber: View {
   }
 }
 
-/// Translucent gel transport button — matches the Digivice-style render's
-/// playback pills: a glassy semi-transparent capsule with a clear top
-/// sheen, cyan icon inside, and a soft contact shadow. Reads as gel /
-/// translucent plastic that catches light, not as solid white rubber.
-///
-/// Composition:
-///   * Fill: white at low opacity (the chassis surface behind shows
-///     through, tinted slightly white) — this is what makes it "gel"
-///     instead of "rubber"
-///   * Top-arc sheen: bright white wet-glass highlight at the upper curve
-///   * Edge stroke: thin white for definition
-///   * Drop shadow: dark, soft, no color — physical contact shadow
-///
-/// `prominent` flag bumps the fill opacity and sheen brightness on the
-/// play/pause button — same hierarchy idea as before, expressed through
-/// translucency strength rather than colored glow.
-///
-/// Implementation note: ButtonStyle.makeBody can't directly use @State,
-/// so the body is wrapped in a private View where `hovering` lives.
-private struct GelTransportStyle: ButtonStyle {
+private enum TransportHardware {
+  static let rowHeight: CGFloat = 39
+  static let deckHorizontalPadding: CGFloat = 22
+  static let centralSpacing: CGFloat = 8
+  static let utilitySize = CGSize(width: 38, height: 28)
+  static let transportSize = CGSize(width: 44, height: 31)
+  static let playSize = CGSize(width: 58, height: 35)
+}
+
+private struct TransportWellRow: View {
+  @Environment(\.dialTheme) private var theme
+
+  var body: some View {
+    HStack(spacing: 0) {
+      TransportDeckWell(size: TransportHardware.utilitySize, glowOpacity: 0.035)
+
+      Spacer(minLength: 12)
+
+      HStack(spacing: TransportHardware.centralSpacing) {
+        TransportDeckWell(size: TransportHardware.transportSize, glowOpacity: 0.045)
+        TransportDeckWell(size: TransportHardware.playSize, glowOpacity: 0.055)
+        TransportDeckWell(size: TransportHardware.transportSize, glowOpacity: 0.045)
+      }
+
+      Spacer(minLength: 12)
+
+      TransportDeckWell(size: TransportHardware.utilitySize, glowOpacity: 0.035)
+    }
+    .padding(.horizontal, TransportHardware.deckHorizontalPadding)
+    .frame(height: TransportHardware.rowHeight)
+    .allowsHitTesting(false)
+  }
+}
+
+private struct TransportDeckWell: View {
+  let size: CGSize
+  let glowOpacity: Double
+  @Environment(\.dialTheme) private var theme
+
+  var body: some View {
+    Capsule()
+      .fill(LinearGradient(
+        colors: [
+          Color.black.opacity(0.22),
+          theme.surface.opacity(0.36),
+          theme.buttonGlow.opacity(glowOpacity),
+        ],
+        startPoint: .top,
+        endPoint: .bottom))
+      .frame(width: size.width, height: size.height)
+      .overlay(
+        Capsule()
+          .stroke(Color.black.opacity(0.30), lineWidth: 1.2)
+          .blur(radius: 0.7)
+          .offset(y: 0.5)
+          .mask(Capsule())
+      )
+      .overlay(
+        Capsule()
+          .stroke(Color.white.opacity(0.055), lineWidth: 0.6)
+      )
+  }
+}
+
+/// Oval hardware transport button. Less app pill, more toy control:
+/// chrome bevel outside, rubber insert inside, and a pressed state that
+/// sinks instead of blooming.
+private struct ToyTransportStyle: ButtonStyle {
   var prominent: Bool = false
 
   func makeBody(configuration: Configuration) -> some View {
-    GelButtonView(configuration: configuration, prominent: prominent)
+    ToyButtonView(configuration: configuration, prominent: prominent)
   }
 
-  private struct GelButtonView: View {
+  private struct ToyButtonView: View {
     let configuration: ButtonStyle.Configuration
     let prominent: Bool
     @State private var hovering = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dialTheme) private var theme
 
-    /// Pill dimensions. Prominent (play) gets a slightly larger frame
-    /// so it reads as the primary action without colored glow.
-    private var pillWidth: CGFloat {
-      prominent ? Dial.Layout.Transport.prominentPillWidth : Dial.Layout.Transport.secondaryPillWidth
+    private var buttonWidth: CGFloat {
+      prominent ? TransportHardware.playSize.width - 2.5 : TransportHardware.transportSize.width - 2.5
     }
-    private var pillHeight: CGFloat {
-      prominent ? Dial.Layout.Transport.prominentPillHeight : Dial.Layout.Transport.secondaryPillHeight
+    private var buttonHeight: CGFloat {
+      prominent ? TransportHardware.playSize.height - 2.5 : TransportHardware.transportSize.height - 2.5
     }
-
-    /// Fill opacity (top of gradient). Translucent — the dark chassis
-    /// surface behind shows through, which is what gives the button its
-    /// "gel" reading versus "solid rubber."
-    private var fillTopOpacity: Double {
-      if prominent { return hovering ? 0.36 : 0.24 }
-      return hovering ? 0.24 : 0.15
+    private var slotWidth: CGFloat {
+      prominent ? TransportHardware.playSize.width : TransportHardware.transportSize.width
     }
-    private var fillBottomOpacity: Double {
-      if prominent { return hovering ? 0.12 : 0.08 }
-      return hovering ? 0.08 : 0.04
+    private var slotHeight: CGFloat {
+      prominent ? TransportHardware.playSize.height : TransportHardware.transportSize.height
     }
 
-    /// Top-arc sheen brightness — the bright wet-glass reflection at
-    /// the upper curve.
-    private var sheenOpacity: Double {
-      if prominent { return hovering ? 0.95 : 0.75 }
-      return hovering ? 0.75 : 0.55
+    private var rubberInset: CGFloat {
+      prominent ? 3.6 : 3.1
+    }
+    private var lowerSeatWidth: CGFloat {
+      buttonWidth * (prominent ? 0.46 : 0.44)
+    }
+    private var lowerSeatHeight: CGFloat {
+      prominent ? 3.0 : 2.4
+    }
+    private var lowerSeatYOffset: CGFloat {
+      (buttonHeight / 2) - rubberInset - (lowerSeatHeight / 2) - (prominent ? 2.2 : 2.0)
+    }
+
+    private var chromeOpacity: Double {
+      if prominent { return hovering ? 0.48 : 0.40 }
+      return hovering ? 0.38 : 0.30
+    }
+
+    private var rimOpacity: Double {
+      if prominent { return hovering ? 0.38 : 0.28 }
+      return hovering ? 0.28 : 0.20
+    }
+
+    private var iconGlowOpacity: Double {
+      if prominent { return hovering ? 0.34 : 0.20 }
+      return hovering ? 0.22 : 0.10
+    }
+
+    private var warmThemeLift: Double {
+      theme.id == .ember ? 1.22 : 1
     }
 
     var body: some View {
       let pressed = configuration.isPressed
 
-      configuration.label
-        .foregroundStyle(Dial.Palette.accent)
-        .frame(minWidth: pillWidth, minHeight: pillHeight)
+      ZStack {
+        ZStack {
+          hardwareBody(pressed: pressed)
+
+          configuration.label
+            .foregroundStyle(theme.accent)
+            .shadow(color: theme.buttonGlow.opacity(iconGlowOpacity * warmThemeLift), radius: prominent ? 2 : 1)
+            .frame(width: buttonWidth, height: buttonHeight)
+            .allowsHitTesting(false)
+        }
+        .frame(width: buttonWidth, height: buttonHeight)
+        .brightness(pressed ? -0.04 : 0)
+        .scaleEffect(pressed ? 0.965 : 1.0)
+        .offset(y: pressed ? 1 : 0)
+      }
+        .frame(width: slotWidth, height: slotHeight)
         .contentShape(Capsule())
-        .dialRaisedGel(
-          shape: Capsule(),
-          fill: .clear,
-          edgeOpacity: 0.35,
-          fillTopOpacity: pressed ? fillTopOpacity * 0.62 : fillTopOpacity,
-          fillBottomOpacity: pressed ? fillBottomOpacity * 0.55 : fillBottomOpacity,
-          sheenOpacity: pressed ? sheenOpacity * 0.52 : sheenOpacity,
-          sheenLineWidth: 0.8,
-          contactShadowOpacity: pressed ? 0.25 : 0.45,
-          contactShadowRadius: 3,
-          contactShadowY: pressed ? 0.5 : 1.5,
-          innerShadowOpacity: 0.10)
-        .opacity(pressed ? 0.90 : 1.0)
-        .scaleEffect(pressed ? 0.96 : 1.0)
-        .offset(y: pressed ? 0.5 : 0)
-        .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: configuration.isPressed)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.10), value: configuration.isPressed)
         .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: hovering)
+        .onHover { hovering = $0 }
+        .onDisappear { hovering = false }
+    }
+
+    private func hardwareBody(pressed: Bool) -> some View {
+      ZStack {
+        Capsule()
+          .fill(LinearGradient(
+            colors: [
+              theme.buttonChrome.opacity(chromeOpacity),
+              Color.white.opacity(prominent ? 0.10 : 0.07),
+              theme.surface.opacity(prominent ? 0.58 : 0.66),
+              Color.black.opacity(theme.id == .ember ? 0.18 : 0.22),
+            ],
+            startPoint: .top,
+            endPoint: .bottom))
+          .overlay(
+            Capsule()
+              .stroke(Color.white.opacity(min(0.56, rimOpacity * warmThemeLift)), lineWidth: prominent ? 0.9 : 0.7)
+          )
+          .overlay(
+            Capsule()
+              .stroke(Color.black.opacity(0.34), lineWidth: 1.4)
+              .blur(radius: 0.7)
+              .offset(y: 0.6)
+              .mask(Capsule())
+          )
+          .shadow(color: Color.black.opacity(pressed ? 0.12 : 0.26), radius: pressed ? 0.4 : 1.4, x: 0, y: pressed ? 0.2 : 0.9)
+
+        Capsule()
+          .inset(by: rubberInset)
+          .fill(LinearGradient(
+            colors: [
+              Color.white.opacity(hovering ? 0.10 : 0.065),
+              theme.surface.opacity(prominent ? 0.82 : 0.88),
+              theme.ground.opacity(prominent ? 0.82 : 0.88),
+            ],
+            startPoint: .top,
+            endPoint: .bottom))
+          .overlay(
+            Capsule()
+              .inset(by: rubberInset)
+              .stroke(theme.buttonRubber.opacity((prominent ? 0.34 : 0.24) * warmThemeLift), lineWidth: prominent ? 1.0 : 0.8)
+          )
+
+        Capsule()
+          .fill(theme.buttonGlow.opacity((prominent ? 0.13 : 0.095) * warmThemeLift))
+          .frame(width: lowerSeatWidth, height: lowerSeatHeight)
+          .blur(radius: 0.45)
+          .offset(y: lowerSeatYOffset)
+          .allowsHitTesting(false)
+
+        Capsule()
+          .fill(Color.white.opacity(pressed ? 0.025 : (hovering ? 0.11 : 0.07)))
+          .frame(width: buttonWidth * (prominent ? 0.46 : 0.40), height: prominent ? 2.2 : 1.8)
+          .padding(.top, 3.5)
+          .frame(maxHeight: .infinity, alignment: .top)
+      }
+    }
+  }
+}
+
+private struct ToyUtilityStyle: ButtonStyle {
+  var active: Bool
+
+  func makeBody(configuration: Configuration) -> some View {
+    UtilityButtonView(configuration: configuration, active: active)
+  }
+
+  private struct UtilityButtonView: View {
+    let configuration: ButtonStyle.Configuration
+    let active: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dialTheme) private var theme
+    @State private var hovering = false
+
+    var body: some View {
+      let pressed = configuration.isPressed
+      configuration.label
+        .frame(width: TransportHardware.utilitySize.width,
+               height: TransportHardware.utilitySize.height)
+        .contentShape(Capsule())
+        .background {
+          Capsule()
+            .fill(LinearGradient(
+              colors: [
+                theme.accent.opacity(active ? 0.045 : 0.0),
+                Color.black.opacity(active ? 0.10 : 0.05),
+              ],
+              startPoint: .top,
+              endPoint: .bottom))
+            .overlay(
+              Capsule()
+                .stroke(Color.white.opacity(hovering || active ? 0.11 : 0.04), lineWidth: 0.6)
+            )
+            .overlay(
+              Capsule()
+                .stroke(Color.black.opacity(0.22), lineWidth: 1.4)
+                .blur(radius: 0.8)
+                .offset(y: 0.7)
+                .mask(Capsule())
+            )
+        }
+        .overlay {
+          if active {
+            Capsule()
+              .inset(by: 3)
+              .stroke(theme.accent.opacity(0.24), lineWidth: 0.7)
+              .allowsHitTesting(false)
+          }
+        }
+        .opacity(pressed ? 0.82 : 1)
+        .scaleEffect(pressed ? 0.96 : 1)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.10), value: pressed)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.16), value: hovering)
         .onHover { hovering = $0 }
     }
   }

@@ -83,17 +83,17 @@ struct RecessedScreen: ViewModifier {
 /// transport cradle use one lighting model.
 struct LCDPanel: ViewModifier {
   /// Corner radius — smaller than the outer device body's so the
-  /// LCD reads as concentrically inset. 10pt is the sweet spot for a
-  /// content-sized panel.
-  var cornerRadius: CGFloat = 10
-  var fill: Color = Dial.Palette.subtle
+  /// LCD reads as concentrically inset.
+  var cornerRadius: CGFloat = Dial.Radius.panel
+  var fill: Color?
   var strokeOpacity: Double = DialMaterial.Recessed.strokeOpacity
+  @Environment(\.dialTheme) private var theme
 
   func body(content: Content) -> some View {
     content
       .dialRecessedPanel(
         shape: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous),
-        fill: fill,
+        fill: fill ?? theme.subtle,
         strokeOpacity: strokeOpacity)
   }
 }
@@ -103,8 +103,8 @@ extension View {
   /// distinguishes "screen content" from "device body chrome." See
   /// `LCDPanel` for the visual contract.
   func lcdPanel(
-    cornerRadius: CGFloat = 10,
-    fill: Color = Dial.Palette.subtle,
+    cornerRadius: CGFloat = Dial.Radius.panel,
+    fill: Color? = nil,
     strokeOpacity: Double = DialMaterial.Recessed.strokeOpacity
   ) -> some View {
     self.modifier(LCDPanel(cornerRadius: cornerRadius, fill: fill, strokeOpacity: strokeOpacity))
@@ -115,74 +115,56 @@ extension View {
   /// instead of a rounded rectangle. Matches the Digivice render's
   /// "playback button cradle" shape: distinct from the LCD panel above
   /// so the eye reads it as a separate functional zone.
-  func transportPanel(strokeOpacity: Double = DialMaterial.Recessed.strokeOpacity) -> some View {
+  func transportPanel(strokeOpacity: Double = DialMaterial.Transport.strokeOpacity) -> some View {
     self.modifier(TransportPanel(strokeOpacity: strokeOpacity))
   }
 }
 
-/// Custom shape for the transport panel — flat top with small rounded
-/// corners, straight sides going partway down, and a curved bottom that
-/// sweeps from one side to the other. Matches the Digivice render's
-/// "scoop"/"shield-bottom" silhouette: distinct from a Capsule (which
-/// has equal curvature top and bottom) and from a RoundedRectangle
-/// (which has straight edges).
+/// Custom shape for the transport panel: flat hardware top, tight upper
+/// corners, and a shallow shield-bottom that eases into the sides.
 ///
 /// Geometry:
-///   * Top corners: small radius (6pt)
+///   * Top corners: tiny radius, closer to stamped plastic than app chrome
 ///   * Top edge: flat
-///   * Sides: straight vertical for 80% of the height by default
-///   * Bottom: single quadratic bezier curve sweeping right-to-left,
-///     peaking at the rect's bottom edge — gives the "more curved bottom"
-///     reading without extending past the input rect bounds
+///   * Sides: mostly straight
+///   * Bottom: side fillet -> shallow center arc -> side fillet
 struct TransportPanelShape: Shape {
-  var topCornerRadius: CGFloat = 6
-  /// What fraction of the height the straight sides cover before the
-  /// bottom curve begins. 0.80 = sides go 80% down, curve takes 20%.
-  /// Higher values give a SHALLOWER bottom curve (more straight sides).
-  /// Earlier 0.55 was too aggressive — the bottom read as a deep scoop
-  /// rather than a subtle curve.
-  var sideHeightFraction: CGFloat = 0.80
-  /// Optional absolute curve depth in points. Use this for large shells:
-  /// a percentage of 380pt gets cartoonishly deep, while a 12-16pt curve
-  /// keeps the same visual detail as the transport panel.
-  var bottomCurveDepth: CGFloat?
+  var topCornerRadius: CGFloat = Dial.Radius.transportTop
+  var bottomJoinRadius: CGFloat = Dial.Radius.transportFoot
+  var bottomCurveDepth: CGFloat = 11
 
   func path(in rect: CGRect) -> Path {
     var path = Path()
-    let r = topCornerRadius
-    let depth = bottomCurveDepth.map {
-      min(max(0, $0), max(0, rect.height - r))
-    }
-    let sideEnd = depth.map { rect.height - $0 } ?? rect.height * sideHeightFraction
-    // Control point y for the bottom curve, derived so the curve's
-    // midpoint sits exactly at rect.height (the bottom edge). Quadratic
-    // bezier midpoint y = (start + control + end) / 4 simplifies to
-    // (sideEnd + controlY) / 2 for symmetric endpoints; solving for
-    // peak at rect.height gives controlY = 2*rect.height - sideEnd.
-    let controlY = 2 * rect.height - sideEnd
+    let topR = min(max(0, topCornerRadius), rect.width / 2, rect.height / 2)
+    let footR = min(max(0, bottomJoinRadius), rect.width / 5, rect.height / 3)
+    let depth = min(max(8, bottomCurveDepth), rect.height * 0.22)
+    let baselineY = rect.height - depth
+    let sideJoinY = max(topR, baselineY - footR * 0.58)
+    let rightFoot = CGPoint(x: rect.maxX - footR, y: baselineY)
+    let leftFoot = CGPoint(x: rect.minX + footR, y: baselineY)
 
-    path.move(to: CGPoint(x: r, y: 0))
-    path.addLine(to: CGPoint(x: rect.width - r, y: 0))
-    path.addArc(
-      center: CGPoint(x: rect.width - r, y: r),
-      radius: r,
-      startAngle: .degrees(-90),
-      endAngle: .degrees(0),
-      clockwise: false
-    )
-    path.addLine(to: CGPoint(x: rect.width, y: sideEnd))
+    path.move(to: CGPoint(x: rect.minX + topR, y: rect.minY))
+    path.addLine(to: CGPoint(x: rect.maxX - topR, y: rect.minY))
     path.addQuadCurve(
-      to: CGPoint(x: 0, y: sideEnd),
-      control: CGPoint(x: rect.midX, y: controlY)
-    )
-    path.addLine(to: CGPoint(x: 0, y: r))
-    path.addArc(
-      center: CGPoint(x: r, y: r),
-      radius: r,
-      startAngle: .degrees(180),
-      endAngle: .degrees(270),
-      clockwise: false
-    )
+      to: CGPoint(x: rect.maxX, y: rect.minY + topR),
+      control: CGPoint(x: rect.maxX, y: rect.minY))
+    path.addLine(to: CGPoint(x: rect.maxX, y: sideJoinY))
+    path.addCurve(
+      to: rightFoot,
+      control1: CGPoint(x: rect.maxX, y: sideJoinY + footR * 0.46),
+      control2: CGPoint(x: rect.maxX - footR * 0.20, y: baselineY))
+    path.addCurve(
+      to: leftFoot,
+      control1: CGPoint(x: rect.minX + rect.width * 0.72, y: rect.maxY),
+      control2: CGPoint(x: rect.minX + rect.width * 0.28, y: rect.maxY))
+    path.addCurve(
+      to: CGPoint(x: rect.minX, y: sideJoinY),
+      control1: CGPoint(x: rect.minX + footR * 0.20, y: baselineY),
+      control2: CGPoint(x: rect.minX, y: sideJoinY + footR * 0.46))
+    path.addLine(to: CGPoint(x: rect.minX, y: rect.minY + topR))
+    path.addQuadCurve(
+      to: CGPoint(x: rect.minX + topR, y: rect.minY),
+      control: CGPoint(x: rect.minX, y: rect.minY))
     path.closeSubpath()
     return path
   }
@@ -192,12 +174,18 @@ struct TransportPanelShape: Shape {
 /// material as `LCDPanel`. The custom shape is what makes this container
 /// read as the dedicated playback cradle.
 struct TransportPanel: ViewModifier {
-  var strokeOpacity: Double = DialMaterial.Recessed.strokeOpacity
+  var strokeOpacity: Double = DialMaterial.Transport.strokeOpacity
+  @Environment(\.dialTheme) private var theme
 
   func body(content: Content) -> some View {
     let shape = TransportPanelShape()
 
     return content
-      .dialRecessedPanel(shape: shape, strokeOpacity: strokeOpacity)
+      .dialRecessedPanel(
+        shape: shape,
+        fill: theme.surface.opacity(0.92),
+        strokeOpacity: strokeOpacity,
+        topSheenOpacity: DialMaterial.Transport.topSheenOpacity,
+        innerShadowOpacity: DialMaterial.Transport.innerShadowOpacity)
   }
 }

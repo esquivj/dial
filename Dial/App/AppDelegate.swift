@@ -1,5 +1,6 @@
 // Dial/App/AppDelegate.swift
 import AppKit
+import CoreText
 import Foundation
 import GRDB
 import SwiftUI
@@ -11,9 +12,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private var dockIcon: DockIconController?
 
   func applicationDidFinishLaunching(_ notification: Notification) {
+    Self.registerBundledFonts()
+
     if Self.isRunningUnitTests {
       return
     }
+
+    ProcessInfo.processInfo.disableAutomaticTermination(
+      "Dial is running a menu bar UI or headless enrichment job.")
+    ProcessInfo.processInfo.disableSuddenTermination()
 
     // Headless import path: `--import <folder>` runs the same Importer that
     // the Settings UI uses, then exits. Skips all menubar / polling /
@@ -22,6 +29,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // sitting through the UI's progress bar.
     if let importFolder = importFolderFromArgs() {
       runHeadlessImport(folderPath: importFolder)
+      return
+    }
+
+    if let tagLimit = tagLimitFromArgs() {
+      runHeadlessTagEnrichment(limit: tagLimit)
       return
     }
 
@@ -69,6 +81,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     if let arg = args.first(where: { $0.hasPrefix("--import=") }) {
       return String(arg.dropFirst("--import=".count))
+    }
+    return nil
+  }
+
+  /// Returns the limit passed via `--enrich-tags <limit>` or
+  /// `--enrich-tags=<limit>`. Defaults to 250 if the flag is present without
+  /// a value.
+  private func tagLimitFromArgs() -> Int? {
+    let args = CommandLine.arguments
+    if let idx = args.firstIndex(of: "--enrich-tags") {
+      guard idx + 1 < args.count else { return 250 }
+      return Int(args[idx + 1]) ?? 250
+    }
+    if let arg = args.first(where: { $0.hasPrefix("--enrich-tags=") }) {
+      return Int(arg.dropFirst("--enrich-tags=".count)) ?? 250
     }
     return nil
   }
@@ -146,10 +173,57 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
   }
 
+  private func runHeadlessTagEnrichment(limit: Int) {
+    let myPID = ProcessInfo.processInfo.processIdentifier
+    let bundleID = Bundle.main.bundleIdentifier ?? "com.dial.Dial"
+    let others = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID)
+      .filter { $0.processIdentifier != myPID }
+    if !others.isEmpty {
+      let pids = others.map { String($0.processIdentifier) }.joined(separator: ", ")
+      stderr("✗ Dial is already running (PID \(pids)). Quit it first.")
+      exit(1)
+    }
+
+    let key = UserDefaults.standard.string(forKey: "settings.lastFMAPIKey")?
+      .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    guard !key.isEmpty else {
+      stderr("✗ Missing Last.fm API key. Save one in Settings first.")
+      exit(1)
+    }
+
+    Task { @MainActor in
+      do {
+        let dbURL = try DatabaseStack.defaultURL()
+        let dbq = try DatabaseStack(url: dbURL).dbq
+        stderr("→ DB: \(dbURL.path)")
+        stderr("→ Enriching up to \(limit) artists with Last.fm tags")
+        let start = Date()
+        let enricher = TagEnricher(dbq: dbq, lastFM: LastFMClient(apiKey: key))
+        try await enricher.enrichMissingArtists(rateLimitPerSec: 1, limit: limit)
+        let elapsed = Date().timeIntervalSince(start)
+        stderr(String(format: "✓ Tag enrichment done in %.1fs", elapsed))
+        exit(0)
+      } catch {
+        stderr("✗ Tag enrichment failed: \(error)")
+        exit(1)
+      }
+    }
+  }
+
   /// stderr-only logging for the headless import path. Keeps stdout clean
   /// so callers can pipe / parse output if they want.
   private nonisolated func stderr(_ s: String) {
     FileHandle.standardError.write(Data((s + "\n").utf8))
+  }
+
+  private static func registerBundledFonts() {
+    for fontName in ["GeistMono-Regular", "GeistMono-Medium", "GeistPixel-Square"] {
+      guard let url = Bundle.main.url(forResource: fontName, withExtension: "ttf") else {
+        NSLog("[Dial] missing bundled font: \(fontName)")
+        continue
+      }
+      CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
+    }
   }
 
   private static var isRunningUnitTests: Bool {
@@ -175,6 +249,11 @@ final class SettingsWindowPresenter: NSObject, NSWindowDelegate {
   private var window: NSWindow?
 
   func show(coord: AppCoordinator) {
+    if let window {
+      present(window)
+      return
+    }
+
     let root = SettingsView(
       vm: coord.settings,
       coord: coord,
@@ -184,20 +263,14 @@ final class SettingsWindowPresenter: NSObject, NSWindowDelegate {
       }
     )
 
-    if let window {
-      (window.contentViewController as? NSHostingController<SettingsView>)?.rootView = root
-      present(window)
-      return
-    }
-
     let hosting = NSHostingController(rootView: root)
     let window = NSWindow(contentViewController: hosting)
     window.title = "Dial Settings"
     window.styleMask = [.titled, .closable, .miniaturizable]
     window.isReleasedWhenClosed = false
     window.delegate = self
-    window.setContentSize(NSSize(width: 500, height: 460))
-    window.minSize = NSSize(width: 500, height: 460)
+    window.setContentSize(NSSize(width: 640, height: 500))
+    window.minSize = NSSize(width: 640, height: 500)
     window.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
     window.center()
     self.window = window

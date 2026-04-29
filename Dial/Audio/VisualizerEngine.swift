@@ -172,6 +172,23 @@ final class VisualizerEngine: @unchecked Sendable {
     self.showPeakMarkers = showPeakMarkers
   }
 
+  #if DEBUG
+  /// Test/export hook for deterministic marketing renders. The live app still
+  /// gets all spectrum values from ScreenCaptureKit; this just lets the asset
+  /// exporter render the real visualizer component without starting capture.
+  @MainActor
+  func setPreviewSpectrum(bands previewBands: [Float], peaks previewPeaks: [Float]? = nil) {
+    let count = max(1, previewBands.count)
+    bands = previewBands.map { min(1, max(0, $0)) }
+    peaks = (previewPeaks ?? previewBands).map { min(1, max(0, $0)) }
+    if peaks.count != count {
+      peaks = bands
+    }
+    bandCount = count
+    state = .running
+  }
+  #endif
+
   @MainActor
   func start() async {
     // Idempotent — calling start() while already running is a no-op. This is

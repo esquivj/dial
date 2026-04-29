@@ -7,6 +7,7 @@ struct MenubarStripView: View {
   @Bindable var vm: MenubarStripViewModel
   @Bindable var settings: SettingsViewModel
   @Bindable var pet: PetViewModel
+  @Bindable var nowPlaying: NowPlayingViewModel
   @Bindable var artworkCache: ArtworkCache
 
   private enum Metrics {
@@ -19,6 +20,10 @@ struct MenubarStripView: View {
   @State private var trackFlash = false
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+  private var theme: DialTheme {
+    DialTheme.palette(for: settings.hudColorMode.resolvedTheme(soundTheme: nowPlaying.soundTheme))
+  }
+
   var body: some View {
     stripContent
       .padding(.leading, horizontalPadding.leading)
@@ -28,7 +33,7 @@ struct MenubarStripView: View {
         if settings.showProgressInMenuBar, vm.state == .playing, progressFraction > 0 {
           GeometryReader { proxy in
             Capsule()
-              .fill(Dial.Palette.accent.opacity(0.85))
+              .fill(theme.accent.opacity(0.85))
               .frame(width: max(4, proxy.size.width * progressFraction), height: 1.5)
               .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
           }
@@ -37,11 +42,11 @@ struct MenubarStripView: View {
       }
       .background {
         if trackFlash && settings.flashOnTrackChange {
-          RoundedRectangle(cornerRadius: 4)
-            .fill(Dial.Palette.accent.opacity(0.18))
+          RoundedRectangle(cornerRadius: Dial.Radius.tiny)
+            .fill(theme.accent.opacity(0.18))
             .overlay(
-              RoundedRectangle(cornerRadius: 4)
-                .stroke(Dial.Palette.accent.opacity(0.45), lineWidth: 0.8))
+              RoundedRectangle(cornerRadius: Dial.Radius.tiny)
+                .stroke(theme.accent.opacity(0.45), lineWidth: 0.8))
         }
       }
       .onChange(of: vm.track?.uri) { oldValue, newValue in
@@ -91,7 +96,7 @@ struct MenubarStripView: View {
         if vm.state == .playing {
           Text("·\(vm.playsYTD)")
             .font(Dial.Typography.monoSmall)
-            .foregroundStyle(Dial.Palette.accent)
+            .foregroundStyle(theme.accent)
             .monospacedDigit()
         }
       }
@@ -101,7 +106,7 @@ struct MenubarStripView: View {
         artIcon
         Text(vm.state == .playing ? "\(vm.playsYTD)" : stateLabel)
           .font(Dial.Typography.monoTiny)
-          .foregroundStyle(Dial.Palette.accent)
+          .foregroundStyle(theme.accent)
           .monospacedDigit()
       }
     }
@@ -181,7 +186,7 @@ struct MenubarStripView: View {
           .resizable()
           .aspectRatio(contentMode: .fill)
       } else {
-        RoundedRectangle(cornerRadius: 3)
+        RoundedRectangle(cornerRadius: Dial.Radius.printed)
           .fill(Dial.Palette.surface)
           .task(id: urlString) {
             await artworkCache.load(urlString)
@@ -189,9 +194,9 @@ struct MenubarStripView: View {
       }
     }
     .frame(width: Metrics.albumArt, height: Metrics.albumArt)
-    .clipShape(RoundedRectangle(cornerRadius: 3))
+    .clipShape(RoundedRectangle(cornerRadius: Dial.Radius.printed))
     .overlay(
-      RoundedRectangle(cornerRadius: 3)
+      RoundedRectangle(cornerRadius: Dial.Radius.printed)
         .stroke(Color.white.opacity(0.18), lineWidth: 0.5)
     )
     .frame(width: Metrics.iconSlot, height: Metrics.iconSlot)

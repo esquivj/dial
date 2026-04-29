@@ -13,7 +13,7 @@ struct OnboardingView: View {
       VStack(alignment: .leading, spacing: 14) {
         VStack(alignment: .leading, spacing: 6) {
           Text("Dial")
-            .font(.custom("IBMPlexMono-Medium", size: 32))
+            .font(.custom("GeistPixel-Square", size: 32))
             .foregroundStyle(Dial.Palette.accent)
           Text("A personal Spotify HUD for the songs that mean something to you.")
             .font(Dial.Typography.sansBody)
@@ -54,10 +54,10 @@ struct OnboardingView: View {
           .foregroundStyle(Dial.Palette.accent)
       }
 
-      RoundedRectangle(cornerRadius: 6)
+      RoundedRectangle(cornerRadius: Dial.Radius.media)
         .fill(Dial.Palette.surface)
         .frame(width: 72, height: 72)
-        .dialMediaFrame(shape: RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .dialMediaFrame(shape: RoundedRectangle(cornerRadius: Dial.Radius.media, style: .continuous))
 
       HStack(spacing: 6) {
         BadgePixelIcon(kind: .rediscovered, color: Dial.Palette.accent, size: 14)
@@ -68,13 +68,13 @@ struct OnboardingView: View {
       }
       .padding(EdgeInsets(top: 4, leading: 7, bottom: 4, trailing: 8))
       .dialPrintedChip(
-        shape: RoundedRectangle(cornerRadius: 3, style: .continuous),
+        shape: RoundedRectangle(cornerRadius: Dial.Radius.printed, style: .continuous),
         color: Dial.Palette.accent)
 
       BulldogSprite(stage: .hatchling, behavior: .walk, height: 39)
         .frame(width: 52, height: 52)
         .dialRaisedGel(
-          shape: RoundedRectangle(cornerRadius: 6, style: .continuous),
+          shape: RoundedRectangle(cornerRadius: Dial.Radius.media, style: .continuous),
           fill: Dial.Palette.lcd,
           edgeOpacity: 0.34,
           fillTopOpacity: 0.07,
@@ -83,7 +83,7 @@ struct OnboardingView: View {
           contactShadowOpacity: 0,
           innerShadowOpacity: 0.20)
         .overlay(
-          RoundedRectangle(cornerRadius: 4)
+          RoundedRectangle(cornerRadius: Dial.Radius.tiny)
             .inset(by: 3)
             .stroke(Dial.Palette.accent.opacity(0.24), lineWidth: 0.6)
         )
@@ -92,10 +92,10 @@ struct OnboardingView: View {
     .padding(14)
     .frame(width: 150, height: 226, alignment: .topLeading)
     .background(
-      RoundedRectangle(cornerRadius: 26)
+      RoundedRectangle(cornerRadius: Dial.Radius.device)
         .fill(Dial.Palette.ground)
         .overlay(
-          RoundedRectangle(cornerRadius: 26)
+          RoundedRectangle(cornerRadius: Dial.Radius.device)
             .stroke(Color.white.opacity(0.35), lineWidth: 1.2)
         )
     )

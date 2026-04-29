@@ -7,12 +7,14 @@ final class ArtworkCache {
   private var images: [String: NSImage] = [:]
   private var tasks: [String: Task<NSImage?, Never>] = [:]
 
+  @MainActor
   func image(for urlString: String?) -> NSImage? {
     guard let key = normalizedKey(urlString) else { return nil }
     return images[key]
   }
 
   @discardableResult
+  @MainActor
   func load(_ urlString: String?) async -> NSImage? {
     guard let key = normalizedKey(urlString), let url = URL(string: key) else { return nil }
     if let image = images[key] { return image }
@@ -36,6 +38,7 @@ final class ArtworkCache {
     return image
   }
 
+  @MainActor
   func prefetch(_ urlString: String?) {
     guard let key = normalizedKey(urlString), images[key] == nil, tasks[key] == nil else { return }
     Task { [weak self] in

@@ -30,7 +30,7 @@ final class FlowTests: XCTestCase {
       var seenStarted = false
       var seenCounted = false
       for try await e in poller.stream() {
-        if case let .started(uri, _, _, _, albumName, _, _, _) = e {
+        if case let .started(uri, _, _, _, _, albumName, _, _, _) = e {
           try? tracks.upsert(.init(
             uri: uri, name: "N", albumName: albumName, albumArtUrl: nil,
             durationMs: 200000,

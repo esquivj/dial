@@ -4,6 +4,7 @@ struct LikedTrackButton: View {
   @Bindable var menubar: MenubarStripViewModel
   let client: SpotifyClient
   let onReconnect: () async throws -> Void
+  @Environment(\.dialTheme) private var theme
 
   var body: some View {
     Button {
@@ -13,7 +14,7 @@ struct LikedTrackButton: View {
         .foregroundStyle(likedColor)
         .frame(width: 22, height: 22)
         .dialRaisedGel(
-          shape: RoundedRectangle(cornerRadius: 4, style: .continuous),
+          shape: RoundedRectangle(cornerRadius: Dial.Radius.tiny, style: .continuous),
           fill: buttonFill,
           edgeOpacity: borderOpacity,
           fillTopOpacity: 0.075,
@@ -54,32 +55,32 @@ struct LikedTrackButton: View {
 
   private var likedColor: Color {
     switch menubar.likedTrackState {
-    case .liked:          return Dial.Palette.accentAlt
-    case .checking:       return Dial.Palette.accent
-    case .needsReconnect: return Dial.Palette.accentAlt.opacity(0.55)
+    case .liked:          return theme.accentAlt
+    case .checking:       return theme.textMuted
+    case .needsReconnect: return theme.accentAlt.opacity(0.55)
     case .notLiked,
-         .unknown:        return Dial.Palette.textMuted
+         .unknown:        return theme.textMuted
     }
   }
 
   private var buttonFill: Color {
     switch menubar.likedTrackState {
     case .liked:
-      return Dial.Palette.accentAlt.opacity(0.035)
+      return theme.accentAlt.opacity(0.035)
     case .checking:
-      return Dial.Palette.accent.opacity(0.025)
+      return theme.surface.opacity(0.18)
     case .needsReconnect:
-      return Dial.Palette.accentAlt.opacity(0.02)
+      return theme.accentAlt.opacity(0.02)
     case .notLiked,
          .unknown:
-      return Dial.Palette.surface.opacity(0.24)
+      return theme.surface.opacity(0.24)
     }
   }
 
   private var borderOpacity: Double {
     switch menubar.likedTrackState {
     case .liked:          return 0.34
-    case .checking:       return 0.26
+    case .checking:       return 0.16
     case .needsReconnect: return 0.22
     case .notLiked,
          .unknown:        return 0.20

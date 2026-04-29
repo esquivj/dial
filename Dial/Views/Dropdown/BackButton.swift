@@ -8,6 +8,7 @@ import SwiftUI
 struct BackButton: View {
   let action: () -> Void
   @State private var hover = false
+  @Environment(\.dialTheme) private var theme
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   var body: some View {
@@ -24,8 +25,8 @@ struct BackButton: View {
       .padding(.vertical, 5)
       .contentShape(Rectangle())
       .background(
-        RoundedRectangle(cornerRadius: 4)
-          .fill(Dial.Palette.accent.opacity(hover ? 0.08 : 0))
+        RoundedRectangle(cornerRadius: Dial.Radius.tiny)
+          .fill(theme.accent.opacity(hover ? 0.08 : 0))
       )
     }
     .buttonStyle(.pressable)

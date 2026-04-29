@@ -4,6 +4,7 @@ struct ArtistContext: View {
   let artist: String
   let rank7d: Int?
   let lifetime: Int
+  @Environment(\.dialTheme) private var theme
 
   var body: some View {
     VStack(alignment: .leading, spacing: 6) {
@@ -15,7 +16,7 @@ struct ArtistContext: View {
         Spacer()
         Text(rank7d.map { "#\($0) · 7D" } ?? "")
           .font(Dial.Typography.monoLabel)
-          .foregroundStyle(Dial.Palette.accent)
+          .foregroundStyle(theme.accent)
       }
       HStack(alignment: .firstTextBaseline) {
         Text(artist)

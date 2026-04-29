@@ -14,6 +14,7 @@ struct StatusRail: View {
   /// flashes magenta (event tone) before settling back to cyan (steady).
   @State private var trackPulse = false
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @Environment(\.dialTheme) private var theme
 
   var body: some View {
     VStack(spacing: 0) {
@@ -26,19 +27,19 @@ struct StatusRail: View {
         // Pet thumbnail relocated to TrackHero. Rail starts directly with
         // the indicator dot now — frees up ~40pt of horizontal space.
         Circle()
-          .fill(trackPulse ? Dial.Palette.accentAlt : Dial.Palette.accent)
+          .fill(trackPulse ? theme.accentAlt : theme.accent)
           .frame(width: Dial.Layout.StatusRail.ledSize, height: Dial.Layout.StatusRail.ledSize)
           // Single tight halo — keeps the dot reading as a powered LED
           // without the prior two-layer bloom that pushed the glow into
           // "neon tacky" territory. The dot's color contrast against
           // the dark body does most of the "lit" work; the halo is
           // just a soft edge softening.
-          .shadow(color: (trackPulse ? Dial.Palette.accentAlt : Dial.Palette.accent).opacity(0.55), radius: 3)
+          .shadow(color: (trackPulse ? theme.accentAlt : theme.accent).opacity(0.55), radius: 3)
           .animation(.easeOut(duration: 0.5), value: trackPulse)
         Text("NOW PLAYING")
           .font(Dial.Typography.monoLabel)
           .tracking(1.4)
-          .foregroundStyle(Dial.Palette.accent)
+          .foregroundStyle(theme.accent)
         Spacer()
         // Inline nav icons — surface History / Stats here so they're 1-tap
         // reachable instead of requiring the (undiscoverable) menubar
@@ -49,24 +50,18 @@ struct StatusRail: View {
         navIcon(name: "chart.bar.fill", help: "Open Stats", action: onOpenStats)
         systemNavIcon(name: "gearshape.fill", help: "Open Settings", action: onOpenSettings)
         Button {
-          showingGlossary.toggle()
+          withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) {
+            showingGlossary.toggle()
+          }
         } label: {
-          DialIcon(showingGlossary ? "xmark.circle" : "info.circle")
-            .frame(width: Dial.Layout.StatusRail.iconSize, height: Dial.Layout.StatusRail.iconSize)
-            .foregroundStyle(Dial.Palette.textMuted)
-            .frame(width: Dial.Layout.StatusRail.hitSize, height: Dial.Layout.StatusRail.hitSize)
-            .contentShape(Rectangle())
+          statusIcon(showingGlossary ? "xmark.circle" : "info.circle")
         }
         .buttonStyle(.pressable)
         .help(showingGlossary ? "Hide glossary" : "What do these badges mean?")
         .accessibilityLabel(showingGlossary ? "Hide glossary" : "Show badge glossary")
       }
-      // Horizontal padding 24pt (was 20) — at the status bar's vertical
-      // position (y≈8–24pt inside the body), the 40pt corner curves
-      // are still cutting inward; 20pt put NOW PLAYING and the time
-      // visibly close to the curve boundary. 24pt gives both sides
-      // symmetric breathing room and reads as deliberately balanced
-      // rather than crowded.
+      // Horizontal padding 24pt (was 20) keeps the rail clear of the shell's
+      // corner curve while the smaller hit slots keep the top band quiet.
       .padding(.horizontal, Dial.Layout.StatusRail.horizontalPadding)
       .padding(.vertical, Dial.Layout.StatusRail.verticalPadding)
     }
@@ -99,11 +94,7 @@ struct StatusRail: View {
     name: String, help: String, action: @escaping () -> Void
   ) -> some View {
     Button(action: action) {
-      DialIcon(name)
-        .frame(width: Dial.Layout.StatusRail.iconSize, height: Dial.Layout.StatusRail.iconSize)
-        .foregroundStyle(Dial.Palette.textMuted)
-        .frame(width: Dial.Layout.StatusRail.hitSize, height: Dial.Layout.StatusRail.hitSize)
-        .contentShape(Rectangle())
+      statusIcon(name)
     }
     .buttonStyle(.pressable)
     .help(help)
@@ -115,14 +106,33 @@ struct StatusRail: View {
     name: String, help: String, action: @escaping () -> Void
   ) -> some View {
     Button(action: action) {
-      DialIcon(name)
-        .frame(width: Dial.Layout.StatusRail.iconSize, height: Dial.Layout.StatusRail.iconSize)
-        .foregroundStyle(Dial.Palette.textMuted)
-        .frame(width: Dial.Layout.StatusRail.hitSize, height: Dial.Layout.StatusRail.hitSize)
-        .contentShape(Rectangle())
+      statusIcon(name)
     }
     .buttonStyle(.pressable)
     .help(help)
     .accessibilityLabel(help)
+  }
+
+  private func statusIcon(_ name: String) -> some View {
+    let metrics = statusIconMetrics(for: name)
+
+    return DialIcon(name)
+      .frame(width: metrics.size, height: metrics.size)
+      .offset(y: metrics.yOffset)
+      .foregroundStyle(theme.textMuted)
+      .frame(width: Dial.Layout.StatusRail.hitSize, height: Dial.Layout.StatusRail.hitSize)
+      .contentShape(Rectangle())
+  }
+
+  private func statusIconMetrics(for name: String) -> (size: CGFloat, yOffset: CGFloat) {
+    switch name {
+    case "chart.bar.fill":
+      // This bitmap has a smaller opaque bounding box than the circular rail
+      // icons, so equal frames make it look short. Scale the glyph, not the
+      // hit target, to keep the row optically even.
+      return (13.25, 0)
+    default:
+      return (Dial.Layout.StatusRail.iconSize, 0)
+    }
   }
 }

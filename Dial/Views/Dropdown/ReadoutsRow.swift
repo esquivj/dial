@@ -5,25 +5,46 @@ import SwiftUI
 /// turning it into a metric grid.
 struct ReadoutsRow: View {
   @Bindable var vm: NowPlayingViewModel
+  let onOpenStats: () -> Void
+  let onOpenHistory: () -> Void
+  @Environment(\.dialTheme) private var theme
 
   var body: some View {
     HStack(spacing: 0) {
-      Readout(label: "PLAYS · YTD",
-              value: "\(vm.playsYTD)",
-              delta: vm.agg.firstListen ? "NEW" : "")
+      Button(action: onOpenStats) {
+        Readout(label: "PLAYS · YTD",
+                value: "\(vm.playsYTD)",
+                delta: vm.agg.firstListen ? "NEW" : "")
+      }
+      .buttonStyle(.pressable)
+      .frame(maxWidth: .infinity)
+      .help("Open stats")
+      .accessibilityLabel("Year to date plays \(vm.playsYTD)")
       ReadoutDivider()
-      Readout(label: "RANK · 7D",
-              value: vm.agg.rank7d.map { "#\($0)" } ?? "—",
-              delta: vm.agg.firstListen && vm.agg.rank7d != nil ? "DEBUT" : "")
+      Button(action: onOpenStats) {
+        Readout(label: "RANK · 7D",
+                value: vm.agg.rank7d.map { "#\($0)" } ?? "—",
+                delta: vm.agg.firstListen && vm.agg.rank7d != nil ? "DEBUT" : "")
+      }
+      .buttonStyle(.pressable)
+      .frame(maxWidth: .infinity)
+      .help("Open stats")
+      .accessibilityLabel("Seven day rank \(vm.agg.rank7d.map { "#\($0)" } ?? "not ranked")")
       ReadoutDivider()
-      Readout(label: "LAST · PLAYED",
-              value: lastPlayedValue,
-              delta: lastPlayedDelta)
+      Button(action: onOpenHistory) {
+        Readout(label: "LAST · PLAYED",
+                value: lastPlayedValue,
+                delta: lastPlayedDelta)
+      }
+      .buttonStyle(.pressable)
+      .frame(maxWidth: .infinity)
+      .help("Open history")
+      .accessibilityLabel("Last played \(lastPlayedValue)")
     }
     .padding(Dial.Layout.Readouts.railPadding)
     .dialRaisedGel(
       shape: RoundedRectangle(cornerRadius: Dial.Layout.Readouts.railCornerRadius, style: .continuous),
-      fill: Dial.Palette.surface.opacity(0.44),
+      fill: theme.surface.opacity(0.54),
       edgeOpacity: 0.24,
       fillTopOpacity: 0.08,
       fillBottomOpacity: 0.018,
@@ -64,16 +85,17 @@ private struct Readout: View {
   let label: String
   let value: String
   let delta: String
+  @Environment(\.dialTheme) private var theme
 
   private var deltaColor: Color {
     switch delta {
-    case "NEW", "DEBUT": return Dial.Palette.accentAlt
-    default:             return Dial.Palette.accent
+    case "NEW", "DEBUT": return theme.accentAlt
+    default:             return theme.accent
     }
   }
 
   private var valueColor: Color {
-    value == "—" ? Dial.Palette.textMuted.opacity(0.72) : Dial.Palette.accent
+    value == "—" ? theme.textMuted.opacity(0.72) : theme.accent
   }
 
   var body: some View {
@@ -81,12 +103,12 @@ private struct Readout: View {
       Text(label)
         .font(Dial.Typography.monoLabel)
         .tracking(1.2)
-        .foregroundStyle(Dial.Palette.textMuted)
+        .foregroundStyle(theme.textMuted)
         .lineLimit(1)
         .minimumScaleFactor(0.82)
       HStack(alignment: .lastTextBaseline, spacing: Dial.Layout.Readouts.valueDeltaSpacing) {
         Text(value)
-          .font(.custom("IBMPlexMono-Medium", size: Dial.Layout.Readouts.valueFontSize))
+          .font(.custom("GeistMono-Medium", size: Dial.Layout.Readouts.valueFontSize))
           .monospacedDigit()           // tabular nums — prevents jitter when 9 → 10
           .contentTransition(.numericText())
           .foregroundStyle(valueColor)

@@ -21,7 +21,7 @@ struct DialApp: App {
           .padding(40)
       }
     }
-    .defaultSize(width: 500, height: 460)
+    .defaultSize(width: 640, height: 500)
     .windowResizability(.contentSize)
 
     // History and Stats are opened programmatically via WindowsManager

@@ -14,42 +14,42 @@ struct TrackHero: View {
   /// DropdownView (was previously on the StatusRail thumbnail; relocated
   /// here so the pet can be rendered at a readable size.
   let onOpenPet: () -> Void
+  let onOpenHistory: () -> Void
+  let onOpenBadge: () -> Void
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @Environment(\.dialTheme) private var theme
 
-  /// Identity for the crossfade transition — when the URI changes,
-  /// SwiftUI swaps the entire row and animates the swap. Without this,
-  /// album art and text would snap-cut on every track change.
+  /// Identity for track-owned content. The pet and hardware row stay planted;
+  /// only artwork/readout data swaps when Spotify advances.
   private var transitionID: String { vm.track?.uri ?? "empty" }
+
+  private var trackChangeAnimation: Animation? {
+    reduceMotion ? nil : .easeOut(duration: 0.22)
+  }
 
   var body: some View {
     HStack(alignment: .center, spacing: Dial.Layout.Hero.spacing) {
-      heroArtwork
-      .frame(width: Dial.Layout.Hero.artworkSize, height: Dial.Layout.Hero.artworkSize)
-      .dialMediaFrame(shape: RoundedRectangle(cornerRadius: Dial.Layout.Hero.artworkCornerRadius, style: .continuous))
-      .accessibilityLabel(albumArtAccessibilityLabel)
-
-      VStack(alignment: .leading, spacing: 0) {
-        // Marquee on the track name — Y2K-cliché now-playing scroll for
-        // long titles. Fits-in-container titles render normally as
-        // truncated lineLimit(1). Tiny height carve-out so the marquee's
-        // GeometryReader has a height (it doesn't measure vertically).
-        // Title in MINT mono — the mockup renders the track title in
-        // bright mint, not ivory. Treating the title as "device readout"
-        // (mint, mono) instead of "app body text" (ivory, sans) is what
-        // flips the entire row's vibe. 14pt fits typical track names
-        // in the ~132pt title container (HStack remainder after album +
-        // pet + spacing). Larger sizes overflow → constant marquee.
-        Marquee(
-          text: vm.track?.name ?? "Nothing playing",
-          font: titleFont,
-          foreground: Dial.Palette.accent
-        )
-        .frame(height: titleLineHeight)
-        metadataCluster
-        badgeSlot
+      Button(action: onOpenHistory) {
+        ZStack {
+          heroArtwork
+            .id(transitionID)
+            .transition(.opacity)
+        }
+        .animation(trackChangeAnimation, value: transitionID)
+        .frame(width: Dial.Layout.Hero.artworkSize, height: Dial.Layout.Hero.artworkSize)
+        .dialMediaFrame(shape: RoundedRectangle(cornerRadius: Dial.Layout.Hero.artworkCornerRadius, style: .continuous))
       }
-      .frame(maxWidth: .infinity, minHeight: Dial.Layout.Hero.textMinHeight, alignment: .leading)
-      .layoutPriority(1)
+      .buttonStyle(.pressable)
+      .help("Open listening history")
+      .accessibilityLabel(albumArtAccessibilityLabel)
+      .accessibilityHint("Opens listening history")
+
+      trackReadout
+        .id(transitionID)
+        .transition(.opacity.combined(with: .scale(scale: 0.985, anchor: .leading)))
+        .animation(trackChangeAnimation, value: transitionID)
+        .frame(maxWidth: .infinity, minHeight: Dial.Layout.Hero.textMinHeight, alignment: .leading)
+        .layoutPriority(1)
 
       // Pet block — moved from StatusRail (where it was 24×24, too small to
       // read the new pixel-art detail) to TrackHero inside a readable LCD
@@ -64,9 +64,31 @@ struct TrackHero: View {
     // 12/14/14/14; trimmed to 10/12/12/12 so the album art, title, and
     // pet block sit closer to the LCD panel's inner edges.
     .padding(Dial.Layout.Hero.padding)
-    .id(transitionID)
-    .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .leading)))
-    .animation(reduceMotion ? nil : .easeOut(duration: 0.28), value: transitionID)
+  }
+
+  private var trackReadout: some View {
+    VStack(alignment: .leading, spacing: 0) {
+      // Marquee on the track name — Y2K-cliché now-playing scroll for
+      // long titles. Fits-in-container titles render normally as
+      // truncated lineLimit(1). Tiny height carve-out so the marquee's
+      // GeometryReader has a height (it doesn't measure vertically).
+      // Title in MINT mono — the mockup renders the track title in
+      // bright mint, not ivory. Treating the title as "device readout"
+      // (mint, mono) instead of "app body text" (ivory, sans) is what
+      // flips the entire row's vibe. Geist Mono runs wider than IBM Plex,
+      // so the default title size stays modest to keep the device panel
+      // balanced against album art, badge, and pet.
+      Marquee(
+        text: vm.track?.name ?? "Nothing playing",
+        font: titleFont,
+        foreground: theme.accent
+      )
+      .frame(height: titleLineHeight)
+      metadataCluster
+      if badgeInsight != nil {
+        badgeSlot
+      }
+    }
   }
 
   // MARK: - Pet
@@ -95,20 +117,30 @@ struct TrackHero: View {
       // Artist + album are one metadata cluster, not two equal siblings
       // competing with the title and badge. A 2pt internal gap keeps the
       // lines legible without splitting them into separate sections.
-      VStack(alignment: .leading, spacing: Dial.Layout.Hero.metadataLineSpacing) {
-        if let artist = vm.track?.artistName {
-          Text(artist)
-            .font(artistFont)
-            .foregroundStyle(Dial.Palette.textPrimary.opacity(0.84))
-            .lineLimit(1)
-            .truncationMode(.tail)
+      HStack(alignment: .center, spacing: Dial.Layout.Hero.metadataActionSpacing) {
+        VStack(alignment: .leading, spacing: Dial.Layout.Hero.metadataLineSpacing) {
+          if let artist = vm.track?.artistName {
+            Text(artist)
+              .font(artistFont)
+              .foregroundStyle(theme.textPrimary.opacity(0.84))
+              .lineLimit(1)
+              .truncationMode(.tail)
+          }
+          if let album = vm.track?.albumName {
+            Text(album)
+              .font(albumFont)
+              .foregroundStyle(theme.textMuted.opacity(0.92))
+              .lineLimit(1)
+              .truncationMode(.tail)
+          }
         }
-        if let album = vm.track?.albumName {
-          Text(album)
-            .font(albumFont)
-            .foregroundStyle(Dial.Palette.textMuted.opacity(0.92))
-            .lineLimit(1)
-            .truncationMode(.tail)
+        .layoutPriority(1)
+
+        if vm.track != nil {
+          LikedTrackButton(
+            menubar: menubar,
+            client: client,
+            onReconnect: onReconnect)
         }
       }
       .padding(.top, CGFloat(settings.hudHeroMetadataGap))
@@ -121,13 +153,6 @@ struct TrackHero: View {
       if let badgeInsight {
         trackBadgeLine(badgeInsight)
       }
-      Spacer(minLength: Dial.Layout.Hero.badgeTrailingMinSpacing)
-      if vm.track != nil {
-        LikedTrackButton(
-          menubar: menubar,
-          client: client,
-          onReconnect: onReconnect)
-      }
     }
     .frame(height: max(badgeChipHeight, Dial.Layout.Hero.badgeMinHeight), alignment: .leading)
     .padding(.top, CGFloat(settings.hudHeroBadgeGap))
@@ -135,8 +160,17 @@ struct TrackHero: View {
 
   private func trackBadgeLine(_ insight: BadgeInsight) -> some View {
     let color = badgeColor(for: insight.kind)
-    return badgeChip(for: insight.kind, color: color)
+    return Button(action: onOpenBadge) {
+      badgeChip(for: insight.kind, color: color)
+    }
+      .buttonStyle(.pressable)
+      .help(badgeHelp(for: insight))
       .accessibilityLabel("\(insight.kind.label): \(insight.detail)")
+      .accessibilityHint(badgeHelp(for: insight))
+  }
+
+  private func badgeHelp(for insight: BadgeInsight) -> String {
+    insight.explanation.isEmpty ? "\(insight.kind.label): \(insight.detail)" : insight.explanation
   }
 
   private func badgeChip(for kind: BadgeMemoryKind, color: Color) -> some View {
@@ -162,11 +196,11 @@ struct TrackHero: View {
   private func badgeColor(for kind: BadgeMemoryKind) -> Color {
     switch kind.category {
     case .discovery:
-      return kind == .firstListen || kind == .newArtist ? Dial.Palette.accentAlt : Dial.Palette.accent
+      return kind == .firstListen || kind == .newArtist ? theme.accentAlt : theme.accent
     case .pattern:
-      return Dial.Palette.accentAlt
+      return theme.accentAlt
     case .milestone:
-      return Dial.Palette.textPrimary
+      return theme.textPrimary
     }
   }
 
@@ -187,23 +221,23 @@ struct TrackHero: View {
   }
 
   private var titleFont: Font {
-    .custom("IBMPlexMono-Medium", size: CGFloat(settings.hudHeroTitleSize))
+    .custom("GeistMono-Medium", size: CGFloat(settings.hudHeroTitleSize))
   }
 
   private var titleLineHeight: CGFloat {
-    max(20, CGFloat(settings.hudHeroTitleSize) + 4)
+    max(18, CGFloat(settings.hudHeroTitleSize) + 4)
   }
 
   private var artistFont: Font {
-    .custom("IBMPlexSans-Medium", size: CGFloat(settings.hudHeroArtistSize))
+    .custom("GeistMono-Medium", size: CGFloat(settings.hudHeroArtistSize))
   }
 
   private var albumFont: Font {
-    .custom("IBMPlexSans-Regular", size: CGFloat(settings.hudHeroAlbumSize))
+    .custom("GeistMono-Regular", size: CGFloat(settings.hudHeroAlbumSize))
   }
 
   private var badgeFont: Font {
-    .custom("IBMPlexMono-Medium", size: 9 * badgeScale)
+    .custom("GeistPixel-Square", size: 9 * badgeScale)
   }
 
   private var badgeScale: CGFloat {
@@ -227,7 +261,7 @@ struct TrackHero: View {
         .frame(width: Dial.Layout.Hero.petFrameSize, height: Dial.Layout.Hero.petFrameSize)
         .dialRaisedGel(
           shape: RoundedRectangle(cornerRadius: Dial.Layout.Hero.petCornerRadius, style: .continuous),
-          fill: Dial.Palette.lcd,
+          fill: theme.lcd,
           edgeOpacity: 0.34,
           fillTopOpacity: 0.07,
           fillBottomOpacity: 0.025,
@@ -236,9 +270,9 @@ struct TrackHero: View {
           contactShadowOpacity: 0,
           innerShadowOpacity: 0.20)
         .overlay(
-          RoundedRectangle(cornerRadius: 4)
+          RoundedRectangle(cornerRadius: Dial.Radius.tiny)
             .inset(by: 3)
-            .stroke(Dial.Palette.accent.opacity(0.24), lineWidth: 0.6)
+            .stroke(theme.accent.opacity(0.24), lineWidth: 0.6)
         )
         // Directional drop shadow (dark, downward y-offset) — the pet
         // block sits raised above the LCD panel surface and casts a

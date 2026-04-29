@@ -16,7 +16,7 @@ import SwiftUI
 ///
 /// Applied to: pet block, status bar nav icons + info, shuffle/repeat,
 /// pixel grid permission overlay, back button. The gel transport buttons
-/// have their own press feedback baked into `GelTransportStyle`.
+/// have their own press feedback baked into `ToyTransportStyle`.
 struct PressableButtonStyle: ButtonStyle {
   /// Per-press opacity dim. Subtle 0.85 reads as "pressed" without
   /// fighting the underlying color.

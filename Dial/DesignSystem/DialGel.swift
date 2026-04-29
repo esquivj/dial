@@ -9,13 +9,13 @@ import SwiftUI
 /// into mall-kiosk nonsense.
 enum DialMaterial {
   enum Chassis {
-    static let topTintOpacity = 0.08
+    static let topTintOpacity = 0.035
     static let bottomShadeOpacity = 0.30
     static let cornerShadeOpacity = 0.38
     static let innerLipOpacity = 0.32
     static let strokeTopOpacity = 0.62
     static let strokeBottomOpacity = 0.10
-    static let topSheenOpacity = 0.24
+    static let topSheenOpacity = 0.10
   }
 
   enum Recessed {
@@ -23,6 +23,12 @@ enum DialMaterial {
     static let topSheenOpacity = 0.24
     static let innerShadowOpacity = 0.42
     static let lowerShadeOpacity = 0.14
+  }
+
+  enum Transport {
+    static let strokeOpacity = 0.22
+    static let topSheenOpacity = 0.16
+    static let innerShadowOpacity = 0.32
   }
 
   enum Raised {
@@ -41,12 +47,13 @@ enum DialMaterial {
 
 struct ChassisPlastic<S: Shape>: ViewModifier {
   var shape: S
+  @Environment(\.dialTheme) private var theme
 
   func body(content: Content) -> some View {
     content
       .background(
         ZStack {
-          Dial.Palette.ground
+          theme.ground
           LinearGradient(
             colors: [
               Color.white.opacity(DialMaterial.Chassis.topTintOpacity),
@@ -87,32 +94,33 @@ struct ChassisPlastic<S: Shape>: ViewModifier {
           ], startPoint: .top, endPoint: .bottom), lineWidth: 1.25)
           .allowsHitTesting(false)
       )
-      .overlay(alignment: .top) {
-        LinearGradient(
-          colors: [
-            Color.white.opacity(DialMaterial.Chassis.topSheenOpacity),
-            Color.white.opacity(0.08),
-            Color.clear,
-          ],
-          startPoint: .top,
-          endPoint: .bottom)
-          .frame(height: 22)
-          .clipShape(shape)
+      .overlay {
+        shape
+          .stroke(LinearGradient(
+            colors: [
+              Color.white.opacity(DialMaterial.Chassis.topSheenOpacity),
+              Color.white.opacity(0.04),
+              Color.clear,
+            ],
+            startPoint: .top,
+            endPoint: .bottom), lineWidth: 1.35)
+          .blur(radius: 0.25)
+          .mask(alignment: .top) {
+            Rectangle().frame(height: 12)
+          }
           .allowsHitTesting(false)
       }
-      .overlay(alignment: .topLeading) {
-        RadialGradient(
-          colors: [
-            Color.white.opacity(0.16),
-            Color.white.opacity(0.04),
-            Color.clear,
-          ],
-          center: .topLeading,
-          startRadius: 0,
-          endRadius: 96)
-          .frame(width: 132, height: 74)
-          .offset(x: -18, y: -12)
-          .clipShape(shape)
+      .overlay {
+        shape
+          .fill(RadialGradient(
+            colors: [
+              Color.white.opacity(0.07),
+              Color.white.opacity(0.018),
+              Color.clear,
+            ],
+            center: .topLeading,
+            startRadius: 0,
+            endRadius: 76))
           .allowsHitTesting(false)
       }
   }
@@ -120,16 +128,17 @@ struct ChassisPlastic<S: Shape>: ViewModifier {
 
 struct RecessedPanelMaterial<S: Shape>: ViewModifier {
   var shape: S
-  var fill: Color = Dial.Palette.surface
+  var fill: Color?
   var strokeOpacity: Double = DialMaterial.Recessed.strokeOpacity
   var topSheenOpacity: Double = DialMaterial.Recessed.topSheenOpacity
   var innerShadowOpacity: Double = DialMaterial.Recessed.innerShadowOpacity
+  @Environment(\.dialTheme) private var theme
 
   func body(content: Content) -> some View {
     content
       .background(
         ZStack {
-          shape.fill(fill)
+          shape.fill(fill ?? theme.surface)
           shape.fill(LinearGradient(
             colors: [
               Color.white.opacity(0.035),
@@ -332,7 +341,7 @@ extension View {
 
   func dialRecessedPanel<S: Shape>(
     shape: S,
-    fill: Color = Dial.Palette.surface,
+    fill: Color? = nil,
     strokeOpacity: Double = DialMaterial.Recessed.strokeOpacity,
     topSheenOpacity: Double = DialMaterial.Recessed.topSheenOpacity,
     innerShadowOpacity: Double = DialMaterial.Recessed.innerShadowOpacity

@@ -15,6 +15,7 @@ import SwiftUI
 /// view should not force a display-link redraw loop of its own.
 struct PixelGridVisualizer: View {
   @Bindable var engine: VisualizerEngine
+  @Environment(\.dialTheme) private var theme
 
   private let rows = Dial.Layout.Spectrum.rows
   private let gap = Dial.Layout.Spectrum.cellGap
@@ -41,11 +42,11 @@ struct PixelGridVisualizer: View {
       Text("SPECTRUM")
         .font(Dial.Typography.monoLabel)
         .tracking(1.4)
-        .foregroundStyle(Dial.Palette.textMuted)
+        .foregroundStyle(theme.textMuted)
       Spacer()
       Text(rightLabel)
         .font(Dial.Typography.monoLabel)
-        .foregroundStyle(Dial.Palette.textMuted)
+        .foregroundStyle(theme.textMuted)
         .contentTransition(.opacity)
     }
   }
@@ -102,8 +103,8 @@ struct PixelGridVisualizer: View {
   ) {
     let cellH = cellHeight
     let cellW = cellSize
-    let cornerRadius = min(0.8, min(cellW, cellH) * 0.16)
-    let mint = Dial.Palette.accent
+    let cornerRadius = min(Dial.Radius.spectrumCellMax, min(cellW, cellH) * 0.16)
+    let mint = theme.accent
 
     for col in 0..<columns {
       let height = bands[col]
@@ -154,11 +155,11 @@ struct PixelGridVisualizer: View {
         Text(engine.state == .denied ? "ENABLE VISUALIZER" : "VISUALIZER OFFLINE")
           .font(Dial.Typography.monoLabel)
           .tracking(1.4)
-          .foregroundStyle(Dial.Palette.accent)
+          .foregroundStyle(theme.accent)
         if engine.state == .denied {
           Text("System Settings → Screen Recording")
             .font(Dial.Typography.monoLabel)
-            .foregroundStyle(Dial.Palette.textMuted)
+            .foregroundStyle(theme.textMuted)
         }
       }
       .frame(maxWidth: .infinity, maxHeight: .infinity)

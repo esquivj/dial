@@ -11,6 +11,7 @@ struct HistoryView: View {
   @State private var rows: [StatsQueries.HistoryRow] = []
   @State private var totalPlays: Int = 0
   @State private var loaded = false
+  @Environment(\.dialTheme) private var theme
 
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
@@ -45,7 +46,7 @@ struct HistoryView: View {
       Text("HISTORY")
         .font(Dial.Typography.monoLabel)
         .tracking(1.6)
-        .foregroundStyle(Dial.Palette.accent)
+        .foregroundStyle(theme.accent)
       Spacer()
       // "LAST N · TOTAL" — communicates that we're showing a recent slice
       // and gives the lifetime context (e.g. "LAST 200 · 193K"). When
@@ -118,9 +119,9 @@ private struct HistoryRowView: View {
         Rectangle().fill(Dial.Palette.surface)
       }
       .frame(width: 28, height: 28)
-      .clipShape(RoundedRectangle(cornerRadius: 3))
+      .clipShape(RoundedRectangle(cornerRadius: Dial.Radius.printed))
       .overlay(
-        RoundedRectangle(cornerRadius: 3)
+        RoundedRectangle(cornerRadius: Dial.Radius.printed)
           .stroke(Color.white.opacity(0.10), lineWidth: 0.6)
       )
 
@@ -130,7 +131,7 @@ private struct HistoryRowView: View {
           .foregroundStyle(Dial.Palette.textPrimary)
           .lineLimit(1)
         Text(displaySubtitle)
-          .font(.system(size: 10))
+          .font(Dial.Typography.monoSmall)
           .foregroundStyle(Dial.Palette.textMuted)
           .lineLimit(1)
       }

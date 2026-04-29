@@ -3,6 +3,7 @@ import SwiftUI
 struct BadgeRow: View {
   let insight: BadgeInsight?
   let hasTrack: Bool
+  @Environment(\.dialTheme) private var theme
 
   var body: some View {
     // Always render the row at fixed height regardless of badge state.
@@ -31,6 +32,12 @@ struct BadgeRow: View {
     }
     .frame(maxWidth: .infinity, minHeight: 20, alignment: .leading)
     .padding(EdgeInsets(top: 5, leading: 10, bottom: 5, trailing: 10))
+    .help(helpText)
+  }
+
+  private var helpText: String {
+    guard let insight else { return fallbackDetail }
+    return insight.explanation.isEmpty ? "\(insight.kind.label): \(insight.detail)" : insight.explanation
   }
 
   private var fallbackChip: some View {
@@ -45,7 +52,7 @@ struct BadgeRow: View {
     }
     .padding(EdgeInsets(top: 4, leading: 7, bottom: 4, trailing: 8))
     .dialPrintedChip(
-      shape: RoundedRectangle(cornerRadius: 3, style: .continuous),
+      shape: RoundedRectangle(cornerRadius: Dial.Radius.printed, style: .continuous),
       color: Dial.Palette.textMuted,
       fillOpacity: 0.035,
       edgeOpacity: 0.16)
@@ -63,24 +70,24 @@ struct BadgeRow: View {
         // Magenta (not cyan) — this is the celebration moment of the row.
         // Cyan is the steady-state data tone; magenta is reserved for
         // "something noteworthy is happening with this track."
-        return (Dial.Palette.accentAlt, "FIRST LISTEN")
+        return (theme.accentAlt, "FIRST LISTEN")
       case .newArtist:
-        return (Dial.Palette.accentAlt, "NEW ARTIST")
+        return (theme.accentAlt, "NEW ARTIST")
       case .rediscovered:
         // Mockup section 5 BADGES shows ▲ REDISCOVERED in mint, not muted.
         // Earlier code kept it muted to imply "quiet rediscovery" but the
         // spec is the source of truth — REDISCOVERED is a celebration tone
         // alongside FIRST LISTEN / ON STREAK, just with the cyan-side
         // primary accent (mint) rather than the magenta-side secondary.
-        return (Dial.Palette.accent, "REDISCOVERED")
+        return (theme.accent, "REDISCOVERED")
       case .deepCut:
-        return (Dial.Palette.accent, "DEEP CUT")
+        return (theme.accent, "DEEP CUT")
       case .onStreak:
-        return (Dial.Palette.accentAlt, "ON STREAK")
+        return (theme.accentAlt, "ON STREAK")
       case .repeatTrack:
-        return (Dial.Palette.accentAlt, "REPEAT")
+        return (theme.accentAlt, "REPEAT")
       case .albumMode:
-        return (Dial.Palette.accentAlt, "ALBUM MODE")
+        return (theme.accentAlt, "ALBUM MODE")
       case .play10:
         return (Dial.Palette.textPrimary, "10TH PLAY")
       case .play50:
@@ -100,7 +107,7 @@ struct BadgeRow: View {
     }
     .padding(EdgeInsets(top: 4, leading: 7, bottom: 4, trailing: 8))
     .dialPrintedChip(
-      shape: RoundedRectangle(cornerRadius: 3, style: .continuous),
+      shape: RoundedRectangle(cornerRadius: Dial.Radius.printed, style: .continuous),
       color: fg)
   }
 }

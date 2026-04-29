@@ -3,43 +3,45 @@ import SwiftUI
 /// Inline panel that replaces the dropdown body when the user taps the info button.
 /// Explains the badge vocabulary and pet life stages so first-timers know what's happening.
 struct GlossaryPanel: View {
+  @Environment(\.dialTheme) private var theme
+
   var body: some View {
     ScrollView {
       VStack(alignment: .leading, spacing: 18) {
         section("BADGES") {
           glossaryRow(
             kind: .firstListen,
-            color: Dial.Palette.accentAlt,
+            color: theme.accentAlt,
             label: "FIRST LISTEN",
             body: "The first time this track enters your history.")
           glossaryRow(
             kind: .newArtist,
-            color: Dial.Palette.accentAlt,
+            color: theme.accentAlt,
             label: "NEW ARTIST",
             body: "The first track from an artist Dial has never seen in your history.")
           glossaryRow(
             kind: .rediscovered,
-            color: Dial.Palette.accent,
+            color: theme.accent,
             label: "REDISCOVERED",
             body: "A track you haven't heard in 90+ days. The badge detail tells you how long it's been.")
           glossaryRow(
             kind: .deepCut,
-            color: Dial.Palette.accent,
+            color: theme.accent,
             label: "DEEP CUT",
             body: "A rare track from an artist you already play a lot.")
           glossaryRow(
             kind: .onStreak,
-            color: Dial.Palette.accentAlt,
+            color: theme.accentAlt,
             label: "ON STREAK",
             body: "10+ plays in 30 days AND ranked top-5 in the last 7 days. The track is in heavy rotation.")
           glossaryRow(
             kind: .albumMode,
-            color: Dial.Palette.accentAlt,
+            color: theme.accentAlt,
             label: "ALBUM MODE",
             body: "Three or more consecutive tracks from the same album.")
           glossaryRow(
             kind: .repeatTrack,
-            color: Dial.Palette.accentAlt,
+            color: theme.accentAlt,
             label: "REPEAT",
             body: "The same track three or more times in a row.")
           glossaryRow(
@@ -81,7 +83,7 @@ struct GlossaryPanel: View {
       Text(title)
         .font(Dial.Typography.monoLabel)
         .tracking(1.6)
-        .foregroundStyle(Dial.Palette.accent)
+        .foregroundStyle(theme.accent)
       content()
     }
   }
@@ -107,7 +109,7 @@ struct GlossaryPanel: View {
     }
     .padding(EdgeInsets(top: 4, leading: 7, bottom: 4, trailing: 8))
     .dialPrintedChip(
-      shape: RoundedRectangle(cornerRadius: 3, style: .continuous),
+      shape: RoundedRectangle(cornerRadius: Dial.Radius.printed, style: .continuous),
       color: color)
   }
 
