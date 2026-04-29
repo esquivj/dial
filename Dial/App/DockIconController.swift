@@ -8,15 +8,11 @@ final class DockIconController {
   private static let iconCornerRadius: CGFloat = 198
 
   private weak var coord: AppCoordinator?
-  private let systemFallbackIcon: NSImage
-  private let idleDockIcon: NSImage
   private var artworkTask: Task<Void, Never>?
   private var currentArtworkKey: String?
 
   init(coord: AppCoordinator) {
     self.coord = coord
-    self.systemFallbackIcon = NSApp.applicationIconImage ?? Self.makeFallbackIcon()
-    self.idleDockIcon = Self.makeIdleDockIcon()
     observe()
   }
 
@@ -46,7 +42,7 @@ final class DockIconController {
     guard coord.settings.showDockArtwork else {
       artworkTask?.cancel()
       currentArtworkKey = nil
-      NSApp.applicationIconImage = systemFallbackIcon
+      resetDockIcon()
       setDockVisible(false)
       return
     }
@@ -60,7 +56,7 @@ final class DockIconController {
     else {
       artworkTask?.cancel()
       currentArtworkKey = nil
-      NSApp.applicationIconImage = idleDockIcon
+      resetDockIcon()
       return
     }
 
@@ -71,12 +67,19 @@ final class DockIconController {
     artworkTask = Task { [weak self] in
       let source = await self?.coord?.artworkCache.load(artUrl)
       guard !Task.isCancelled else { return }
-      let icon = source.map(Self.makeArtworkIcon(from:)) ?? self?.idleDockIcon
       await MainActor.run {
         guard self?.currentArtworkKey == key else { return }
-        NSApp.applicationIconImage = icon
+        if let source {
+          NSApp.applicationIconImage = Self.makeArtworkIcon(from: source)
+        } else {
+          self?.resetDockIcon()
+        }
       }
     }
+  }
+
+  private func resetDockIcon() {
+    NSApp.applicationIconImage = nil
   }
 
   private func setDockVisible(_ visible: Bool) {
@@ -111,95 +114,6 @@ final class DockIconController {
     NSGraphicsContext.restoreGraphicsState()
 
     NSColor.white.withAlphaComponent(0.16).setStroke()
-    path.lineWidth = 2
-    path.stroke()
-
-    image.unlockFocus()
-    image.isTemplate = false
-    return image
-  }
-
-  private static func makeIdleDockIcon() -> NSImage {
-    if let brandIcon = loadBrandDockIcon() {
-      return brandIcon
-    }
-
-    return makeFallbackIcon()
-  }
-
-  private static func loadBrandDockIcon() -> NSImage? {
-    let image = Bundle.main.url(forResource: "dial-app-icon", withExtension: "png", subdirectory: "Brand")
-      .flatMap(NSImage.init(contentsOf:))
-      ?? Bundle.main.url(forResource: "dial-app-icon", withExtension: "png")
-        .flatMap(NSImage.init(contentsOf:))
-    image?.size = NSSize(width: iconCanvasSize, height: iconCanvasSize)
-    image?.isTemplate = false
-    return image
-  }
-
-  private static func makeFallbackIcon() -> NSImage {
-    if let brandIcon = loadBrandDockIcon() {
-      return brandIcon
-    }
-
-    let canvas = NSSize(width: iconCanvasSize, height: iconCanvasSize)
-    let image = NSImage(size: canvas)
-    image.lockFocus()
-
-    NSColor.clear.setFill()
-    NSRect(origin: .zero, size: canvas).fill()
-
-    let rect = iconArtworkRect
-    let path = NSBezierPath(roundedRect: rect, xRadius: iconCornerRadius, yRadius: iconCornerRadius)
-
-    NSGraphicsContext.saveGraphicsState()
-    let shadow = NSShadow()
-    shadow.shadowBlurRadius = 30
-    shadow.shadowOffset = NSSize(width: 0, height: -8)
-    shadow.shadowColor = NSColor.black.withAlphaComponent(0.30)
-    shadow.set()
-    NSColor(calibratedRed: 0.018, green: 0.037, blue: 0.050, alpha: 1).setFill()
-    path.fill()
-    NSGraphicsContext.restoreGraphicsState()
-
-    let screen = rect.insetBy(dx: 148, dy: 148)
-    let screenPath = NSBezierPath(roundedRect: screen, xRadius: 112, yRadius: 112)
-    NSColor(calibratedRed: 0.71, green: 0.73, blue: 0.57, alpha: 1).setFill()
-    screenPath.fill()
-
-    NSGraphicsContext.saveGraphicsState()
-    screenPath.addClip()
-    NSColor.black.withAlphaComponent(0.08).setStroke()
-    for y in stride(from: screen.minY + 18, through: screen.maxY - 18, by: 18) {
-      let line = NSBezierPath()
-      line.move(to: NSPoint(x: screen.minX, y: y))
-      line.line(to: NSPoint(x: screen.maxX, y: y))
-      line.lineWidth = 2
-      line.stroke()
-    }
-
-    if let pet = Bundle.main.url(forResource: "companion-idle", withExtension: "png", subdirectory: "Pets")
-      .flatMap(NSImage.init(contentsOf:))
-    {
-      NSGraphicsContext.current?.imageInterpolation = .none
-      pet.draw(in: NSRect(x: screen.midX - 236, y: screen.midY - 256, width: 472, height: 472),
-               from: NSRect(origin: .zero, size: pet.size),
-               operation: .sourceOver,
-               fraction: 1)
-    } else if let note = NSImage(systemSymbolName: "music.note", accessibilityDescription: nil)?
-      .withSymbolConfiguration(.init(pointSize: 330, weight: .bold))
-    {
-      note.isTemplate = true
-      NSColor.black.withAlphaComponent(0.72).set()
-      note.draw(in: NSRect(x: screen.midX - 156, y: screen.midY - 188, width: 312, height: 360))
-    }
-    NSGraphicsContext.restoreGraphicsState()
-
-    NSColor.black.withAlphaComponent(0.18).setStroke()
-    screenPath.lineWidth = 3
-    screenPath.stroke()
-
-    NSColor.white.withAlphaComponent(0.14).setStroke()
     path.lineWidth = 2
     path.stroke()
 

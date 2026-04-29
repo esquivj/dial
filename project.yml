@@ -106,7 +106,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.dial.Dial
         INFOPLIST_KEY_NSHumanReadableCopyright: "© 2026 Juan Esquivel"
-        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIconGel
     dependencies:
       - package: GRDB
         product: GRDB
