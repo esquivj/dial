@@ -71,6 +71,50 @@ final class SpotifyClientTests: XCTestCase {
     XCTAssertEqual(tracks.first?.uri, "spotify:track:A")
   }
 
+  func test_artist_allowsMissingDeprecatedGenres() async throws {
+    let json = #"""
+      {"uri":"spotify:artist:A","name":"Artist","images":[{"url":"http://artist"}]}
+    """#
+    StubURLProtocol.handler = { req in
+      XCTAssertEqual(req.url?.path, "/v1/artists/A")
+      let r = HTTPURLResponse(url: req.url!, statusCode: 200, httpVersion: nil, headerFields: [:])!
+      return (r, json.data(using: .utf8)!)
+    }
+    let store = InMemoryTokenStore()
+    try store.save(.init(accessToken: "v", refreshToken: "r", expiresAt: Int64.max))
+    let client = SpotifyClient(session: StubURLProtocol.session(),
+                               tokenStore: store,
+                               refresh: { try store.load()! })
+
+    let artist = try await client.artist(uri: "spotify:artist:A")
+
+    XCTAssertEqual(artist.uri, "spotify:artist:A")
+    XCTAssertEqual(artist.genres, [])
+    XCTAssertEqual(artist.images.first?.url, "http://artist")
+  }
+
+  func test_lastFMArtistTopTags_decodesFlexibleCounts() async throws {
+    let json = #"""
+      {"toptags":{"tag":[
+        {"name":"corridos tumbados","count":"100","url":"https://last.fm/tag/corridos+tumbados"},
+        {"name":"latin","count":42,"url":"https://last.fm/tag/latin"}
+      ]}}
+    """#
+    StubURLProtocol.handler = { req in
+      let comps = URLComponents(url: req.url!, resolvingAgainstBaseURL: false)
+      XCTAssertEqual(comps?.queryItems?.first(where: { $0.name == "method" })?.value, "artist.getTopTags")
+      XCTAssertEqual(comps?.queryItems?.first(where: { $0.name == "artist" })?.value, "Junior H")
+      let r = HTTPURLResponse(url: req.url!, statusCode: 200, httpVersion: nil, headerFields: [:])!
+      return (r, json.data(using: .utf8)!)
+    }
+
+    let tags = try await LastFMClient(apiKey: "key", session: StubURLProtocol.session())
+      .artistTopTags(name: "Junior H")
+
+    XCTAssertEqual(tags.map(\.name), ["corridos tumbados", "latin"])
+    XCTAssertEqual(tags.first?.count, 100)
+  }
+
   func test_libraryContains_usesCurrentLibraryEndpoint() async throws {
     StubURLProtocol.handler = { req in
       XCTAssertEqual(req.httpMethod, "GET")

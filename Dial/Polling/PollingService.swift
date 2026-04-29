@@ -91,10 +91,12 @@ final class PollingService {
     var out: [PlaybackEvent] = []
     if item.uri != lastTrackUri {
       lastTrackUri = item.uri; counted = false
+      let artists = item.artists.map { PlaybackArtist(name: $0.name, uri: $0.uri) }
       out.append(.started(
         trackUri: item.uri, name: item.name,
-        artistName: item.artists.first?.name ?? "",
-        artistUri: item.artists.first?.uri,
+        artistName: artists.first?.name ?? "",
+        artistUri: artists.first?.uri,
+        artists: artists,
         albumName: item.album.name,
         artUrl: item.album.images.first?.url,
         durationMs: item.duration_ms,

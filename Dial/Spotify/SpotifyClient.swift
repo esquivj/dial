@@ -122,7 +122,40 @@ struct TrackMeta: Decodable {
   let album: Album
 }
 
+struct ArtistMeta: Decodable {
+  struct Image: Decodable { let url: String }
+  let uri: String
+  let name: String
+  let genres: [String]
+  let images: [Image]
+
+  private enum CodingKeys: String, CodingKey {
+    case uri, name, genres, images
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    uri = try container.decode(String.self, forKey: .uri)
+    name = try container.decode(String.self, forKey: .name)
+    genres = try container.decodeIfPresent([String].self, forKey: .genres) ?? []
+    images = try container.decodeIfPresent([Image].self, forKey: .images) ?? []
+  }
+}
+
 extension SpotifyClient {
+  /// Single-track metadata still works for this app, while the batched
+  /// `/v1/tracks?ids=...` endpoint returns 403 in development quota mode.
+  /// The historical backfill is slower one-by-one, but it gives us real
+  /// artist URIs, album names, duration, and art for imported history rows.
+  func track(uri: String) async throws -> TrackMeta {
+    guard uri.hasPrefix("spotify:track:") else { throw SpotifyAPIError.httpStatus(400) }
+    let id = uri.replacingOccurrences(of: "spotify:track:", with: "")
+    let url = URL(string: "https://api.spotify.com/v1/tracks/\(id)")!
+    let (data, http) = try await authedGET(url)
+    try Self.validate(http)
+    return try JSONDecoder().decode(TrackMeta.self, from: data)
+  }
+
   /// Fetches up to 50 tracks per call. Callers should batch > 50 externally.
   func tracks(uris: [String]) async throws -> [TrackMeta] {
     let ids = uris
@@ -133,6 +166,18 @@ extension SpotifyClient {
     try Self.validate(http)
     struct R: Decodable { let tracks: [TrackMeta?] }
     return try JSONDecoder().decode(R.self, from: data).tracks.compactMap { $0 }
+  }
+
+  /// Single-artist metadata. Spotify genres live on artists, not tracks.
+  /// The field is deprecated and may be empty, but it is still the best native
+  /// signal available for a personal Wrapped-style genre layer.
+  func artist(uri: String) async throws -> ArtistMeta {
+    guard uri.hasPrefix("spotify:artist:") else { throw SpotifyAPIError.httpStatus(400) }
+    let id = uri.replacingOccurrences(of: "spotify:artist:", with: "")
+    let url = URL(string: "https://api.spotify.com/v1/artists/\(id)")!
+    let (data, http) = try await authedGET(url)
+    try Self.validate(http)
+    return try JSONDecoder().decode(ArtistMeta.self, from: data)
   }
 }
 

@@ -165,6 +165,283 @@ final class StatsQueriesTests: XCTestCase {
     XCTAssertEqual(today.value, 3.0, accuracy: 0.001)
   }
 
+  func test_topGenres_countsArtistDerivedGenreSignals() throws {
+    let dbq = try InMemoryDatabase.make()
+    let plays = PlaysDAO(dbq: dbq)
+    let tracks = TracksDAO(dbq: dbq)
+    let artists = ArtistsDAO(dbq: dbq)
+
+    try artists.upsert(.init(
+      uri: "spotify:artist:A",
+      name: "Artist A",
+      genresJson: #"["rap","atl hip hop"]"#,
+      imageUrl: nil))
+    try artists.upsert(.init(
+      uri: "spotify:artist:B",
+      name: "Artist B",
+      genresJson: #"["rap"]"#,
+      imageUrl: nil))
+
+    try tracks.upsert(.init(
+      uri: "spotify:track:A1",
+      name: "A1",
+      albumName: nil,
+      albumArtUrl: nil,
+      durationMs: nil,
+      artistsJson: #"[{"name":"Artist A","uri":"spotify:artist:A"}]"#))
+    try tracks.upsert(.init(
+      uri: "spotify:track:B1",
+      name: "B1",
+      albumName: nil,
+      albumArtUrl: nil,
+      durationMs: nil,
+      artistsJson: #"[{"name":"Artist B","uri":"spotify:artist:B"}]"#))
+
+    try plays.insert(.init(playedAt: 1, trackUri: "spotify:track:A1", msPlayed: 180_000, source: "import"))
+    try plays.insert(.init(playedAt: 2, trackUri: "spotify:track:A1", msPlayed: 180_000, source: "import"))
+    try plays.insert(.init(playedAt: 3, trackUri: "spotify:track:B1", msPlayed: 180_000, source: "import"))
+
+    let genres = try StatsQueries(dbq: dbq).topGenres(limit: 2)
+
+    XCTAssertEqual(genres.map(\.genre), ["rap", "atl hip hop"])
+    XCTAssertEqual(genres[0].playCount, 3)
+    XCTAssertEqual(genres[0].artistCount, 2)
+    XCTAssertEqual(genres[1].playCount, 2)
+    XCTAssertEqual(genres[1].artistCount, 1)
+  }
+
+  func test_topGenres_prefersNormalizedSoundFamilies() throws {
+    let dbq = try InMemoryDatabase.make()
+    let plays = PlaysDAO(dbq: dbq)
+    let tracks = TracksDAO(dbq: dbq)
+    let artists = ArtistsDAO(dbq: dbq)
+
+    try artists.upsert(.init(
+      uri: "spotify:artist:A",
+      name: "Artist A",
+      genresJson: #"["pop"]"#,
+      imageUrl: nil))
+    try tracks.upsert(.init(
+      uri: "spotify:track:A1",
+      name: "A1",
+      albumName: nil,
+      albumArtUrl: nil,
+      durationMs: nil,
+      artistsJson: #"[{"name":"Artist A","uri":"spotify:artist:A"}]"#))
+    try plays.insert(.init(playedAt: 1, trackUri: "spotify:track:A1", msPlayed: 180_000, source: "import"))
+    try plays.insert(.init(playedAt: 2, trackUri: "spotify:track:A1", msPlayed: 180_000, source: "import"))
+
+    try dbq.write { db in
+      try db.execute(sql: """
+        INSERT INTO normalized_tags (entity_uri, entity_type, provider, family, raw_tag, score, updated_at)
+        VALUES ('spotify:artist:A', 'artist', 'lastfm', 'corridos', 'corridos tumbados', 100, 10)
+      """)
+    }
+
+    let genres = try StatsQueries(dbq: dbq).topGenres(limit: 2)
+
+    XCTAssertEqual(genres.map(\.genre), ["corridos"])
+    XCTAssertEqual(genres[0].playCount, 2)
+    XCTAssertEqual(genres[0].detailTags, ["corridos tumbados"])
+  }
+
+  func test_soundTheme_reNormalizesRawTagsForCurrentRulebook() throws {
+    let dbq = try InMemoryDatabase.make()
+    try dbq.write { db in
+      try db.execute(sql: """
+        INSERT INTO normalized_tags (entity_uri, entity_type, provider, family, raw_tag, score, updated_at)
+        VALUES
+          ('spotify:artist:A', 'artist', 'lastfm', 'punk/emo', 'hardcore', 100, 10),
+          ('spotify:artist:A', 'artist', 'lastfm', 'punk/emo', 'beatdown hardcore', 69, 10),
+          ('spotify:artist:A', 'artist', 'lastfm', 'electronic', 'electronic', 17, 10),
+          ('spotify:artist:A', 'artist', 'lastfm', 'electronic', 'techno', 1, 10)
+      """)
+    }
+
+    let theme = try StatsQueries(dbq: dbq).soundTheme(forArtistUri: "spotify:artist:A")
+
+    XCTAssertEqual(theme, .slime)
+  }
+
+  func test_soundTheme_keepsExplicitHardcorePunkInEmber() throws {
+    let dbq = try InMemoryDatabase.make()
+    try dbq.write { db in
+      try db.execute(sql: """
+        INSERT INTO normalized_tags (entity_uri, entity_type, provider, family, raw_tag, score, updated_at)
+        VALUES
+          ('spotify:artist:A', 'artist', 'lastfm', 'punk/emo', 'hardcore punk', 100, 10),
+          ('spotify:artist:A', 'artist', 'lastfm', 'electronic', 'techno', 25, 10)
+      """)
+    }
+
+    let theme = try StatsQueries(dbq: dbq).soundTheme(forArtistUri: "spotify:artist:A")
+
+    XCTAssertEqual(theme, .ember)
+  }
+
+  func test_soundTheme_treatsMixedElectronicTagsAsElectronic() throws {
+    let dbq = try InMemoryDatabase.make()
+    try dbq.write { db in
+      try db.execute(sql: """
+        INSERT INTO normalized_tags (entity_uri, entity_type, provider, family, raw_tag, score, updated_at)
+        VALUES
+          ('spotify:artist:A', 'artist', 'lastfm', 'latin', 'latin house', 33, 10),
+          ('spotify:artist:A', 'artist', 'lastfm', 'rap', 'trap', 33, 10)
+      """)
+    }
+
+    let theme = try StatsQueries(dbq: dbq).soundTheme(forArtistUri: "spotify:artist:A")
+
+    XCTAssertEqual(theme, .slime)
+  }
+
+  func test_soundTheme_usesFeaturedArtistsForCurrentTrackColor() throws {
+    let dbq = try InMemoryDatabase.make()
+    try dbq.write { db in
+      try db.execute(sql: """
+        INSERT INTO normalized_tags (entity_uri, entity_type, provider, family, raw_tag, score, updated_at)
+        VALUES
+          ('spotify:artist:primary', 'artist', 'lastfm', 'latin', 'latin', 100, 10),
+          ('spotify:artist:feature', 'artist', 'lastfm', 'electronic', 'hard techno', 100, 10)
+      """)
+    }
+
+    let theme = try StatsQueries(dbq: dbq).soundTheme(forArtistUris: [
+      "spotify:artist:primary",
+      "spotify:artist:feature"
+    ])
+
+    XCTAssertEqual(theme, .slime)
+  }
+
+  func test_soundTheme_usesRecentSessionWhenCurrentArtistHasNoTags() throws {
+    let dbq = try InMemoryDatabase.make()
+    let plays = PlaysDAO(dbq: dbq)
+    let tracks = TracksDAO(dbq: dbq)
+    let now = Int64(Date().timeIntervalSince1970)
+
+    try tracks.upsert(.init(
+      uri: "spotify:track:current",
+      name: "Current",
+      albumName: nil,
+      albumArtUrl: nil,
+      durationMs: nil,
+      artistsJson: #"[{"name":"Unknown Hard Techno Artist","uri":"spotify:artist:unknown"}]"#))
+    try tracks.upsert(.init(
+      uri: "spotify:track:recent",
+      name: "Recent",
+      albumName: nil,
+      albumArtUrl: nil,
+      durationMs: nil,
+      artistsJson: #"[{"name":"Tagged Techno Artist","uri":"spotify:artist:tagged"}]"#))
+
+    try plays.insert(.init(playedAt: now - 10, trackUri: "spotify:track:current", msPlayed: 180_000, source: "live"))
+    for idx in 1...4 {
+      try plays.insert(.init(playedAt: now - Int64(idx * 120), trackUri: "spotify:track:recent", msPlayed: 180_000, source: "live"))
+    }
+
+    try dbq.write { db in
+      try db.execute(sql: """
+        INSERT INTO normalized_tags (entity_uri, entity_type, provider, family, raw_tag, score, updated_at)
+        VALUES ('spotify:artist:tagged', 'artist', 'lastfm', 'electronic', 'hard techno', 100, ?)
+      """, arguments: [now])
+    }
+
+    let theme = try StatsQueries(dbq: dbq).soundTheme(forArtistUri: "spotify:artist:unknown")
+
+    XCTAssertEqual(theme, .slime)
+  }
+
+  func test_directSoundThemeDoesNotUseRecentSessionFallback() throws {
+    let dbq = try InMemoryDatabase.make()
+    let plays = PlaysDAO(dbq: dbq)
+    let tracks = TracksDAO(dbq: dbq)
+    let now = Int64(Date().timeIntervalSince1970)
+
+    try tracks.upsert(.init(
+      uri: "spotify:track:current",
+      name: "Current",
+      albumName: nil,
+      albumArtUrl: nil,
+      durationMs: nil,
+      artistsJson: #"[{"name":"Unknown Artist","uri":"spotify:artist:unknown"}]"#))
+    try tracks.upsert(.init(
+      uri: "spotify:track:recent",
+      name: "Recent",
+      albumName: nil,
+      albumArtUrl: nil,
+      durationMs: nil,
+      artistsJson: #"[{"name":"Tagged Indie Artist","uri":"spotify:artist:tagged"}]"#))
+
+    try plays.insert(.init(playedAt: now - 10, trackUri: "spotify:track:current", msPlayed: 180_000, source: "live"))
+    for idx in 1...4 {
+      try plays.insert(.init(playedAt: now - Int64(idx * 120), trackUri: "spotify:track:recent", msPlayed: 180_000, source: "live"))
+    }
+
+    try dbq.write { db in
+      try db.execute(sql: """
+        INSERT INTO normalized_tags (entity_uri, entity_type, provider, family, raw_tag, score, updated_at)
+        VALUES ('spotify:artist:tagged', 'artist', 'lastfm', 'indie', 'indie', 100, ?)
+      """, arguments: [now])
+    }
+
+    let queries = StatsQueries(dbq: dbq)
+
+    XCTAssertEqual(try queries.soundTheme(forArtistUri: "spotify:artist:unknown"), .aqua)
+    XCTAssertNil(try queries.directSoundTheme(forArtistUris: ["spotify:artist:unknown"]))
+  }
+
+  func test_enrichmentProgressIncludesArtistProgress() throws {
+    let dbq = try InMemoryDatabase.make()
+    let plays = PlaysDAO(dbq: dbq)
+    let tracks = TracksDAO(dbq: dbq)
+    let artists = ArtistsDAO(dbq: dbq)
+
+    try tracks.upsert(.init(
+      uri: "spotify:track:A1",
+      name: "A1",
+      albumName: nil,
+      albumArtUrl: "https://art/a.jpg",
+      durationMs: nil,
+      artistsJson: #"[{"name":"Artist A","uri":"spotify:artist:A"}]"#))
+    try tracks.upsert(.init(
+      uri: "spotify:track:B1",
+      name: "B1",
+      albumName: nil,
+      albumArtUrl: nil,
+      durationMs: nil,
+      artistsJson: #"[{"name":"Artist B","uri":"spotify:artist:B"}]"#))
+    try artists.upsert(.init(
+      uri: "spotify:artist:A",
+      name: "Artist A",
+      genresJson: #"[]"#,
+      imageUrl: nil))
+    try dbq.write { db in
+      try db.execute(sql: """
+        INSERT INTO tag_enrichment_state (entity_uri, entity_type, provider, status, fetched_at, error)
+        VALUES ('spotify:artist:A', 'artist', 'lastfm', 'success', 10, NULL)
+      """)
+      try db.execute(sql: """
+        INSERT INTO normalized_tags (entity_uri, entity_type, provider, family, raw_tag, score, updated_at)
+        VALUES ('spotify:artist:A', 'artist', 'lastfm', 'rap', 'hip hop', 100, 10)
+      """)
+    }
+
+    try plays.insert(.init(playedAt: 1, trackUri: "spotify:track:A1", msPlayed: 180_000, source: "import"))
+    try plays.insert(.init(playedAt: 2, trackUri: "spotify:track:B1", msPlayed: 180_000, source: "import"))
+
+    let progress = try StatsQueries(dbq: dbq).enrichmentProgress()
+
+    XCTAssertEqual(progress.total, 2)
+    XCTAssertEqual(progress.enriched, 1)
+    XCTAssertEqual(progress.trackArtistResolved, 2)
+    XCTAssertEqual(progress.artistTotal, 2)
+    XCTAssertEqual(progress.artistEnriched, 1)
+    XCTAssertEqual(progress.tagArtistTotal, 2)
+    XCTAssertEqual(progress.tagArtistChecked, 1)
+    XCTAssertEqual(progress.tagArtistTagged, 1)
+  }
+
   private func insertPlays(
     _ plays: PlaysDAO,
     count: Int,

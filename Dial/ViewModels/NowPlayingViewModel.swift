@@ -13,6 +13,7 @@ final class NowPlayingViewModel {
   }
   var track: Track?
   var playsYTD: Int = 0
+  var soundTheme: DialThemeID = .classic
   let agg: AggregationsCache
   init(agg: AggregationsCache) { self.agg = agg }
 }

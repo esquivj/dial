@@ -60,6 +60,13 @@ enum BadgeMemoryKind: String, Codable, CaseIterable {
 struct BadgeInsight: Equatable {
   let kind: BadgeMemoryKind
   let detail: String
+  let explanation: String
+
+  init(kind: BadgeMemoryKind, detail: String, explanation: String = "") {
+    self.kind = kind
+    self.detail = detail
+    self.explanation = explanation
+  }
 }
 
 struct BadgeEvent: Codable, FetchableRecord, MutablePersistableRecord, Equatable {

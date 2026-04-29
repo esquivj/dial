@@ -139,6 +139,76 @@ enum SpectrumMotion: String, CaseIterable, Identifiable {
   }
 }
 
+enum HUDSettingsPreset: String, CaseIterable, Identifiable {
+  case balanced
+  case minimal
+  case dense
+  case performance
+  case showOff
+
+  var id: String { rawValue }
+
+  var label: String {
+    switch self {
+    case .balanced:    "Balanced"
+    case .minimal:     "Minimal"
+    case .dense:       "Dense"
+    case .performance: "Performance"
+    case .showOff:     "Show-off"
+    }
+  }
+
+  var detail: String {
+    switch self {
+    case .balanced:    "Default Dial feel."
+    case .minimal:     "Quieter Now Playing."
+    case .dense:       "More data, less air."
+    case .performance: "Less live motion."
+    case .showOff:     "Maximum motion and detail."
+    }
+  }
+}
+
+enum HUDColorMode: String, CaseIterable, Identifiable {
+  case followSound
+  case classic
+  case slime
+  case aqua
+  case ember
+
+  var id: String { rawValue }
+
+  var label: String {
+    switch self {
+    case .followSound: "Follow Sound"
+    case .classic:     "Classic"
+    case .slime:       "Slime"
+    case .aqua:        "Aqua"
+    case .ember:       "Magenta"
+    }
+  }
+
+  var previewTheme: DialThemeID {
+    switch self {
+    case .followSound: .slime
+    case .classic:     .classic
+    case .slime:       .slime
+    case .aqua:        .aqua
+    case .ember:       .ember
+    }
+  }
+
+  func resolvedTheme(soundTheme: DialThemeID) -> DialThemeID {
+    switch self {
+    case .followSound: soundTheme
+    case .classic:     .classic
+    case .slime:       .slime
+    case .aqua:        .aqua
+    case .ember:       .ember
+    }
+  }
+}
+
 @Observable
 final class SettingsViewModel {
   let auth: SpotifyAuthService
@@ -153,7 +223,14 @@ final class SettingsViewModel {
     didSet { defaults.set(menuBarDisplayMode.rawValue, forKey: Key.menuBarDisplayMode) }
   }
   var menuBarTitleWidth: Double {
-    didSet { defaults.set(menuBarTitleWidth, forKey: Key.menuBarTitleWidth) }
+    didSet {
+      let clamped = MenuBarTextMetrics.clampedSettingWidth(menuBarTitleWidth)
+      if clamped != menuBarTitleWidth {
+        menuBarTitleWidth = clamped
+        return
+      }
+      defaults.set(menuBarTitleWidth, forKey: Key.menuBarTitleWidth)
+    }
   }
   var showAlbumArtInMenuBar: Bool {
     didSet { defaults.set(showAlbumArtInMenuBar, forKey: Key.showAlbumArtInMenuBar) }
@@ -185,6 +262,9 @@ final class SettingsViewModel {
   }
   var animationLevel: DialAnimationLevel {
     didSet { defaults.set(animationLevel.rawValue, forKey: Key.animationLevel) }
+  }
+  var hudColorMode: HUDColorMode {
+    didSet { defaults.set(hudColorMode.rawValue, forKey: Key.hudColorMode) }
   }
   var hudHeroTitleSize: Double {
     didSet { defaults.set(hudHeroTitleSize, forKey: Key.hudHeroTitleSize) }
@@ -245,6 +325,15 @@ final class SettingsViewModel {
   var spectrumPeakMarkers: Bool {
     didSet { defaults.set(spectrumPeakMarkers, forKey: Key.spectrumPeakMarkers) }
   }
+  var backgroundEnrichmentEnabled: Bool {
+    didSet { defaults.set(backgroundEnrichmentEnabled, forKey: Key.backgroundEnrichmentEnabled) }
+  }
+  var lastFMTagEnrichmentEnabled: Bool {
+    didSet { defaults.set(lastFMTagEnrichmentEnabled, forKey: Key.lastFMTagEnrichmentEnabled) }
+  }
+  var lastFMAPIKey: String {
+    didSet { defaults.set(lastFMAPIKey, forKey: Key.lastFMAPIKey) }
+  }
 
   init(
     auth: SpotifyAuthService,
@@ -259,8 +348,8 @@ final class SettingsViewModel {
     self.menuBarDisplayMode = Self.enumValue(
       MenuBarDisplayMode.self, key: Key.menuBarDisplayMode, default: .albumArtTrackArtist, defaults: defaults
     ).visiblePreset
-    self.menuBarTitleWidth = Self.doubleValue(
-      Key.menuBarTitleWidth, default: MenuBarTextMetrics.defaultMaxWidth, defaults: defaults)
+    self.menuBarTitleWidth = MenuBarTextMetrics.clampedSettingWidth(Self.doubleValue(
+      Key.menuBarTitleWidth, default: MenuBarTextMetrics.defaultMaxWidth, defaults: defaults))
     self.showAlbumArtInMenuBar = Self.boolValue(Key.showAlbumArtInMenuBar, default: true, defaults: defaults)
     self.showProgressInMenuBar = Self.boolValue(Key.showProgressInMenuBar, default: false, defaults: defaults)
     self.flashOnTrackChange = Self.boolValue(Key.flashOnTrackChange, default: true, defaults: defaults)
@@ -274,16 +363,18 @@ final class SettingsViewModel {
     self.showTransportInHUD = Self.boolValue(Key.showTransportInHUD, default: true, defaults: defaults)
     self.animationLevel = Self.enumValue(
       DialAnimationLevel.self, key: Key.animationLevel, default: .normal, defaults: defaults)
+    self.hudColorMode = Self.enumValue(
+      HUDColorMode.self, key: Key.hudColorMode, default: .followSound, defaults: defaults)
     self.hudHeroTitleSize = Self.doubleValue(
-      Key.hudHeroTitleSize, default: 16, defaults: defaults)
+      Key.hudHeroTitleSize, default: 15, defaults: defaults)
     self.hudHeroArtistSize = Self.doubleValue(
-      Key.hudHeroArtistSize, default: 13, defaults: defaults)
+      Key.hudHeroArtistSize, default: 12, defaults: defaults)
     self.hudHeroAlbumSize = Self.doubleValue(
-      Key.hudHeroAlbumSize, default: 12, defaults: defaults)
+      Key.hudHeroAlbumSize, default: 11, defaults: defaults)
     self.hudBadgeScale = Self.doubleValue(
       Key.hudBadgeScale, default: 1.0, defaults: defaults)
     self.hudHeroMetadataGap = Self.doubleValue(
-      Key.hudHeroMetadataGap, default: 3, defaults: defaults)
+      Key.hudHeroMetadataGap, default: 2, defaults: defaults)
     self.hudHeroBadgeGap = Self.doubleValue(
       Key.hudHeroBadgeGap, default: 5, defaults: defaults)
 
@@ -306,9 +397,15 @@ final class SettingsViewModel {
       SpectrumMotion.self, key: Key.spectrumMotion, default: .balanced, defaults: defaults)
     self.spectrumPeakMarkers = Self.boolValue(
       Key.spectrumPeakMarkers, default: true, defaults: defaults)
+    self.backgroundEnrichmentEnabled = Self.boolValue(
+      Key.backgroundEnrichmentEnabled, default: true, defaults: defaults)
+    self.lastFMTagEnrichmentEnabled = Self.boolValue(
+      Key.lastFMTagEnrichmentEnabled, default: false, defaults: defaults)
+    self.lastFMAPIKey = defaults.string(forKey: Key.lastFMAPIKey) ?? ""
 
     // Read keychain once on launch so the UI reflects sign-in state immediately.
     self.signedIn = ((try? tokenStore.load()) ?? nil) != nil
+    defaults.set(self.menuBarTitleWidth, forKey: Key.menuBarTitleWidth)
   }
 
   /// Flip after a successful `auth.signIn()`.
@@ -320,13 +417,146 @@ final class SettingsViewModel {
     signedIn = false
   }
 
+  func resetMenuBarDefaults() {
+    menuBarDisplayMode = .albumArtTrackArtist
+    menuBarTitleWidth = MenuBarTextMetrics.defaultMaxWidth
+    showAlbumArtInMenuBar = true
+    showProgressInMenuBar = false
+    flashOnTrackChange = true
+    showDockArtwork = true
+  }
+
+  func resetHUDDefaults() {
+    defaultDropdownScreen = .hud
+    showReadoutsInHUD = true
+    showBadgesInHUD = true
+    showVisualizerInHUD = true
+    showTransportInHUD = true
+    animationLevel = .normal
+    hudColorMode = .followSound
+    discoveryBadgesEnabled = true
+    patternBadgesEnabled = true
+    milestoneBadgesEnabled = true
+    spectrumStyle = .precise
+    spectrumDensity = .detailed
+    spectrumMotion = .balanced
+    spectrumPeakMarkers = true
+    resetHUDTuningDefaults()
+  }
+
+  func resetPetDefaults() {
+    petEnabled = true
+    showPetInHUD = true
+    petFeedingAnimation = true
+    petFirstListenAnimation = true
+    petRediscoveryAnimation = true
+    petLevelUpAnimation = true
+  }
+
+  func resetAllSettings() {
+    resetMenuBarDefaults()
+    resetHUDDefaults()
+    resetPetDefaults()
+  }
+
   func resetHUDTuningDefaults() {
-    hudHeroTitleSize = 16
-    hudHeroArtistSize = 13
-    hudHeroAlbumSize = 12
+    hudHeroTitleSize = 15
+    hudHeroArtistSize = 12
+    hudHeroAlbumSize = 11
     hudBadgeScale = 1.0
-    hudHeroMetadataGap = 3
+    hudHeroMetadataGap = 2
     hudHeroBadgeGap = 5
+  }
+
+  func applyHUDPreset(_ preset: HUDSettingsPreset) {
+    switch preset {
+    case .balanced:
+      resetHUDDefaults()
+
+    case .minimal:
+      defaultDropdownScreen = .hud
+      showReadoutsInHUD = true
+      showBadgesInHUD = true
+      showVisualizerInHUD = false
+      showTransportInHUD = true
+      animationLevel = .low
+      discoveryBadgesEnabled = true
+      patternBadgesEnabled = true
+      milestoneBadgesEnabled = true
+      spectrumStyle = .precise
+      spectrumDensity = .compact
+      spectrumMotion = .smooth
+      spectrumPeakMarkers = false
+      hudHeroTitleSize = 14
+      hudHeroArtistSize = 11
+      hudHeroAlbumSize = 10
+      hudBadgeScale = 0.95
+      hudHeroMetadataGap = 2
+      hudHeroBadgeGap = 4
+
+    case .dense:
+      defaultDropdownScreen = .hud
+      showReadoutsInHUD = true
+      showBadgesInHUD = true
+      showVisualizerInHUD = true
+      showTransportInHUD = true
+      animationLevel = .normal
+      discoveryBadgesEnabled = true
+      patternBadgesEnabled = true
+      milestoneBadgesEnabled = true
+      spectrumStyle = .precise
+      spectrumDensity = .ultra
+      spectrumMotion = .balanced
+      spectrumPeakMarkers = true
+      hudHeroTitleSize = 14
+      hudHeroArtistSize = 11
+      hudHeroAlbumSize = 10
+      hudBadgeScale = 0.95
+      hudHeroMetadataGap = 2
+      hudHeroBadgeGap = 4
+
+    case .performance:
+      defaultDropdownScreen = .hud
+      showReadoutsInHUD = true
+      showBadgesInHUD = true
+      showVisualizerInHUD = false
+      showTransportInHUD = true
+      animationLevel = .low
+      discoveryBadgesEnabled = true
+      patternBadgesEnabled = true
+      milestoneBadgesEnabled = true
+      spectrumStyle = .precise
+      spectrumDensity = .compact
+      spectrumMotion = .fast
+      spectrumPeakMarkers = false
+      hudHeroTitleSize = 15
+      hudHeroArtistSize = 12
+      hudHeroAlbumSize = 11
+      hudBadgeScale = 1.0
+      hudHeroMetadataGap = 2
+      hudHeroBadgeGap = 5
+
+    case .showOff:
+      defaultDropdownScreen = .hud
+      showReadoutsInHUD = true
+      showBadgesInHUD = true
+      showVisualizerInHUD = true
+      showTransportInHUD = true
+      animationLevel = .extra
+      discoveryBadgesEnabled = true
+      patternBadgesEnabled = true
+      milestoneBadgesEnabled = true
+      spectrumStyle = .punchy
+      spectrumDensity = .ultra
+      spectrumMotion = .fast
+      spectrumPeakMarkers = true
+      hudHeroTitleSize = 16
+      hudHeroArtistSize = 13
+      hudHeroAlbumSize = 12
+      hudBadgeScale = 1.1
+      hudHeroMetadataGap = 3
+      hudHeroBadgeGap = 6
+    }
   }
 
   // MARK: - Defaults
@@ -345,6 +575,7 @@ final class SettingsViewModel {
     static let showVisualizerInHUD = "settings.showVisualizerInHUD"
     static let showTransportInHUD = "settings.showTransportInHUD"
     static let animationLevel = "settings.animationLevel"
+    static let hudColorMode = "settings.hudColorMode"
     static let hudHeroTitleSize = "settings.hudHeroTitleSize"
     static let hudHeroArtistSize = "settings.hudHeroArtistSize"
     static let hudHeroAlbumSize = "settings.hudHeroAlbumSize"
@@ -367,6 +598,9 @@ final class SettingsViewModel {
     static let spectrumDensity = "settings.spectrumDensity"
     static let spectrumMotion = "settings.spectrumMotion"
     static let spectrumPeakMarkers = "settings.spectrumPeakMarkers"
+    static let backgroundEnrichmentEnabled = "settings.backgroundEnrichmentEnabled"
+    static let lastFMTagEnrichmentEnabled = "settings.lastFMTagEnrichmentEnabled"
+    static let lastFMAPIKey = "settings.lastFMAPIKey"
   }
 
   private static func boolValue(

@@ -94,6 +94,130 @@ final class BadgeResolverTests: XCTestCase {
     XCTAssertNil(insight)
   }
 
+  func test_currentInsight_afterCountedReplay_doesNotReuseFirstListenMemory() throws {
+    let dbq = try InMemoryDatabase.make()
+    let anchor: Int64 = 1_700_000_000
+    let engine = PetEngine(dbq: dbq, clock: { anchor })
+    try seedTrack(dbq, uri: "T", artistUri: "art:known", artistName: "Known Artist")
+    try seedTrack(dbq, uri: "KNOWN", artistUri: "art:known", artistName: "Known Artist", albumName: "Catalog")
+
+    try engine.recordPlay(.init(
+      playedAt: anchor - 600,
+      trackUri: "KNOWN",
+      msPlayed: 60_000,
+      source: "import"))
+
+    try engine.recordPlay(.init(
+      playedAt: anchor - 120,
+      trackUri: "T",
+      msPlayed: 60_000,
+      source: "live"))
+    try engine.recordPlay(.init(
+      playedAt: anchor,
+      trackUri: "T",
+      msPlayed: 60_000,
+      source: "live"))
+
+    let insight = try PlayAggregations(dbq: dbq, now: { anchor })
+      .currentBadgeInsight(trackUri: "T", currentPlayAt: anchor)
+
+    XCTAssertNil(insight)
+  }
+
+  func test_currentInsight_afterDeepCutExpires_doesNotReuseOldDeepCutMemory() throws {
+    let dbq = try InMemoryDatabase.make()
+    let anchor: Int64 = 1_700_000_000
+    let engine = PetEngine(dbq: dbq, clock: { anchor })
+    let plays = PlaysDAO(dbq: dbq)
+
+    for i in 0..<20 {
+      let uri = "ARTIST_MAIN_\(i)"
+      try seedTrack(dbq, uri: uri, artistUri: "art:frequent", artistName: "Frequent Artist", albumName: "Catalog")
+      try plays.insert(.init(
+        playedAt: anchor - 100_000 + Int64(i),
+        trackUri: uri,
+        msPlayed: 60_000,
+        source: "import"))
+    }
+    try seedTrack(dbq, uri: "RARE", artistUri: "art:frequent", artistName: "Frequent Artist", albumName: "Oddities")
+    try seedTrack(dbq, uri: "OTHER", artistUri: "art:other", artistName: "Other Artist", albumName: "Break")
+
+    for i in 0..<4 {
+      try engine.recordPlay(.init(
+        playedAt: anchor - 400 + Int64(i * 100),
+        trackUri: "RARE",
+        msPlayed: 60_000,
+        source: "live"))
+      if i < 3 {
+        try plays.insert(.init(
+          playedAt: anchor - 350 + Int64(i * 100),
+          trackUri: "OTHER",
+          msPlayed: 60_000,
+          source: "live"))
+      }
+    }
+
+    let insight = try PlayAggregations(dbq: dbq, now: { anchor })
+      .currentBadgeInsight(trackUri: "RARE", currentPlayAt: anchor - 100)
+
+    XCTAssertNil(insight)
+  }
+
+  func test_currentInsight_repeatTrackOnlyShowsWhenRunStarts() throws {
+    let dbq = try InMemoryDatabase.make()
+    let anchor: Int64 = 1_700_000_000
+    let engine = PetEngine(dbq: dbq, clock: { anchor })
+    try seedTrack(dbq, uri: "T", artistUri: "art:known", artistName: "Known Artist")
+
+    for i in 0..<3 {
+      try engine.recordPlay(.init(
+        playedAt: anchor + Int64(i),
+        trackUri: "T",
+        msPlayed: 60_000,
+        source: "live"))
+    }
+
+    let thirdPlay = try PlayAggregations(dbq: dbq, now: { anchor + 2 })
+      .currentBadgeInsight(trackUri: "T", currentPlayAt: anchor + 2)
+    XCTAssertEqual(thirdPlay?.kind, .repeatTrack)
+
+    try engine.recordPlay(.init(
+      playedAt: anchor + 3,
+      trackUri: "T",
+      msPlayed: 60_000,
+      source: "live"))
+
+    let fourthPlay = try PlayAggregations(dbq: dbq, now: { anchor + 3 })
+      .currentBadgeInsight(trackUri: "T", currentPlayAt: anchor + 3)
+    XCTAssertNil(fourthPlay)
+  }
+
+  func test_currentInsight_albumModeOnlyShowsWhenRunStarts() throws {
+    let dbq = try InMemoryDatabase.make()
+    let anchor: Int64 = 1_700_000_000
+    let engine = PetEngine(dbq: dbq, clock: { anchor })
+    for uri in ["A", "B", "C", "D"] {
+      try seedTrack(dbq, uri: uri, artistUri: "art:album", artistName: "Album Artist", albumName: "One Record")
+    }
+    try seedTrack(dbq, uri: "OTHER", artistUri: "art:other", artistName: "Other Artist", albumName: "Break")
+
+    try engine.recordPlay(.init(playedAt: anchor - 20, trackUri: "C", msPlayed: 60_000, source: "live"))
+    try engine.recordPlay(.init(playedAt: anchor - 10, trackUri: "OTHER", msPlayed: 60_000, source: "live"))
+    try engine.recordPlay(.init(playedAt: anchor, trackUri: "A", msPlayed: 60_000, source: "live"))
+    try engine.recordPlay(.init(playedAt: anchor + 1, trackUri: "B", msPlayed: 60_000, source: "live"))
+    try engine.recordPlay(.init(playedAt: anchor + 2, trackUri: "C", msPlayed: 60_000, source: "live"))
+
+    let thirdAlbumPlay = try PlayAggregations(dbq: dbq, now: { anchor + 2 })
+      .currentBadgeInsight(trackUri: "C", currentPlayAt: anchor + 2)
+    XCTAssertEqual(thirdAlbumPlay?.kind, .albumMode)
+
+    try engine.recordPlay(.init(playedAt: anchor + 3, trackUri: "A", msPlayed: 60_000, source: "live"))
+
+    let fourthAlbumPlay = try PlayAggregations(dbq: dbq, now: { anchor + 3 })
+      .currentBadgeInsight(trackUri: "A", currentPlayAt: anchor + 3)
+    XCTAssertNil(fourthAlbumPlay)
+  }
+
   func test_currentInsight_afterCountedPlay_surfacesMilestone() throws {
     let dbq = try InMemoryDatabase.make()
     let engine = PetEngine(dbq: dbq, clock: { 1_700_000_000 })

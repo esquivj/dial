@@ -110,6 +110,73 @@ enum Migrations {
       }
       try db.create(index: "pet_trick_unlocks_by_time", on: "pet_trick_unlocks", columns: ["unlocked_at"])
     }
+
+    m.registerMigration("v5_tag_intelligence") { db in
+      try db.create(table: "raw_tags") { t in
+        t.column("entity_uri", .text).notNull()
+        t.column("entity_type", .text).notNull()
+        t.column("provider", .text).notNull()
+        t.column("raw_tag", .text).notNull()
+        t.column("score", .double).notNull().defaults(to: 0)
+        t.column("rank", .integer).notNull().defaults(to: 0)
+        t.column("source_url", .text)
+        t.column("fetched_at", .integer).notNull()
+        t.primaryKey(["entity_uri", "entity_type", "provider", "raw_tag"])
+      }
+      try db.create(index: "raw_tags_by_provider", on: "raw_tags", columns: ["provider", "entity_type"])
+      try db.create(index: "raw_tags_by_tag", on: "raw_tags", columns: ["raw_tag"])
+
+      try db.create(table: "normalized_tags") { t in
+        t.column("entity_uri", .text).notNull()
+        t.column("entity_type", .text).notNull()
+        t.column("provider", .text).notNull()
+        t.column("family", .text).notNull()
+        t.column("raw_tag", .text).notNull()
+        t.column("score", .double).notNull().defaults(to: 0)
+        t.column("updated_at", .integer).notNull()
+        t.primaryKey(["entity_uri", "entity_type", "provider", "family", "raw_tag"])
+      }
+      try db.create(index: "normalized_tags_by_family", on: "normalized_tags", columns: ["family"])
+      try db.create(index: "normalized_tags_by_entity", on: "normalized_tags", columns: ["entity_uri", "entity_type"])
+
+      try db.create(table: "tag_enrichment_state") { t in
+        t.column("entity_uri", .text).notNull()
+        t.column("entity_type", .text).notNull()
+        t.column("provider", .text).notNull()
+        t.column("status", .text).notNull()
+        t.column("fetched_at", .integer).notNull()
+        t.column("error", .text)
+        t.primaryKey(["entity_uri", "entity_type", "provider"])
+      }
+      try db.create(index: "tag_state_by_status", on: "tag_enrichment_state", columns: ["provider", "status"])
+    }
+
+    m.registerMigration("v6_artifacts") { db in
+      try db.create(table: "artifacts") { t in
+        t.column("kind", .text).primaryKey()
+        t.column("source", .text).notNull()
+        t.column("unlocked_at", .integer).notNull()
+        t.column("source_badge_event_id", .integer)
+        t.column("track_uri", .text)
+        t.column("artist_uri", .text)
+        t.column("detail", .text)
+      }
+      try db.create(index: "artifacts_by_time", on: "artifacts", columns: ["unlocked_at"])
+      try db.create(index: "artifacts_by_source", on: "artifacts", columns: ["source", "unlocked_at"])
+    }
+
+    m.registerMigration("v7_metadata_enrichment_state") { db in
+      try db.create(table: "metadata_enrichment_state") { t in
+        t.column("entity_uri", .text).notNull()
+        t.column("entity_type", .text).notNull()
+        t.column("provider", .text).notNull()
+        t.column("status", .text).notNull()
+        t.column("fetched_at", .integer).notNull()
+        t.column("error", .text)
+        t.primaryKey(["entity_uri", "entity_type", "provider"])
+      }
+      try db.create(index: "metadata_state_by_status", on: "metadata_enrichment_state", columns: ["provider", "status"])
+    }
     return m
   }
 }

@@ -7,9 +7,14 @@ enum RepeatMode: String, Equatable {
   case off, context, track
 }
 
+struct PlaybackArtist: Equatable, Codable {
+  let name: String
+  let uri: String
+}
+
 enum PlaybackEvent: Equatable {
   case started(trackUri: String, name: String, artistName: String, artistUri: String?,
-               albumName: String, artUrl: String?, durationMs: Int, at: Int64)
+               artists: [PlaybackArtist], albumName: String, artUrl: String?, durationMs: Int, at: Int64)
   case progress(ms: Int)
   case paused
   case resumed

@@ -77,63 +77,90 @@ enum BadgeResolver {
     let effectiveTrackCount = countedCurrentPlay ? trackCount : trackCount + 1
 
     if countedCurrentPlay, let milestone = milestoneKind(trackCount: trackCount) {
-      return BadgeInsight(kind: milestone, detail: "\(trackCount.formatted()) lifetime plays")
+      return BadgeInsight(
+        kind: milestone,
+        detail: "\(trackCount.formatted()) lifetime plays",
+        explanation: "Shown because this counted play brought the track to exactly \(trackCount.formatted()) lifetime plays. Milestones fire only on 10, 50, and 100.")
     }
 
     if countedCurrentPlay,
        try hasAnniversary(trackUri: trackUri, anchorAt: anchorAt, excludingPlayID: nil, in: db) {
-      return BadgeInsight(kind: .anniversary, detail: "Same calendar day, at least a year apart")
+      return BadgeInsight(
+        kind: .anniversary,
+        detail: "Same calendar day, at least a year apart",
+        explanation: "Shown because this track has a prior play on this same calendar day at least one year ago.")
     }
 
     if let artistUri = context.artistUri {
       let artistCount = try artistLifetimeCount(artistUri: artistUri, in: db)
       if (countedCurrentPlay && artistCount == 1) || (!countedCurrentPlay && artistCount == 0) {
-        return BadgeInsight(kind: .newArtist, detail: "First track from this artist")
+        let displayCount = countedCurrentPlay ? artistCount : artistCount + 1
+        return BadgeInsight(
+          kind: .newArtist,
+          detail: "First track from this artist",
+          explanation: "Shown because this artist has \(displayCount.formatted()) counted lifetime play. New Artist is stronger than First Listen, so it wins when both are true.")
       }
     }
 
     if (countedCurrentPlay && trackCount == 1) || (!countedCurrentPlay && trackCount == 0) {
-      return BadgeInsight(kind: .firstListen, detail: "No plays in your history")
+      let displayCount = countedCurrentPlay ? trackCount : trackCount + 1
+      return BadgeInsight(
+        kind: .firstListen,
+        detail: "No plays in your history",
+        explanation: "Shown because this track has \(displayCount.formatted()) counted lifetime play. It disappears after play #2.")
     }
 
     if let days = try rediscoveryGapDays(trackUri: trackUri, anchorAt: anchorAt, excludingPlayID: nil, in: db),
        days >= 90 {
-      return BadgeInsight(kind: .rediscovered, detail: "Last played \(days.formatted()) days ago")
+      return BadgeInsight(
+        kind: .rediscovered,
+        detail: "Last played \(days.formatted()) days ago",
+        explanation: "Shown because the previous play was \(days.formatted()) days ago. Rediscovered triggers after a 90+ day gap.")
     }
 
     if let artistUri = context.artistUri {
       let artistCount = try artistLifetimeCount(artistUri: artistUri, in: db)
       if artistCount >= 20, effectiveTrackCount <= 3 {
-        return BadgeInsight(kind: .deepCut, detail: "\(artistCount.formatted()) plays from this artist · rare track")
+        return BadgeInsight(
+          kind: .deepCut,
+          detail: "Rare track from a familiar artist",
+          explanation: "Shown because this artist has \(artistCount.formatted()) lifetime plays, while this track has only \(effectiveTrackCount.formatted()). Deep Cut requires 20+ artist plays and 3 or fewer track plays.")
       }
     }
 
     if countedCurrentPlay {
       let repeatRun = try repeatRunLength(trackUri: trackUri, in: db)
-      if repeatRun >= 3 {
-        return BadgeInsight(kind: .repeatTrack, detail: "\(repeatRun.formatted()) plays in a row")
+      if repeatRun == 3 {
+        return BadgeInsight(
+          kind: .repeatTrack,
+          detail: "\(repeatRun.formatted()) plays in a row",
+          explanation: "Shown because this counted play started a 3-play run of the same track.")
       }
 
       let albumRun = try albumRunLength(context: context, in: db)
-      if albumRun >= 3 {
-        return BadgeInsight(kind: .albumMode, detail: "\(albumRun.formatted())-track run from this album")
+      if albumRun == 3 {
+        return BadgeInsight(
+          kind: .albumMode,
+          detail: "\(albumRun.formatted())-track run from this album",
+          explanation: "Shown because this counted play started a 3-track run from this album and artist.")
       }
     }
 
     if let streak = try streakContext(trackUri: trackUri, anchorAt: anchorAt, in: db),
        streak.plays30d >= 10,
-       streak.rank7d <= 5 {
+      streak.rank7d <= 5 {
       return BadgeInsight(
         kind: .onStreak,
-        detail: "#\(streak.rank7d) this week · \(streak.plays30d.formatted()) plays in 30d")
+        detail: "#\(streak.rank7d) this week · \(streak.plays30d.formatted()) plays in 30d",
+        explanation: "Shown because this track has \(streak.plays30d.formatted()) plays in the last 30 days and ranks #\(streak.rank7d) over the last 7 days. On Streak requires 10+ in 30d and top 5 this week.")
     }
 
-    // Recent one-shot memories are only reused while handling a play that
-    // actually counted. A skip-back/dedupe replay should not re-earn
-    // FIRST LISTEN / NEW ARTIST / REDISCOVERED just because that memory
-    // happened earlier today.
+    // Rediscovery gets a short same-day afterglow: if a track came back
+    // after a long gap, replaying it later that day still carries the
+    // "this returned today" meaning. Other badges must be currently true
+    // and should not be resurrected from memory history.
     guard countedCurrentPlay else { return nil }
-    return try recentTrackInsight(trackUri: trackUri, anchorAt: anchorAt, in: db)
+    return try recentRediscoveryInsight(trackUri: trackUri, anchorAt: anchorAt, in: db)
   }
 
   private static func milestoneEvents(play: Play, context: TrackContext, trackCount: Int) -> [BadgeEvent] {
@@ -213,44 +240,29 @@ enum BadgeResolver {
     return Int((anchorAt - prior) / 86_400)
   }
 
-  private static func recentTrackInsight(trackUri: String, anchorAt: Int64, in db: Database) throws -> BadgeInsight? {
-    let events = try BadgeEvent.fetchAll(db, sql: """
+  private static func recentRediscoveryInsight(trackUri: String, anchorAt: Int64, in db: Database) throws -> BadgeInsight? {
+    guard let event = try BadgeEvent.fetchOne(db, sql: """
       SELECT *
       FROM badge_events
       WHERE track_uri = ?
+        AND kind = ?
         AND earned_at >= ?
         AND earned_at <= ?
       ORDER BY earned_at DESC, id DESC
-      LIMIT 12
-      """, arguments: [trackUri, anchorAt - 24 * 60 * 60, anchorAt])
-    guard let event = events.max(by: { lhs, rhs in
-      if lhs.earnedAt != rhs.earnedAt {
-        return lhs.earnedAt < rhs.earnedAt
-      }
-      return recentDisplayPriority(lhs.kind) < recentDisplayPriority(rhs.kind)
-    }) else {
-      return nil
-    }
+      LIMIT 1
+      """, arguments: [
+        trackUri,
+        BadgeMemoryKind.rediscovered.rawValue,
+        anchorAt - 24 * 60 * 60,
+        anchorAt,
+      ])
+    else { return nil }
 
+    let detail = try recentDetail(for: event, trackUri: trackUri, in: db)
     return BadgeInsight(
       kind: event.kind,
-      detail: try recentDetail(for: event, trackUri: trackUri, in: db))
-  }
-
-  private static func recentDisplayPriority(_ kind: BadgeMemoryKind) -> Int {
-    switch kind {
-    case .firstListen: return 100
-    case .newArtist: return 95
-    case .rediscovered: return 90
-    case .deepCut: return 80
-    case .play100: return 74
-    case .play50: return 73
-    case .play10: return 72
-    case .anniversary: return 70
-    case .repeatTrack: return 62
-    case .albumMode: return 61
-    case .onStreak: return 60
-    }
+      detail: detail,
+      explanation: "\(detail). Rediscovered stays visible for same-day replays after the original 90+ day return.")
   }
 
   private static func recentDetail(for event: BadgeEvent, trackUri: String, in db: Database) throws -> String {
