@@ -63,13 +63,17 @@ final class DropdownPanel: NSPanel {
     // We manage dismiss manually via NSEvent monitors. Without this,
     // the panel might auto-hide in ways that race with our monitors.
     self.hidesOnDeactivate = false
+    self.ignoresMouseEvents = false
+    self.acceptsMouseMovedEvents = true
 
     // SwiftUI hosting view, pinned to the panel's content area so the
     // SwiftUI .frame(width:height:) on DropdownView matches the panel
     // size exactly (no flicker on first layout).
     let host = NSHostingView(rootView: rootView)
     host.translatesAutoresizingMaskIntoConstraints = false
-    let cv = NSView()
+    let cv = DropdownHitShieldView()
+    cv.frame = NSRect(origin: .zero, size: size)
+    cv.autoresizingMask = [.width, .height]
     cv.addSubview(host)
     NSLayoutConstraint.activate([
       host.leadingAnchor.constraint(equalTo: cv.leadingAnchor),
@@ -85,4 +89,29 @@ final class DropdownPanel: NSPanel {
   // app, but typing reaches our content.
   override var canBecomeKey: Bool { true }
   override var canBecomeMain: Bool { false }
+}
+
+/// Transparent SwiftUI gaps can otherwise return `nil` from hit testing,
+/// which lets clicks fall through to the app underneath. The outside-click
+/// monitor then sees that as an external click and closes Dial. This view
+/// keeps empty chrome inside the panel interactive without stealing events
+/// from real SwiftUI controls.
+private final class DropdownHitShieldView: NSView {
+  override var acceptsFirstResponder: Bool { true }
+
+  override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+    true
+  }
+
+  override func hitTest(_ point: NSPoint) -> NSView? {
+    guard !isHidden, alphaValue > 0, bounds.contains(point) else { return nil }
+    return super.hitTest(point) ?? self
+  }
+
+  override func mouseDown(with event: NSEvent) {}
+  override func rightMouseDown(with event: NSEvent) {}
+  override func otherMouseDown(with event: NSEvent) {}
+  override func mouseUp(with event: NSEvent) {}
+  override func rightMouseUp(with event: NSEvent) {}
+  override func otherMouseUp(with event: NSEvent) {}
 }

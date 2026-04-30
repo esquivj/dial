@@ -1,20 +1,20 @@
 ---
 name: "Dial"
-description: "A private Y2K music memory device for Spotify history."
+description: "Now playing, remembered."
 colors:
-  ground: "#070E14"
-  surface: "#12161B"
-  subtle: "#0F1316"
-  hairline: "#252A30"
+  ground: "#05090F"
+  surface: "#141A21"
+  subtle: "#0B1118"
+  hairline: "#323B45"
   accent-cyan: "#1FB6FF"
   accent-pink: "#FF4DD8"
   lcd-green: "#B5BA91"
   slime-shell: "#B8FF38"
   aqua-shell: "#25C7FF"
-  ember-shell: "#FF672F"
+  magenta-shell: "#FF4DD2"
   button-yellow: "#EEC83C"
-  text-primary: "#E8EBED"
-  text-muted: "#898F98"
+  text-primary: "#ECEFF2"
+  text-muted: "#9AA1AB"
 typography:
   display:
     fontFamily: "GeistMono-Medium, ui-monospace, SFMono-Regular, Menlo, monospace"
@@ -75,7 +75,7 @@ components:
     usage: "Primary setup/onboarding mark and brand lockup source."
   brand-app-icon:
     asset: "Dial/Resources/Brand/dial-app-icon.png"
-    description: "Canonical macOS app icon: dark translucent plastic squircle with two large chrome sparkle marks from the wordmark."
+    description: "Canonical macOS app icon: smoke-gel translucent plastic squircle with two large chrome sparkle marks from the wordmark."
     background: "transparent"
     usage: "Bundle AppIcon source and Dock fallback whenever no album artwork is available."
   popup-shell:
@@ -112,18 +112,22 @@ components:
 
 **Creative North Star: "Pocket Music Shrine"**
 
-Dial is a tiny physical music memory device living inside macOS. The interface should feel like a translucent Y2K keychain object with a serious utility layer inside it: part Digivice, part Tamagotchi, part hi-fi readout, part Raycast-quality menu bar tool.
+**Product Line:** Now playing, remembered.
+
+Dial is a tiny Y2K pocket shrine living inside macOS. The interface should feel like a translucent keychain object with a serious utility layer inside it: part Digivice, part Tamagotchi, part hi-fi readout, part Raycast-quality menu bar tool.
 
 The app is not a Spotify clone, not a mini-player, and not a public stats dashboard. Every surface should answer one question: what does this song mean to me? The main HUD stays dense and functional. The pet, room, artifacts, and generated sprites carry the emotional identity.
 
-Use the generated brand board as the art-direction source: translucent plastic shells, LCD-green pixel rooms, chrome decals, yellow rubber buttons, cyan readouts, pink badge moments, black hardware grounds. Do not copy the full poster composition into the dropdown. Translate it into a compact native product.
+Use the generated brand board and Black Gel icon as the art-direction source: smoke-gel translucent plastic shells, LCD-green pixel rooms, chrome decals, yellow rubber buttons, cyan readouts, pink/magenta badge moments, black hardware grounds. Do not copy the full poster composition into the dropdown. Translate it into a compact native product.
 
 **Final Wordmark:** `Dial/Resources/Brand/dial-wordmark-chrome.png` is the canonical Dial wordmark. It is a silver/chrome italic `DIAL` decal with two integrated chrome star marks, transparent background, and readable edge detail for dark and light surfaces. Do not substitute the cyan pixel text as the primary brand mark. Do not use generated variants with black reflection bands or missing-alpha holes through the chrome face.
 
 **Final App Icon:** `Dial/Resources/Brand/dial-app-icon.png` is the canonical macOS icon and no-album Dock fallback. It uses a quiet dark translucent plastic squircle with the two chrome star marks from the wordmark as the only hero. Do not use a full chrome field, white arc, pet LCD, or text in the app icon. Album art can replace it when a track is playing; the fallback should stay branded, not pet/LCD/noise.
 
+**HUD Look Lock:** `HUD_LOOK_LOCK.md` is the canonical backup for the current HUD shell, overlay geometry, layer order, and verification checklist. Read it before touching the generated shell, `DropdownView`, `ControlsBar`, `StatusRail`, or `DialLayout` HUD constants.
+
 **Key Characteristics:**
-- Physical, personal, precise.
+- Smoke-gel, physical, personal, precise.
 - Dense but crafted, with fixed zones and strong baselines.
 - Solid minimal signal over glow.
 - Pixel art belongs to pets, badges, artifacts, room objects, and LCD scenes.
@@ -132,7 +136,7 @@ Use the generated brand board as the art-direction source: translucent plastic s
 
 ## 2. Colors
 
-The palette is dark hardware plus powered LCD color. Cyan is live signal, pink is memory/discovery, LCD green is the pet and room world, and shell colors are reserved for skins or marketing assets.
+The palette is smoke-gel hardware plus powered LCD color. Cyan is live signal, pink is memory/discovery, LCD green is the pet and room world, and shell colors are reserved for skins or marketing assets.
 
 ### Primary
 - **Powered Cyan** (`#1FB6FF`): active playback, current selection, readout values, spectrum bars, progress fill, primary status.
@@ -142,16 +146,16 @@ The palette is dark hardware plus powered LCD color. Cyan is live signal, pink i
 - **LCD Green Glass** (`#B5BA91`): pet LCDs, room backgrounds, artifact screens, generated pixel scenes. This is world color, not generic success color.
 - **Slime Shell** (`#B8FF38`): translucent device skin, marketing art, future skin picker. Use sparingly inside product UI.
 - **Aqua Shell** (`#25C7FF`): alternate shell skin and blue hardware moments.
-- **Ember Shell** (`#FF672F`): alternate shell skin. Do not let it become the default product accent.
+- **Magenta Shell** (`#FF4DD2`): alternate shell/theme accent for memory-heavy states and genre-driven skins. Use it as a theme color, not as a generic glow wash.
 - **Rubber Button Yellow** (`#EEC83C`): physical toy button references, onboarding/device previews, not normal app buttons.
 
 ### Neutral
-- **Tinted Ground** (`#070E14`): outer chassis and app background. Never use pure black.
-- **Recessed Surface** (`#12161B`): controls, panels, readouts, and popover interiors.
-- **Deep Subtle Surface** (`#0F1316`): LCD panel fill and lower hierarchy surfaces.
-- **Hardware Hairline** (`#252A30`): dividers and low-contrast panel borders.
-- **Cool Text Primary** (`#E8EBED`): primary readable text.
-- **Cool Text Muted** (`#898F98`): labels and secondary metadata. Keep this contrast high enough for tiny UI.
+- **Smoke Gel Ground** (`#05090F`): outer chassis and app background. Never use pure black.
+- **Recessed Smoke Surface** (`#141A21`): controls, panels, readouts, and popover interiors.
+- **Deep Glass Surface** (`#0B1118`): LCD panel fill and lower hierarchy surfaces.
+- **Hardware Hairline** (`#323B45`): dividers and low-contrast panel borders.
+- **Cool Text Primary** (`#ECEFF2`): primary readable text.
+- **Cool Text Muted** (`#9AA1AB`): labels and secondary metadata. Keep this contrast high enough for tiny UI.
 
 ### Named Rules
 
@@ -201,6 +205,8 @@ Dial uses material layering, not generic card shadows. Depth comes from transluc
 
 **The Plastic Rule.** Plastic is described by white highlights, dark contact shadows, subtle translucency, and real shape. Cyan glow everywhere turns the app into mall-kiosk nonsense.
 
+**The Smoke Gel Rule.** The default shell is smoked transparent plastic: dark body, glassy edge depth, visible white reflections, and black internal shadow. Use the color themes as cartridges on top of this material, not as replacements for the material.
+
 **The Recess Rule.** LCD panels and transport controls sit into the device. Use inner shadow and hairline strokes before adding external shadows.
 
 **The Scanline Rule.** Scanlines belong inside LCD surfaces only. Do not put scanlines on menus, settings forms, or normal text areas.
@@ -210,12 +216,12 @@ Dial uses material layering, not generic card shadows. Depth comes from transluc
 ### Popup Shell
 - **Shape:** continuous device shell, `28px` radius.
 - **Size:** default dropdown is `360px` by `360px`.
-- **Material:** chassis plastic with tinted black ground, subtle dust texture, white top rim, black inner lip.
+- **Material:** smoke-gel plastic with dark translucent ground, subtle dust texture, white top rim, black inner lip, and glassy edge depth.
 - **Rule:** the shell should feel molded. If it reads like a rounded app popover, sharpen or simplify it.
 
 ### LCD Panel
 - **Shape:** `10px` panel radius, `12px` for stronger LCD wells.
-- **Background:** `#0F1316` or LCD green when it contains the pet/room world.
+- **Background:** `#0B1118` or LCD green when it contains the pet/room world.
 - **Behavior:** supports scanlines, crisp pixel sprites, and dense readouts.
 - **Rule:** content inside an LCD can be weird and pixelated. The surrounding controls should stay clean.
 
@@ -258,6 +264,12 @@ Dial uses material layering, not generic card shadows. Depth comes from transluc
 - **Sheets:** prefer master sprite sheets, then slice into individual files for consistency.
 - **Rule:** no new SwiftUI doodle art for collectible visuals.
 
+### Artifact Sprites
+- **Current Sheet:** `Dial/Resources/Artifacts/artifact_sheet_source.png`.
+- **Export Rule:** artifact files are 128x128 black-on-transparent template PNGs. White, checkerboard, glow, shading, labels, and antialiasing are removed before shipping.
+- **Visual Rule:** each artifact must read at 23-30pt. Use thick LCD object silhouettes, not tiny detailed illustrations.
+- **Meaning Rule:** artifacts are permanent memory objects unlocked by the first earned badge of each type or by a pet trick unlock. They should feel like room/shrine objects, not generic achievement icons.
+
 ### Pet Room
 - **Direction:** PetView should become `ROOM`: an LCD pixel room first, then bond/action and evolution below.
 - **Scene:** room background uses LCD green, black pixel art, scanlines, and simple object silhouettes.
@@ -278,7 +290,7 @@ Dial uses material layering, not generic card shadows. Depth comes from transluc
 - **Do** keep the main HUD restrained. Let the pet, room, artifacts, and generated assets carry the emotional weight.
 - **Do** use `#1FB6FF` for live signal and meaningful data, not decoration.
 - **Do** use `#FF4DD8` for memory and discovery moments.
-- **Do** keep muted text at or above the current `#898F98` contrast level.
+- **Do** keep muted text at or above the current `#9AA1AB` contrast level.
 - **Do** use `28px` for the device shell, `10px` to `12px` for LCD panels, `8px` for controls, `6px` for media, `3px` to `4px` for printed UI.
 - **Do** render pixel assets with nearest-neighbor interpolation.
 - **Do** generate new collectibles through imagegen sprite assets.
@@ -286,7 +298,7 @@ Dial uses material layering, not generic card shadows. Depth comes from transluc
 
 ### Don't:
 - **Don't** build a Spotify clone.
-- **Don't** make Dial feel like a mini-player first. It is a private music memory device.
+- **Don't** make Dial feel like a mini-player first. It is a pocket shrine for personal listening history.
 - **Don't** use cyan-on-dark glow everywhere with no hierarchy.
 - **Don't** use purple-blue gradients, gradient text, blurry decorative blobs, or generic glassmorphism.
 - **Don't** add dashboard-template metric cards just to fill space.

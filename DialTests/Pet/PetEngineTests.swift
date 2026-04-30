@@ -16,6 +16,40 @@ final class PetEngineTests: XCTestCase {
     XCTAssertEqual(s.streakDays, 1)
   }
 
+  func test_livePlayDoesNotAwardNewArtistWhenImportedArtistNameAlreadyExists() throws {
+    let dbq = try InMemoryDatabase.make()
+    let engine = PetEngine(dbq: dbq, clock: { 1_700_000_000 })
+    let tracks = TracksDAO(dbq: dbq)
+    try tracks.upsert(.init(
+      uri: "OLD",
+      name: "old",
+      albumName: "Known Album",
+      albumArtUrl: nil,
+      durationMs: 200_000,
+      artistsJson: #"[{"name":"KETTAMA","uri":"artist:KETTAMA"}]"#))
+    try tracks.upsert(.init(
+      uri: "LIVE",
+      name: "live",
+      albumName: "Known Album",
+      albumArtUrl: nil,
+      durationMs: 200_000,
+      artistsJson: #"[{"name":"KETTAMA","uri":"spotify:artist:kettama"}]"#))
+
+    try engine.recordPlay(.init(
+      playedAt: 1_600_000_000,
+      trackUri: "OLD",
+      msPlayed: 60_000,
+      source: "import"))
+    try engine.recordPlay(.init(
+      playedAt: 1_700_000_000,
+      trackUri: "LIVE",
+      msPlayed: 60_000,
+      source: "live"))
+
+    let state = try PetStateDAO(dbq: dbq).get()
+    XCTAssertEqual(state.xp, 2)
+  }
+
   func test_duplicateLiveReplay_returnsFalseAndDoesNotMutatePet() throws {
     let dbq = try InMemoryDatabase.make()
     let engine = PetEngine(dbq: dbq, clock: { 1_700_000_000 })

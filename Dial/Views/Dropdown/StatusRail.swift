@@ -27,20 +27,20 @@ struct StatusRail: View {
         // Pet thumbnail relocated to TrackHero. Rail starts directly with
         // the indicator dot now — frees up ~40pt of horizontal space.
         Circle()
-          .fill(trackPulse ? theme.accentAlt : theme.accent)
+          .fill(trackPulse ? theme.memoryAccent : theme.accent)
           .frame(width: Dial.Layout.StatusRail.ledSize, height: Dial.Layout.StatusRail.ledSize)
           // Single tight halo — keeps the dot reading as a powered LED
           // without the prior two-layer bloom that pushed the glow into
           // "neon tacky" territory. The dot's color contrast against
           // the dark body does most of the "lit" work; the halo is
           // just a soft edge softening.
-          .shadow(color: (trackPulse ? theme.accentAlt : theme.accent).opacity(0.55), radius: 3)
+          .shadow(color: (trackPulse ? theme.memoryAccent : theme.accent).opacity(0.55), radius: 3)
           .animation(.easeOut(duration: 0.5), value: trackPulse)
         Text("NOW PLAYING")
           .font(Dial.Typography.monoLabel)
           .tracking(1.4)
           .foregroundStyle(theme.accent)
-        Spacer()
+        Spacer(minLength: 18)
         // Inline nav icons — surface History / Stats here so they're 1-tap
         // reachable instead of requiring the (undiscoverable) menubar
         // right-click. Pet stays accessible via the sprite tap on the left.
@@ -60,10 +60,13 @@ struct StatusRail: View {
         .help(showingGlossary ? "Hide glossary" : "What do these badges mean?")
         .accessibilityLabel(showingGlossary ? "Hide glossary" : "Show badge glossary")
       }
-      // Horizontal padding 24pt (was 20) keeps the rail clear of the shell's
-      // corner curve while the smaller hit slots keep the top band quiet.
+      // Keep the live controls inside the shortened hardware pocket so the
+      // rail does not visually cut through the corner screws.
       .padding(.horizontal, Dial.Layout.StatusRail.horizontalPadding)
       .padding(.vertical, Dial.Layout.StatusRail.verticalPadding)
+      .frame(
+        width: Dial.Layout.StatusRail.contentWidth,
+        height: Dial.Layout.StatusRail.railHeight)
     }
     // No background — status bar floats directly on the device body.
     // Earlier we painted a surface→ground gradient here, but with the
@@ -121,7 +124,9 @@ struct StatusRail: View {
       .offset(y: metrics.yOffset)
       .foregroundStyle(theme.textMuted)
       .frame(width: Dial.Layout.StatusRail.hitSize, height: Dial.Layout.StatusRail.hitSize)
-      .contentShape(Rectangle())
+      .dialHitSlop(
+        horizontal: max(0, (44 - Dial.Layout.StatusRail.hitSize) / 2),
+        vertical: max(0, (44 - Dial.Layout.StatusRail.hitSize) / 2))
   }
 
   private func statusIconMetrics(for name: String) -> (size: CGFloat, yOffset: CGFloat) {

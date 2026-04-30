@@ -242,11 +242,17 @@ final class StatusBarController {
   private func startDismissMonitors() {
     // Global: any click outside our app dismisses the panel. NSPopover
     // got this for free via `.transient`; with NSPanel we wire it up
-    // manually.
+    // manually. Non-activating panels can still surface panel clicks to
+    // global monitors, so ignore points that are inside Dial's own frame.
     globalClickMonitor = NSEvent.addGlobalMonitorForEvents(
       matching: [.leftMouseDown, .rightMouseDown]
     ) { [weak self] _ in
-      self?.hidePanel()
+      guard let self else { return }
+      let point = NSEvent.mouseLocation
+      if self.screenPointIsInsidePanel(point) || self.screenPointIsOnStatusItem(point) {
+        return
+      }
+      self.hidePanel()
     }
 
     // Local: clicks inside our app but outside the panel dismiss it.
@@ -300,12 +306,20 @@ final class StatusBarController {
   /// item button's screen-space frame. Used to skip dismiss-on-click for
   /// status item clicks (those go through `handleClick` instead).
   private func eventIsOnStatusItem(_ event: NSEvent) -> Bool {
+    screenPointIsOnStatusItem(NSEvent.mouseLocation)
+  }
+
+  private func screenPointIsOnStatusItem(_ point: NSPoint) -> Bool {
     guard
       let button = item.button,
       let buttonWindow = button.window
     else { return false }
     let frame = buttonWindow.convertToScreen(button.convert(button.bounds, to: nil))
-    return frame.contains(NSEvent.mouseLocation)
+    return frame.contains(point)
+  }
+
+  private func screenPointIsInsidePanel(_ point: NSPoint) -> Bool {
+    panel.isVisible && panel.frame.contains(point)
   }
 
   /// Whether the event's location falls inside the visible device area.

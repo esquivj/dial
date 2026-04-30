@@ -3,15 +3,40 @@ import SwiftUI
 extension Dial {
   enum Layout {
     enum Dropdown {
-      static let width: CGFloat = 360
-      static let height: CGFloat = 360
-      static let cornerRadius: CGFloat = Dial.Radius.device
-      static let shellSpacing: CGFloat = 4
+      static let width: CGFloat = 440
+      static let height: CGFloat = 440
+      static let contentWidth: CGFloat = 410
+      static let contentHeight: CGFloat = 410
+      static let cornerRadius: CGFloat = 36
       static let panelHorizontalPadding: CGFloat = 10
+      static let hudScreenHorizontalPadding: CGFloat = 14
       static let outerTopPadding: CGFloat = 8
-      static let outerBottomPadding: CGFloat = 10
-      static let hudContentTopPadding: CGFloat = 4
-      static let hudContentBottomPadding: CGFloat = 4
+      static let hudTopChromeHeight: CGFloat = 37
+      static let hudRailScreenGap: CGFloat = 8
+      static let hudScreenHeightWithTransport: CGFloat = 246
+      static let hudScreenHeightWithoutTransport: CGFloat = 348
+      static let hudScreenTransportGap: CGFloat = 12
+      static let hudTransportHeight: CGFloat = 74
+      static let hudRailContentYOffset: CGFloat = 6
+      static let hudBottomPaddingWithTransport: CGFloat = 17
+      static let hudBottomPaddingWithoutTransport: CGFloat = 9
+      static let fullScreenVerticalPadding: CGFloat = 9
+      static let hudContentTopPadding: CGFloat = 24
+      static let hudContentBottomPadding: CGFloat = 0
+      static let shellSpacing: CGFloat = hudRailScreenGap
+      static let outerBottomPadding: CGFloat = hudBottomPaddingWithTransport
+    }
+
+    enum Setup {
+      static let railTopPadding: CGFloat = 8
+      static let contentTopPadding: CGFloat = 14
+      static let contentBottomPadding: CGFloat = 8
+      static let wordmarkTextGap: CGFloat = 8
+      static let textPreviewGap: CGFloat = 10
+      static let previewCTAGap: CGFloat = 18
+      static let ctaFooterGap: CGFloat = 14
+      static let previewWidth: CGFloat = 188
+      static let previewHeight: CGFloat = 98
     }
 
     enum Header {
@@ -23,12 +48,14 @@ extension Dial {
     }
 
     enum StatusRail {
-      static let spacing: CGFloat = 8
-      static let horizontalPadding: CGFloat = 24
+      static let contentWidth: CGFloat = 340
+      static let railHeight: CGFloat = 34
+      static let spacing: CGFloat = 6
+      static let horizontalPadding: CGFloat = 16
       static let verticalPadding: CGFloat = 1
       static let ledSize: CGFloat = 5
       static let iconSize: CGFloat = 12
-      static let hitSize: CGFloat = 30
+      static let hitSize: CGFloat = 27
     }
 
     enum Hero {
@@ -74,7 +101,9 @@ extension Dial {
 
     enum Transport {
       static let stackSpacing: CGFloat = 6
-      static let padding = EdgeInsets(top: 7, leading: 11, bottom: 8, trailing: 11)
+      static let padding = EdgeInsets(top: 16, leading: 11, bottom: 0, trailing: 11)
+      static let scrubberYOffset: CGFloat = 11
+      static let buttonRowYOffset: CGFloat = 7
       static let panelHorizontalPadding: CGFloat = 10
       static let edgeButtonInset: CGFloat = 38
       static let clusterSpacing: CGFloat = 14

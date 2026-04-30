@@ -17,11 +17,11 @@ struct DialApp: App {
           }
         )
       } else {
-        Text("Dial — initializing…")
-          .padding(40)
+        ProgressView("Starting Dial…")
+          .frame(width: 700, height: 540)
       }
     }
-    .defaultSize(width: 640, height: 500)
+    .defaultSize(width: 700, height: 540)
     .windowResizability(.contentSize)
 
     // History and Stats are opened programmatically via WindowsManager

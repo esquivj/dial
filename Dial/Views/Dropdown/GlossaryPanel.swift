@@ -11,12 +11,12 @@ struct GlossaryPanel: View {
         section("BADGES") {
           glossaryRow(
             kind: .firstListen,
-            color: theme.accentAlt,
+            color: theme.memoryAccent,
             label: "FIRST LISTEN",
             body: "The first time this track enters your history.")
           glossaryRow(
             kind: .newArtist,
-            color: theme.accentAlt,
+            color: theme.memoryAccent,
             label: "NEW ARTIST",
             body: "The first track from an artist Dial has never seen in your history.")
           glossaryRow(
@@ -31,30 +31,30 @@ struct GlossaryPanel: View {
             body: "A rare track from an artist you already play a lot.")
           glossaryRow(
             kind: .onStreak,
-            color: theme.accentAlt,
+            color: theme.memoryAccent,
             label: "ON STREAK",
             body: "10+ plays in 30 days AND ranked top-5 in the last 7 days. The track is in heavy rotation.")
           glossaryRow(
             kind: .albumMode,
-            color: theme.accentAlt,
+            color: theme.memoryAccent,
             label: "ALBUM MODE",
             body: "Three or more consecutive tracks from the same album.")
           glossaryRow(
             kind: .repeatTrack,
-            color: theme.accentAlt,
+            color: theme.memoryAccent,
             label: "REPEAT",
             body: "The same track three or more times in a row.")
           glossaryRow(
             kind: .play100,
-            color: Dial.Palette.textPrimary,
+            color: theme.textPrimary,
             label: "MILESTONES",
             body: "10th, 50th, 100th plays and listening anniversaries.")
         }
 
         section("PET REACTIONS") {
-          Text("The pet mirrors the current track context: new music, rediscoveries, XP from counted plays, level-ups, pauses, dormancy, and beat sync.")
+          Text("The pet mirrors listening context: new music, rediscoveries, XP growth, level-ups, quiet sessions, beat sync, and rare trick cameos after real badge moments.")
             .font(Dial.Typography.sansCaption)
-            .foregroundStyle(Dial.Palette.textPrimary.opacity(0.85))
+            .foregroundStyle(theme.textPrimary.opacity(0.85))
             .fixedSize(horizontal: false, vertical: true)
         }
 
@@ -68,9 +68,9 @@ struct GlossaryPanel: View {
         }
 
         section("XP") {
-          Text("**1 XP** per minute of listening, **+50** for a new artist, **+25** for a new album. A 3+ day live streak applies a 1.25× multiplier; longer streaks scale up to 2× max.")
+          Text("Every counted play earns at least **1 XP**, then rounds by listening time. New artists add **+50**, new albums add **+25**. A 3+ day live streak applies a 1.25× multiplier; longer streaks scale up to 2× max.")
             .font(Dial.Typography.sansCaption)
-            .foregroundStyle(Dial.Palette.textPrimary.opacity(0.85))
+            .foregroundStyle(theme.textPrimary.opacity(0.85))
             .fixedSize(horizontal: false, vertical: true)
         }
       }
@@ -93,7 +93,7 @@ struct GlossaryPanel: View {
       glossaryChip(kind: kind, color: color, label: label)
       Text(body)
         .font(Dial.Typography.sansCaption)
-        .foregroundStyle(Dial.Palette.textMuted)
+        .foregroundStyle(theme.textMuted)
         .fixedSize(horizontal: false, vertical: true)
         .padding(.leading, 2)
     }
@@ -117,11 +117,11 @@ struct GlossaryPanel: View {
     HStack {
       Text(name)
         .font(Dial.Typography.sansBody)
-        .foregroundStyle(Dial.Palette.textPrimary)
+        .foregroundStyle(theme.textPrimary)
       Spacer()
       Text(xp)
         .font(Dial.Typography.monoSmall)
-        .foregroundStyle(Dial.Palette.textMuted)
+        .foregroundStyle(theme.textMuted)
     }
   }
 }

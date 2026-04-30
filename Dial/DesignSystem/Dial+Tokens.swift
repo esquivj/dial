@@ -11,7 +11,7 @@ enum DialThemeID: String, CaseIterable, Identifiable {
 
   var label: String {
     switch self {
-    case .classic: "Classic"
+    case .classic: "Smoke Gel"
     case .slime:   "Slime"
     case .aqua:    "Aqua"
     case .ember:   "Magenta"
@@ -34,20 +34,22 @@ struct DialTheme {
   let buttonChrome: Color
   let buttonGlow: Color
 
+  /// Smoke Gel is the neutral hardware skin: black plastic, graphite,
+  /// white/silver signal, and chrome. Aqua owns the blue lane.
   static let classic = DialTheme(
     id: .classic,
-    ground: Dial.Palette.ground,
-    surface: Dial.Palette.surface,
-    subtle: Dial.Palette.subtle,
-    hairline: Dial.Palette.hairline,
-    accent: Dial.Palette.accent,
-    accentAlt: Dial.Palette.accentAlt,
-    textPrimary: Dial.Palette.textPrimary,
-    textMuted: Dial.Palette.textMuted,
-    lcd: Dial.Palette.lcd,
-    buttonRubber: Color(red: 0x19/255, green: 0x1E/255, blue: 0x24/255),
-    buttonChrome: Color(red: 0xB8/255, green: 0xC0/255, blue: 0xC8/255),
-    buttonGlow: Dial.Palette.accent)
+    ground: Color(red: 0x06/255, green: 0x06/255, blue: 0x06/255),
+    surface: Color(red: 0x16/255, green: 0x16/255, blue: 0x16/255),
+    subtle: Color(red: 0x0D/255, green: 0x0D/255, blue: 0x0D/255),
+    hairline: Color(red: 0x43/255, green: 0x43/255, blue: 0x43/255),
+    accent: Color(red: 0xF2/255, green: 0xF2/255, blue: 0xEE/255),
+    accentAlt: Color(red: 0xB8/255, green: 0xB8/255, blue: 0xB2/255),
+    textPrimary: Color(red: 0xEF/255, green: 0xEF/255, blue: 0xEC/255),
+    textMuted: Color(red: 0xA4/255, green: 0xA4/255, blue: 0xA0/255),
+    lcd: Color(red: 0xB3/255, green: 0xB3/255, blue: 0xA8/255),
+    buttonRubber: Color(red: 0x12/255, green: 0x12/255, blue: 0x12/255),
+    buttonChrome: Color(red: 0xD5/255, green: 0xD5/255, blue: 0xD0/255),
+    buttonGlow: Color(red: 0xF2/255, green: 0xF2/255, blue: 0xEF/255))
 
   static let slime = DialTheme(
     id: .slime,
@@ -104,6 +106,16 @@ struct DialTheme {
   }
 }
 
+extension DialTheme {
+  /// Theme skin color for the current cartridge/readout energy.
+  var soundAccent: Color { accent }
+
+  /// Fixed memory/discovery color. This must not shift with genre skins:
+  /// liked, first-listen, streak, repeat, and other personal-memory moments
+  /// should stay hot pink in every cartridge.
+  var memoryAccent: Color { Dial.Palette.accentAlt }
+}
+
 private struct DialThemeKey: EnvironmentKey {
   static let defaultValue = DialTheme.classic
 }
@@ -115,7 +127,8 @@ extension EnvironmentValues {
   }
 }
 
-/// Crystal Y2K palette — dark mode, cyan-LCD-on-black aesthetic.
+/// Smoke-gel Y2K palette — dark translucent plastic, cyan signal,
+/// hot-pink memory, and LCD-green pet world.
 enum Dial {
   enum Radius {
     /// Tiny individual pixels / meter cells. Kept small so the interface
@@ -153,9 +166,9 @@ enum Dial {
     /// "rectangle filled with neutral dark." Mint glows bleed into a
     /// background that's already slightly mint-leaning, which reads as
     /// material continuity rather than "glow stuck on dark paint."
-    static let ground   = Color(red: 0x07/255, green: 0x0E/255, blue: 0x14/255)
-    /// Slightly elevated surface for cards, inset panels.
-    static let surface  = Color(red: 0x12/255, green: 0x16/255, blue: 0x1B/255)
+    static let ground   = Color(red: 0x05/255, green: 0x09/255, blue: 0x0F/255)
+    /// Slightly elevated smoke-gel surface for cards, inset panels.
+    static let surface  = Color(red: 0x14/255, green: 0x1A/255, blue: 0x21/255)
     /// Cyan-blue — primary accent. LCD readouts, numerals, status dot.
     /// #1FB6FF (was mint #00FFA3). Pivot to the Digivice-style cyan
     /// palette: cooler, more "powered LCD on a translucent toy device"
@@ -169,13 +182,13 @@ enum Dial {
     /// Used for ON STREAK / firstListen and other secondary moments.
     static let accentAlt = Color(red: 0xFF/255, green: 0x4D/255, blue: 0xD8/255)
     /// Cool off-white — primary text on dark.
-    static let textPrimary = Color(red: 0xE8/255, green: 0xEB/255, blue: 0xED/255)
+    static let textPrimary = Color(red: 0xEC/255, green: 0xEF/255, blue: 0xF2/255)
     /// Cool gray — secondary text, labels. Brightened from #6B7178 to
-    /// #898F98 to clear WCAG-AA 4.5:1 contrast against `ground` for
+    /// #9AA1AB to clear WCAG-AA 4.5:1 contrast against `ground` for
     /// small text (the previous value was 3.93:1, technically failing).
     /// Still reads as "muted" against the cyan accent; the hue stays
     /// cool-neutral so it doesn't compete with the cyan/magenta.
-    static let textMuted = Color(red: 0x89/255, green: 0x8F/255, blue: 0x98/255)
+    static let textMuted = Color(red: 0x9A/255, green: 0xA1/255, blue: 0xAB/255)
 
     // Legacy aliases for old call sites and historical tests. New code
     // should use semantic names above.
@@ -185,11 +198,11 @@ enum Dial {
     static let muted = textMuted
 
     /// Hairline divider — subtle dark line on the dark ground.
-    static let hairline = Color(red: 0x25/255, green: 0x2A/255, blue: 0x30/255)
+    static let hairline = Color(red: 0x32/255, green: 0x3B/255, blue: 0x45/255)
 
     /// Slightly tinted card surface for inner panels (Stats pet panel, etc.).
     /// Sits between ground and surface.
-    static let subtle   = Color(red: 0x0F/255, green: 0x13/255, blue: 0x16/255)
+    static let subtle   = Color(red: 0x0B/255, green: 0x11/255, blue: 0x18/255)
 
     /// Muted green-gray — the "powered-on Tamagotchi LCD" color. Used as
     /// the inside-fill of the pet's LCD bezel in TrackHero / PetView so

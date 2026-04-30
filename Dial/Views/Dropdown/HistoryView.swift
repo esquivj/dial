@@ -2,28 +2,46 @@
 import SwiftUI
 import GRDB
 
+enum HistoryViewPlacement {
+  case legacyPanel
+  case hardwareShell
+}
+
 /// Inline History panel — replaces the dropdown body when the user taps
 /// HISTORY in the controls bar. Lives in the same NSPopover, sized to the
 /// dropdown's frame.
 struct HistoryView: View {
+  private enum HardwareLayout {
+    static let railLeadingOffset: CGFloat = 8
+    static let railTrailingOffset: CGFloat = -16
+    static let plateTopNudge: CGFloat = 17
+    static let plateTopPadding = Dial.Layout.Dropdown.hudRailScreenGap + plateTopNudge
+    static let plateHeight = Dial.Layout.Dropdown.hudScreenHeightWithoutTransport - plateTopNudge
+    static let plateHorizontalPadding: CGFloat = 18
+    static let plateFillOpacity: Double = 0.96
+    static let plateStrokeOpacity: Double = 0.12
+  }
+
   let dbq: DatabaseQueue
   let onBack: () -> Void
+  var placement: HistoryViewPlacement = .legacyPanel
   @State private var rows: [StatsQueries.HistoryRow] = []
   @State private var totalPlays: Int = 0
   @State private var loaded = false
+  @State private var reloadLoader = CoalescedSnapshotLoader<HistoryViewSnapshot>("history.snapshot.load")
   @Environment(\.dialTheme) private var theme
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 0) {
-      header
-      Rectangle().fill(Dial.Palette.hairline).frame(height: 1)
-      if rows.isEmpty && loaded {
-        empty
-      } else {
-        list
+    Group {
+      switch placement {
+      case .legacyPanel:
+        legacyPanelBody
+      case .hardwareShell:
+        hardwareShellBody
       }
     }
     .task(id: ObjectIdentifier(dbq)) {
+      reload(totalPlays: nil)
       let observation = StatsQueries(dbq: dbq).observePlaysChanges()
       do {
         // The observation's value is `SELECT COUNT(*) FROM plays` — capture
@@ -31,13 +49,45 @@ struct HistoryView: View {
         // query: the observation has to run the count anyway to know when
         // to fire, so we just keep the result.
         for try await total in observation.values(in: dbq) {
-          totalPlays = total
-          reload()
+          reload(totalPlays: total)
         }
       } catch {
-        reload()
+        reload(totalPlays: nil)
       }
     }
+    .onDisappear {
+      reloadLoader.cancel()
+    }
+  }
+
+  private var legacyPanelBody: some View {
+    VStack(alignment: .leading, spacing: 0) {
+      header
+      Rectangle().fill(theme.hairline.opacity(0.92)).frame(height: 1)
+      if rows.isEmpty && loaded {
+        empty
+      } else {
+        list
+      }
+    }
+  }
+
+  private var hardwareShellBody: some View {
+    VStack(spacing: 0) {
+      railHeader
+        .frame(width: Dial.Layout.StatusRail.contentWidth, height: Dial.Layout.StatusRail.railHeight)
+        .offset(y: Dial.Layout.Dropdown.hudRailContentYOffset)
+        .frame(maxWidth: .infinity)
+        .frame(height: Dial.Layout.Dropdown.hudTopChromeHeight)
+
+      historyPlate
+        .frame(height: HardwareLayout.plateHeight)
+        .padding(.top, HardwareLayout.plateTopPadding)
+        .padding(.horizontal, HardwareLayout.plateHorizontalPadding)
+    }
+    .padding(.top, Dial.Layout.Dropdown.outerTopPadding)
+    .padding(.bottom, Dial.Layout.Dropdown.hudBottomPaddingWithoutTransport)
+    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
   }
 
   private var header: some View {
@@ -55,7 +105,7 @@ struct HistoryView: View {
       Text(headerCount)
         .font(Dial.Typography.monoLabel)
         .tracking(1.4)
-        .foregroundStyle(Dial.Palette.textMuted)
+        .foregroundStyle(theme.textMuted.opacity(0.74))
         .contentTransition(.numericText())
     }
     .padding(EdgeInsets(
@@ -63,6 +113,31 @@ struct HistoryView: View {
       leading: Dial.Layout.Header.leadingPadding,
       bottom: Dial.Layout.Header.bottomPadding,
       trailing: Dial.Layout.Header.trailingPadding))
+  }
+
+  private var railHeader: some View {
+    HStack(spacing: 0) {
+      HStack(spacing: Dial.Layout.Header.spacing) {
+        BackButton(action: onBack)
+        Text("HISTORY")
+          .font(Dial.Typography.monoLabel)
+          .tracking(1.6)
+          .foregroundStyle(theme.accent)
+      }
+      .offset(x: HardwareLayout.railLeadingOffset)
+
+      Spacer(minLength: 8)
+
+      Text(headerCount)
+        .font(Dial.Typography.monoLabel)
+        .tracking(1.4)
+        .foregroundStyle(theme.textMuted.opacity(0.74))
+        .lineLimit(1)
+        .minimumScaleFactor(0.72)
+        .contentTransition(.numericText())
+        .offset(x: HardwareLayout.railTrailingOffset)
+    }
+    .padding(.horizontal, 2)
   }
 
   private var headerCount: String {
@@ -79,10 +154,10 @@ struct HistoryView: View {
       Spacer()
       Text("No plays yet")
         .font(Dial.Typography.sansTitle)
-        .foregroundStyle(Dial.Palette.textPrimary)
+        .foregroundStyle(theme.textPrimary)
       Text("Play a track in Spotify and it'll show up here.")
         .font(Dial.Typography.sansCaption)
-        .foregroundStyle(Dial.Palette.textMuted)
+        .foregroundStyle(theme.textMuted)
         .multilineTextAlignment(.center)
         .padding(.horizontal, 24)
       Spacer()
@@ -90,33 +165,71 @@ struct HistoryView: View {
     .frame(maxWidth: .infinity)
   }
 
+  private var historyPlate: some View {
+    Group {
+      if rows.isEmpty && loaded {
+        empty
+      } else {
+        list
+      }
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    .modifier(RecessedScreen(depth: 0.42, height: 18))
+    .lcdPanel(
+      fill: theme.ground.opacity(HardwareLayout.plateFillOpacity),
+      strokeOpacity: HardwareLayout.plateStrokeOpacity)
+  }
+
   private var list: some View {
-    ScrollView {
+    ScrollView(.vertical, showsIndicators: true) {
       LazyVStack(spacing: 0) {
         ForEach(rows) { row in
           HistoryRowView(row: row)
-          Rectangle().fill(Dial.Palette.hairline.opacity(0.6)).frame(height: 1)
+          Rectangle().fill(theme.hairline.opacity(0.54)).frame(height: 1)
         }
       }
+      .padding(.top, placement == .hardwareShell ? 8 : 0)
+      .padding(.bottom, 10)
     }
   }
 
-  private func reload() {
-    let q = StatsQueries(dbq: dbq)
-    rows = (try? q.recentPlays(limit: 200)) ?? []
-    loaded = true
+  private func reload(totalPlays: Int?) {
+    reloadLoader.schedule {
+      await HistoryViewSnapshot.load(dbq: dbq, totalPlays: totalPlays)
+    } apply: { snapshot in
+      rows = snapshot.rows
+      self.totalPlays = snapshot.totalPlays
+      loaded = true
+    }
+  }
+}
+
+private struct HistoryViewSnapshot {
+  let rows: [StatsQueries.HistoryRow]
+  let totalPlays: Int
+
+  static func load(dbq: DatabaseQueue, totalPlays: Int?) async -> HistoryViewSnapshot {
+    await withCheckedContinuation { continuation in
+      DispatchQueue.global(qos: .userInitiated).async {
+        let rows = (try? StatsQueries(dbq: dbq).recentPlays(limit: 200)) ?? []
+        continuation.resume(returning: HistoryViewSnapshot(
+          rows: rows,
+          totalPlays: totalPlays ?? rows.count))
+      }
+    }
   }
 }
 
 private struct HistoryRowView: View {
   let row: StatsQueries.HistoryRow
+  @Environment(\.dialTheme) private var theme
 
   var body: some View {
     HStack(spacing: 10) {
       AsyncImage(url: row.albumArtUrl.flatMap(URL.init(string:))) { img in
         img.resizable()
       } placeholder: {
-        Rectangle().fill(Dial.Palette.surface)
+        Rectangle().fill(theme.surface)
       }
       .frame(width: 28, height: 28)
       .clipShape(RoundedRectangle(cornerRadius: Dial.Radius.printed))
@@ -128,11 +241,11 @@ private struct HistoryRowView: View {
       VStack(alignment: .leading, spacing: 1) {
         Text(displayName)
           .font(Dial.Typography.sansCaption)
-          .foregroundStyle(Dial.Palette.textPrimary)
+          .foregroundStyle(theme.textPrimary)
           .lineLimit(1)
         Text(displaySubtitle)
           .font(Dial.Typography.monoSmall)
-          .foregroundStyle(Dial.Palette.textMuted)
+          .foregroundStyle(theme.textMuted.opacity(0.82))
           .lineLimit(1)
       }
 
@@ -141,7 +254,7 @@ private struct HistoryRowView: View {
       Text(relative(row.playedAt))
         .font(Dial.Typography.monoTiny)
         .tracking(0.6)
-        .foregroundStyle(Dial.Palette.textMuted)
+        .foregroundStyle(theme.textMuted.opacity(0.72))
     }
     .padding(EdgeInsets(top: 7, leading: 14, bottom: 7, trailing: 14))
   }

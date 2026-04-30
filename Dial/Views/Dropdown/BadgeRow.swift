@@ -70,9 +70,9 @@ struct BadgeRow: View {
         // Magenta (not cyan) — this is the celebration moment of the row.
         // Cyan is the steady-state data tone; magenta is reserved for
         // "something noteworthy is happening with this track."
-        return (theme.accentAlt, "FIRST LISTEN")
+        return (theme.memoryAccent, "FIRST LISTEN")
       case .newArtist:
-        return (theme.accentAlt, "NEW ARTIST")
+        return (theme.memoryAccent, "NEW ARTIST")
       case .rediscovered:
         // Mockup section 5 BADGES shows ▲ REDISCOVERED in mint, not muted.
         // Earlier code kept it muted to imply "quiet rediscovery" but the
@@ -83,11 +83,11 @@ struct BadgeRow: View {
       case .deepCut:
         return (theme.accent, "DEEP CUT")
       case .onStreak:
-        return (theme.accentAlt, "ON STREAK")
+        return (theme.memoryAccent, "ON STREAK")
       case .repeatTrack:
-        return (theme.accentAlt, "REPEAT")
+        return (theme.memoryAccent, "REPEAT")
       case .albumMode:
-        return (theme.accentAlt, "ALBUM MODE")
+        return (theme.memoryAccent, "ALBUM MODE")
       case .play10:
         return (Dial.Palette.textPrimary, "10TH PLAY")
       case .play50:

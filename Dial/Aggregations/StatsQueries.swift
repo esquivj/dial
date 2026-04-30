@@ -2,6 +2,39 @@
 import GRDB
 import Foundation
 
+enum SoundThemeSource: String, Equatable {
+  case artistTags
+  case spotifyGenres
+  case trackMetadata
+  case recentSession
+  case held
+
+  var label: String {
+    switch self {
+    case .artistTags:    "Artist tags"
+    case .spotifyGenres: "Spotify genres"
+    case .trackMetadata: "Track text"
+    case .recentSession: "Recent session"
+    case .held:          "Holding"
+    }
+  }
+}
+
+struct SoundThemeDecision: Equatable {
+  let theme: DialThemeID
+  let confidence: Double
+  let source: SoundThemeSource
+  let reason: String
+
+  static func holding(theme: DialThemeID) -> SoundThemeDecision {
+    SoundThemeDecision(
+      theme: theme,
+      confidence: 0,
+      source: .held,
+      reason: "Keeping the previous cartridge until Dial sees a confident sound signal.")
+  }
+}
+
 /// Queries that power the History and Stats windows. All read-only.
 struct StatsQueries {
   let dbq: DatabaseQueue
@@ -107,7 +140,23 @@ struct StatsQueries {
     let playCount: Int
     let artistCount: Int
     let detailTags: [String]
+    let theme: DialThemeID?
     var id: String { genre }
+  }
+
+  struct WeeklyMemorySnapshot: Equatable {
+    let weekStart: Int64
+    let weekEnd: Int64
+    let trait: String
+    let memento: String
+    let recapLine: String
+    let roomObjectName: String
+    let dominantGenre: String?
+    let theme: DialThemeID
+    let playCount: Int
+    let listeningMs: Int64
+    let uniqueArtists: Int
+    let newArtists: Int
   }
 
   /// Top artist-derived sound signals for the selected range. Dial prefers
@@ -172,11 +221,14 @@ struct StatsQueries {
         ORDER BY plays DESC, artists DESC, genre ASC
         LIMIT ?
       """, arguments: StatementArguments(arguments)).map { row in
-        GenreRow(
-          genre: row["genre"],
+        let genre: String = row["genre"]
+        let detailTags = Self.splitTags(row["detail_tags"])
+        return GenreRow(
+          genre: genre,
           playCount: row["plays"],
           artistCount: row["artists"],
-          detailTags: Self.splitTags(row["detail_tags"]))
+          detailTags: detailTags,
+          theme: SoundThemeResolver.theme(forRawTags: detailTags, fallbackFamily: genre))
       }
     }
   }
@@ -190,306 +242,80 @@ struct StatsQueries {
   }
 
   func soundTheme(forArtistUris artistUris: [String]) throws -> DialThemeID {
-    try resolvedSoundTheme(forArtistUris: artistUris, allowRecentFallback: true) ?? .classic
+    try soundThemeDecision(forArtistUris: artistUris, allowRecentFallback: true)?.theme ?? .classic
   }
 
   func directSoundTheme(forArtistUris artistUris: [String]) throws -> DialThemeID? {
-    try resolvedSoundTheme(forArtistUris: artistUris, allowRecentFallback: false)
+    try soundThemeDecision(forArtistUris: artistUris, allowRecentFallback: false)?.theme
   }
 
-  private func resolvedSoundTheme(forArtistUris artistUris: [String], allowRecentFallback: Bool) throws -> DialThemeID? {
-    var seenArtistUris = Set<String>()
-    let artistUris = artistUris.filter { uri in
-      guard !uri.isEmpty, !seenArtistUris.contains(uri) else { return false }
-      seenArtistUris.insert(uri)
-      return true
-    }
-    guard !artistUris.isEmpty else { return nil }
-
-    return try dbq.read { db in
-      let placeholders = Array(repeating: "?", count: artistUris.count).joined(separator: ",")
-      let rows = try Row.fetchAll(db, sql: """
-        SELECT nt.entity_uri AS artist_uri,
-               LOWER(TRIM(nt.raw_tag)) AS raw_tag,
-               MAX(nt.score) AS score,
-               MIN(rt.rank) AS rank
-        FROM normalized_tags nt
-        LEFT JOIN raw_tags rt
-          ON rt.entity_uri = nt.entity_uri
-         AND rt.entity_type = nt.entity_type
-         AND rt.provider = nt.provider
-         AND LOWER(TRIM(rt.raw_tag)) = LOWER(TRIM(nt.raw_tag))
-        WHERE nt.entity_uri IN (\(placeholders))
-          AND nt.entity_type = 'artist'
-          AND nt.raw_tag IS NOT NULL
-          AND TRIM(nt.raw_tag) <> ''
-        GROUP BY nt.entity_uri, LOWER(TRIM(nt.raw_tag))
-        ORDER BY score DESC, raw_tag ASC
-      """, arguments: StatementArguments(artistUris))
-
-      let signals: [ThemeSignal] = rows.compactMap { row in
-        let artistUri: String = row["artist_uri"]
-        let artistIndex = artistUris.firstIndex(of: artistUri) ?? 0
-        let rawTag: String = row["raw_tag"]
-        return Self.themeSignal(
-          rawTag: rawTag,
-          score: row["score"] ?? 0,
-          rank: row["rank"],
-          artistIndex: artistIndex)
-      }
-      if let theme = Self.theme(forSignals: signals) {
-        return theme
-      }
-
-      let genreRows = try Row.fetchAll(db, sql: """
-        SELECT genres_json
-        FROM artists
-        WHERE uri IN (\(placeholders))
-          AND genres_json IS NOT NULL
-          AND json_valid(genres_json) = 1
-      """, arguments: StatementArguments(artistUris))
-      let spotifyFamilies = genreRows.flatMap { row in
-        Self.spotifyFamilies(from: row["genres_json"])
-      }
-      if let theme = Self.theme(forFamilies: spotifyFamilies.map { ($0, 1) }) {
-        return theme
-      }
-
-      if allowRecentFallback {
-        return try Self.recentSessionTheme(db: db, excludingArtistUris: artistUris)
-      }
-      return nil
-    }
+  func soundThemeDecision(
+    forArtistUris artistUris: [String],
+    trackName: String? = nil,
+    artistName: String? = nil,
+    albumName: String? = nil,
+    allowRecentFallback: Bool = true
+  ) throws -> SoundThemeDecision? {
+    try SoundThemeResolver(dbq: dbq).decision(
+      forArtistUris: artistUris,
+      trackName: trackName,
+      artistName: artistName,
+      albumName: albumName,
+      allowRecentFallback: allowRecentFallback)
   }
 
-  private static func theme(forFamilies families: [(String, Int)]) -> DialThemeID? {
-    let scores = themeScores(forFamilies: families)
-    return scores
-      .sorted { lhs, rhs in
-        if lhs.value != rhs.value { return lhs.value > rhs.value }
-        return themePriority(lhs.key) < themePriority(rhs.key)
-      }
-      .first?
-      .key
+  static func soundThemeHint(trackName: String, artistName: String, albumName: String) -> DialThemeID? {
+    SoundThemeResolver.metadataDecision(
+      trackName: trackName,
+      artistName: artistName,
+      albumName: albumName)?.theme
   }
 
-  private static func themeScores(forFamilies families: [(String, Int)]) -> [DialThemeID: Int] {
-    var scores: [DialThemeID: Int] = [:]
-    for (family, score) in families {
-      guard let theme = theme(forFamily: family) else { continue }
-      scores[theme, default: 0] += max(1, score)
-    }
-    return scores
-  }
+  // MARK: - Weekly Memory
 
-  private static func recentSessionTheme(db: Database, excludingArtistUris artistUris: [String]) throws -> DialThemeID? {
-    let cutoff = Int64(Date().timeIntervalSince1970) - 3 * 3_600
-    let excluded = Set(artistUris.filter { !$0.isEmpty })
-    let exclusion = excluded.isEmpty ? "" : "AND ra.artist_uri NOT IN (\(Array(repeating: "?", count: excluded.count).joined(separator: ",")))"
-    var arguments: [DatabaseValueConvertible] = [cutoff]
-    arguments.append(contentsOf: Array(excluded).sorted())
+  /// A lightweight "Wrapped, but alive" read: one trait, one memento, one
+  /// room object, and one recap line for the current listening week.
+  func weeklyMemory(now: Int64 = Int64(Date().timeIntervalSince1970)) throws -> WeeklyMemorySnapshot? {
+    let bounds = Self.weekBounds(containing: now)
+    let totals = try totals(since: bounds.start)
+    guard totals.plays > 0 else { return nil }
 
-    let rows = try Row.fetchAll(db, sql: """
-      WITH recent_plays AS (
-        SELECT p.id AS play_id,
-               p.played_at,
-               t.artists_json
-        FROM plays p
-        JOIN tracks t ON t.uri = p.track_uri
-        WHERE p.played_at >= ?
-          AND t.artists_json IS NOT NULL
-          AND json_valid(t.artists_json) = 1
-        ORDER BY p.played_at DESC
-        LIMIT 30
-      ),
-      recent_artists AS (
-        SELECT rp.play_id,
-               json_extract(j.value, '$.uri') AS artist_uri
-        FROM recent_plays rp
-        CROSS JOIN json_each(rp.artists_json) j
-        WHERE json_extract(j.value, '$.uri') LIKE 'spotify:artist:%'
-      ),
-      normalized_artist_families AS (
-        SELECT nt.entity_uri AS artist_uri,
-               LOWER(TRIM(nt.family)) AS family
-        FROM normalized_tags nt
-        WHERE nt.entity_type = 'artist'
-          AND nt.family IS NOT NULL
-          AND TRIM(nt.family) <> ''
-        GROUP BY nt.entity_uri, LOWER(TRIM(nt.family))
-      )
-      SELECT naf.family AS family,
-             COUNT(DISTINCT ra.play_id) AS plays
-      FROM recent_artists ra
-      JOIN normalized_artist_families naf ON naf.artist_uri = ra.artist_uri
-      WHERE 1 = 1
-        \(exclusion)
-      GROUP BY naf.family
-    """, arguments: StatementArguments(arguments))
+    let genres = try topGenres(limit: 3, since: bounds.start)
+    let dominantGenre = genres.first?.genre
+    let family = dominantGenre.flatMap { DialTagNormalizer.normalize($0)?.family } ?? dominantGenre
+    let lateNightPlays = try countLateNightPlays(since: bounds.start)
+    let topTrack = try topTracks(limit: 1, since: bounds.start).first
+    let topArtist = try topArtists(limit: 1, since: bounds.start).first
+    let newArtists = try countNewArtists(since: bounds.start)
 
-    let families: [(String, Int)] = rows.map { row in
-      (row["family"], row["plays"])
-    }
-    let scores = themeScores(forFamilies: families)
-    guard !scores.isEmpty else { return nil }
+    let weeklyTheme = SoundThemeResolver.theme(
+      forRawTags: genres.first?.detailTags ?? [],
+      fallbackFamily: family) ?? .classic
 
-    let ordered = scores.sorted { lhs, rhs in
-      if lhs.value != rhs.value { return lhs.value > rhs.value }
-      return themePriority(lhs.key) < themePriority(rhs.key)
-    }
-    guard let winner = ordered.first else { return nil }
-    let total = scores.values.reduce(0, +)
-    let winnerShare = Double(winner.value) / Double(max(1, total))
+    let blueprint = Self.weeklyBlueprint(
+      family: family,
+      theme: weeklyTheme,
+      plays: totals.plays,
+      listeningMs: totals.listeningMs,
+      uniqueArtists: totals.uniqueArtists,
+      lateNightPlays: lateNightPlays,
+      newArtists: newArtists,
+      topTrack: topTrack,
+      topArtist: topArtist)
 
-    guard total >= 4, winner.value >= 3, winnerShare >= 0.60 else { return nil }
-    return winner.key
-  }
-
-  private struct ThemeSignal {
-    let theme: DialThemeID
-    let score: Double
-    let rank: Int
-    let strong: Bool
-  }
-
-  private static func themeSignal(rawTag: String, score: Double, rank: Int?, artistIndex: Int) -> ThemeSignal? {
-    let tag = normalizedTagText(rawTag)
-    guard !tag.isEmpty, !ambiguousColorTags.contains(tag) else { return nil }
-
-    if containsAny(tag, strongElectronicTags) {
-      return ThemeSignal(theme: .slime, score: weightedScore(score, rank: rank, artistIndex: artistIndex, multiplier: 1.45), rank: rank ?? 999, strong: true)
-    }
-    if containsAny(tag, strongPunkTags) {
-      return ThemeSignal(theme: .ember, score: weightedScore(score, rank: rank, artistIndex: artistIndex, multiplier: 1.2), rank: rank ?? 999, strong: true)
-    }
-    guard let family = DialTagNormalizer.normalize(tag)?.family,
-          let theme = theme(forFamily: family)
-    else { return nil }
-
-    let multiplier: Double = {
-      switch theme {
-      case .slime:
-        return 1.08
-      case .ember:
-        return 1.0
-      case .aqua:
-        return 0.92
-      case .classic:
-        return 1.0
-      }
-    }()
-    return ThemeSignal(theme: theme, score: weightedScore(score, rank: rank, artistIndex: artistIndex, multiplier: multiplier), rank: rank ?? 999, strong: false)
-  }
-
-  private static func theme(forSignals signals: [ThemeSignal]) -> DialThemeID? {
-    guard !signals.isEmpty else { return nil }
-    var scores: [DialThemeID: Double] = [:]
-    var strongScores: [DialThemeID: Double] = [:]
-    var bestRank: [DialThemeID: Int] = [:]
-
-    for signal in signals {
-      scores[signal.theme, default: 0] += max(1, signal.score)
-      if signal.strong {
-        strongScores[signal.theme, default: 0] += max(1, signal.score)
-      }
-      bestRank[signal.theme] = min(bestRank[signal.theme] ?? 999, signal.rank)
-    }
-
-    let ordered = scores.sorted { lhs, rhs in
-      if abs(lhs.value - rhs.value) > 0.001 { return lhs.value > rhs.value }
-      let lhsRank = bestRank[lhs.key] ?? 999
-      let rhsRank = bestRank[rhs.key] ?? 999
-      if lhsRank != rhsRank { return lhsRank < rhsRank }
-      return themePriority(lhs.key) < themePriority(rhs.key)
-    }
-    guard let winner = ordered.first else { return nil }
-
-    if let slime = scores[.slime], slime >= 24 {
-      let rival = max(scores[.ember] ?? 0, scores[.aqua] ?? 0)
-      let slimeStrong = strongScores[.slime] ?? 0
-      // Electronic tags are often more specific than broad Last.fm labels
-      // like "latin", "alternative", or "hardcore". If slime has concrete
-      // evidence and is in the same neighborhood as the winner, keep the HUD
-      // in the electronic cartridge instead of flashing a wrong color.
-      if slimeStrong >= 24, slime >= rival * 0.55 {
-        return .slime
-      }
-    }
-
-    return winner.key
-  }
-
-  private static func weightedScore(_ score: Double, rank: Int?, artistIndex: Int, multiplier: Double) -> Double {
-    let rankWeight: Double = {
-      switch rank ?? 999 {
-      case 1: 1.25
-      case 2: 1.15
-      case 3: 1.08
-      case 4...5: 1.0
-      default: 0.9
-      }
-    }()
-    let artistWeight = artistIndex == 0 ? 1.0 : 0.78
-    return max(1, score) * rankWeight * artistWeight * multiplier
-  }
-
-  private static func normalizedTagText(_ raw: String) -> String {
-    raw
-      .trimmingCharacters(in: .whitespacesAndNewlines)
-      .lowercased()
-      .replacingOccurrences(of: "_", with: " ")
-      .replacingOccurrences(of: "-", with: " ")
-      .replacingOccurrences(of: "  ", with: " ")
-  }
-
-  private static func containsAny(_ tag: String, _ needles: [String]) -> Bool {
-    needles.contains { tag.contains($0) }
-  }
-
-  private static let ambiguousColorTags: Set<String> = [
-    "hardcore", "beatdown hardcore", "alternative", "seen live"
-  ]
-
-  private static let strongElectronicTags = [
-    "electronic", "electronica", "electro", "techno", "hard techno",
-    "industrial techno", "house", "hardstyle", "rawstyle", "gabber",
-    "hard dance", "trance", "dubstep", "drum and bass", "dnb",
-    "breakbeat", "breaks", "edm", "idm", "synthpop", "synth pop"
-  ]
-
-  private static let strongPunkTags = [
-    "hardcore punk", "post hardcore", "post-hardcore", "pop punk", "screamo"
-  ]
-
-  private static func theme(forFamily family: String) -> DialThemeID? {
-    switch family {
-    case "electronic", "ambient", "experimental", "soundtrack":
-      return .slime
-    case "indie", "pop", "acoustic", "r&b", "rock", "jazz":
-      return .aqua
-    case "latin", "corridos", "reggaeton", "rap", "punk/emo", "metal":
-      return .ember
-    default:
-      return nil
-    }
-  }
-
-  private static func themePriority(_ theme: DialThemeID) -> Int {
-    switch theme {
-    case .ember:   return 0
-    case .slime:   return 1
-    case .aqua:    return 2
-    case .classic: return 3
-    }
-  }
-
-  private static func spotifyFamilies(from genresJson: String?) -> [String] {
-    guard
-      let genresJson,
-      let data = genresJson.data(using: .utf8),
-      let genres = try? JSONDecoder().decode([String].self, from: data)
-    else { return [] }
-    return genres.compactMap { DialTagNormalizer.normalize($0)?.family }
+    return WeeklyMemorySnapshot(
+      weekStart: bounds.start,
+      weekEnd: bounds.end,
+      trait: blueprint.trait,
+      memento: blueprint.memento,
+      recapLine: blueprint.recap,
+      roomObjectName: blueprint.roomObjectName,
+      dominantGenre: dominantGenre,
+      theme: weeklyTheme,
+      playCount: totals.plays,
+      listeningMs: totals.listeningMs,
+      uniqueArtists: totals.uniqueArtists,
+      newArtists: newArtists)
   }
 
   private static func splitTags(_ value: String?) -> [String] {
@@ -500,33 +326,188 @@ struct StatsQueries {
       .filter { !$0.isEmpty }
   }
 
-  /// Top artists by play count. Filters to rows with VALID `artists_json`
-  /// (some imported rows have malformed JSON that crashes json_extract).
-  ///
-  /// **Alias note**: the column alias is `artist_uri`, not `uri`. SQLite's
-  /// GROUP BY resolves `uri` to the unambiguous `tracks.uri` column (track
-  /// URI — unique per track) instead of our extracted-artist alias, which
-  /// produced one row per track (not per artist). Symptom in the UI:
-  /// the same artist (e.g. "Junior H") appearing multiple times in
-  /// top-artists with different play counts that don't sum to the artist's
-  /// actual total. Renaming the alias avoids the collision.
+  private func countLateNightPlays(since: Int64) throws -> Int {
+    try dbq.read { db in
+      try Int.fetchOne(db, sql: """
+        SELECT COUNT(*)
+        FROM plays
+        WHERE played_at >= ?
+          AND (
+            CAST(strftime('%H', played_at, 'unixepoch', 'localtime') AS INTEGER) >= 22
+            OR CAST(strftime('%H', played_at, 'unixepoch', 'localtime') AS INTEGER) <= 4
+          )
+      """, arguments: [since]) ?? 0
+    }
+  }
+
+  private func countNewArtists(since: Int64) throws -> Int {
+    try dbq.read { db in
+      try Int.fetchOne(db, sql: """
+        WITH artist_first AS (
+          SELECT COALESCE(
+                   NULLIF(LOWER(TRIM(json_extract(t.artists_json, '$[0].name'))), ''),
+                   json_extract(t.artists_json, '$[0].uri')
+                 ) AS artist_key,
+                 MIN(p.played_at) AS first_seen
+          FROM plays p
+          JOIN tracks t ON t.uri = p.track_uri
+          WHERE t.artists_json IS NOT NULL
+            AND json_valid(t.artists_json) = 1
+          GROUP BY artist_key
+        )
+        SELECT COUNT(*)
+        FROM artist_first
+        WHERE first_seen >= ?
+      """, arguments: [since]) ?? 0
+    }
+  }
+
+  private static func weekBounds(containing epoch: Int64) -> (start: Int64, end: Int64) {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = .current
+    calendar.firstWeekday = 2
+    let date = Date(timeIntervalSince1970: TimeInterval(epoch))
+    let interval = calendar.dateInterval(of: .weekOfYear, for: date)
+    let start = interval?.start ?? calendar.startOfDay(for: date)
+    let end = interval?.end ?? calendar.date(byAdding: .day, value: 7, to: start) ?? date
+    return (Int64(start.timeIntervalSince1970), Int64(end.timeIntervalSince1970))
+  }
+
+  private static func weeklyBlueprint(
+    family: String?,
+    theme: DialThemeID,
+    plays: Int,
+    listeningMs: Int64,
+    uniqueArtists: Int,
+    lateNightPlays: Int,
+    newArtists: Int,
+    topTrack: TopRow?,
+    topArtist: TopRow?
+  ) -> (trait: String, memento: String, recap: String, roomObjectName: String) {
+    let lateShare = plays > 0 ? Double(lateNightPlays) / Double(plays) : 0
+    let artistShare = plays > 0 ? Double(topArtist?.count ?? 0) / Double(plays) : 0
+    let hours = max(1, Int((Double(listeningMs) / 3_600_000.0).rounded()))
+
+    if plays >= 6, lateShare >= 0.34 {
+      return (
+        "Nocturnal",
+        "Moonlit Tape",
+        "\(lateNightPlays) late-night plays made the room glow after dark.",
+        "desk_lamp")
+    }
+
+    if theme == .slime {
+      return (
+        "Pulsebound",
+        "Signal Cube",
+        "The week leaned into \(family ?? "electronic") pressure.",
+        "stereo")
+    }
+
+    if plays >= 8, artistShare >= 0.32 || (topTrack?.count ?? 0) >= max(5, Int((Double(plays) * 0.24).rounded())) {
+      let name = topArtist?.name ?? topTrack?.subtitle ?? "one signal"
+      return (
+        "Loyal",
+        "Repeat Charm",
+        "\(name) kept orbiting this week.",
+        "record_cube")
+    }
+
+    if newArtists >= max(4, Int((Double(max(1, uniqueArtists)) * 0.34).rounded())) {
+      return (
+        "Curious",
+        "Fresh Sticker",
+        "\(newArtists) artists entered your history this week.",
+        "plant")
+    }
+
+    switch family {
+    case "ambient", "acoustic", "r&b", "jazz":
+      return (
+        "Tender",
+        "Soft Lamp",
+        "\(hours)h of softer listening tuned the room down.",
+        "cone_floor_lamp")
+    case "metal", "punk/emo", "rap", "reggaeton", "corridos":
+      return (
+        "Charged",
+        "Blown Speaker",
+        "High-pressure tracks left a louder object behind.",
+        "speaker")
+    case "indie", "pop", "rock", "latin", "electronic", "experimental", "soundtrack":
+      return (
+        "Bright",
+        "Shelf Sticker",
+        "\(uniqueArtists) artists kept the room moving.",
+        "mcm_hifi_console")
+    default:
+      return (
+        "Steady",
+        "Listening Crate",
+        "\(plays) plays became this week's floor texture.",
+        "record_cube")
+    }
+  }
+
+  /// Top artists by play count. Collapses imported synthetic artist IDs and
+  /// later Spotify IDs by normalized display name so rankings never show the
+  /// same artist twice.
   func topArtists(limit: Int = 10, since: Int64? = nil) throws -> [TopRow] {
     try dbq.read { db in
       let rangeFilter = since == nil ? "" : "AND p.played_at >= ?"
       let arguments = since.map { [$0, Int64(limit)] } ?? [Int64(limit)]
       return try Row.fetchAll(db, sql: """
+        WITH artist_plays AS (
+          SELECT
+            NULLIF(TRIM(json_extract(t.artists_json, '$[0].uri')), '') AS artist_uri,
+            NULLIF(TRIM(json_extract(t.artists_json, '$[0].name')), '') AS artist_name,
+            p.played_at
+          FROM plays p
+          JOIN tracks t ON t.uri = p.track_uri
+          WHERE t.artists_json IS NOT NULL
+            AND json_valid(t.artists_json) = 1
+            \(rangeFilter)
+        ),
+        normalized AS (
+          SELECT
+            artist_uri,
+            COALESCE(artist_name, artist_uri, 'Unknown') AS display_name,
+            COALESCE(
+              NULLIF(LOWER(TRIM(artist_name)), ''),
+              NULLIF(LOWER(TRIM(artist_uri)), ''),
+              'unknown'
+            ) AS artist_key,
+            played_at
+          FROM artist_plays
+          WHERE artist_name IS NOT NULL OR artist_uri IS NOT NULL
+        ),
+        canonical AS (
+          SELECT
+            artist_key,
+            COALESCE(
+              MIN(CASE WHEN artist_uri LIKE 'spotify:artist:%' THEN artist_uri END),
+              MIN(NULLIF(artist_uri, '')),
+              'artist-name:' || artist_key
+            ) AS canonical_uri,
+            COALESCE(
+              MIN(CASE WHEN artist_uri LIKE 'spotify:artist:%' THEN display_name END),
+              MIN(display_name),
+              'Unknown'
+            ) AS canonical_name
+          FROM normalized
+          GROUP BY artist_key
+        )
         SELECT
-          json_extract(t.artists_json, '$[0].uri')  AS artist_uri,
-          json_extract(t.artists_json, '$[0].name') AS name,
-          COUNT(*) AS c
-        FROM plays p JOIN tracks t ON t.uri = p.track_uri
-        WHERE t.artists_json IS NOT NULL AND json_valid(t.artists_json) = 1
-          \(rangeFilter)
-        GROUP BY artist_uri
-        ORDER BY c DESC, MAX(p.played_at) DESC
+          canon.canonical_uri AS artist_uri,
+          canon.canonical_name AS name,
+          COUNT(*) AS play_count
+        FROM normalized n
+        JOIN canonical canon ON canon.artist_key = n.artist_key
+        GROUP BY n.artist_key, canon.canonical_uri, canon.canonical_name
+        ORDER BY play_count DESC, MAX(n.played_at) DESC, canon.canonical_name ASC
         LIMIT ?
       """, arguments: StatementArguments(arguments)).map { row in
-        TopRow(uri: row["artist_uri"] ?? "", name: row["name"] ?? "Unknown", count: row["c"],
+        TopRow(uri: row["artist_uri"] ?? "", name: row["name"] ?? "Unknown", count: row["play_count"],
                artUrl: nil, subtitle: nil)
       }
     }
@@ -873,6 +854,510 @@ struct StatsQueries {
   func observePlaysChanges() -> ValueObservation<ValueReducers.Fetch<Int>> {
     ValueObservation.tracking { db in
       try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM plays") ?? 0
+    }
+  }
+}
+
+private struct SoundThemeResolver {
+  let dbq: DatabaseQueue
+
+  func decision(
+    forArtistUris artistUris: [String],
+    trackName: String?,
+    artistName: String?,
+    albumName: String?,
+    allowRecentFallback: Bool
+  ) throws -> SoundThemeDecision? {
+    let metadata = Self.metadataDecision(
+      trackName: trackName ?? "",
+      artistName: artistName ?? "",
+      albumName: albumName ?? "")
+
+    let artistUris = Self.dedupedArtistUris(artistUris)
+    guard !artistUris.isEmpty else { return metadata }
+
+    return try dbq.read { db in
+      if let artistDecision = try Self.artistTagDecision(db: db, artistUris: artistUris) {
+        return Self.resolveConflict(artistDecision: artistDecision, metadataDecision: metadata)
+      }
+
+      if let spotifyDecision = try Self.spotifyGenreDecision(db: db, artistUris: artistUris) {
+        return Self.resolveConflict(artistDecision: spotifyDecision, metadataDecision: metadata)
+      }
+
+      if let metadata {
+        return metadata
+      }
+
+      if allowRecentFallback {
+        return try Self.recentSessionDecision(db: db, excludingArtistUris: artistUris)
+      }
+      return nil
+    }
+  }
+
+  static func metadataDecision(trackName: String, artistName: String, albumName: String) -> SoundThemeDecision? {
+    let parts = [trackName, artistName, albumName]
+      .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+      .filter { !$0.isEmpty }
+    let text = normalizedTagText(parts.joined(separator: " "))
+    guard !text.isEmpty else { return nil }
+
+    let electronicMatch = firstMatch(in: text, from: strongElectronicTags + strongTrackElectronicTags)
+    if let electronicMatch {
+      return SoundThemeDecision(
+        theme: .slime,
+        confidence: 0.74,
+        source: .trackMetadata,
+        reason: "Track text contains \(electronicMatch).")
+    }
+
+    let heavyMatch = firstMatch(in: text, from: strongPunkTags + strongHeavyTags)
+      ?? (containsWholeWord(text, "punk") ? "punk" : nil)
+    if let heavyMatch {
+      return SoundThemeDecision(
+        theme: .ember,
+        confidence: 0.68,
+        source: .trackMetadata,
+        reason: "Track text contains \(heavyMatch).")
+    }
+
+    let latinMatch = firstMatch(in: text, from: latinCulturalTags)
+    if let latinMatch {
+      return SoundThemeDecision(
+        theme: .classic,
+        confidence: 0.62,
+        source: .trackMetadata,
+        reason: "Track text contains Latin/Spanish marker \(latinMatch).")
+    }
+    return nil
+  }
+
+  private static func artistTagDecision(db: Database, artistUris: [String]) throws -> SoundThemeDecision? {
+    let placeholders = Array(repeating: "?", count: artistUris.count).joined(separator: ",")
+    let rows = try Row.fetchAll(db, sql: """
+      SELECT nt.entity_uri AS artist_uri,
+             COALESCE(NULLIF(a.name, ''), nt.entity_uri) AS artist_name,
+             LOWER(TRIM(nt.raw_tag)) AS raw_tag,
+             MAX(nt.score) AS score,
+             MIN(rt.rank) AS rank
+      FROM normalized_tags nt
+      LEFT JOIN artists a ON a.uri = nt.entity_uri
+      LEFT JOIN raw_tags rt
+        ON rt.entity_uri = nt.entity_uri
+       AND rt.entity_type = nt.entity_type
+       AND rt.provider = nt.provider
+       AND LOWER(TRIM(rt.raw_tag)) = LOWER(TRIM(nt.raw_tag))
+      WHERE nt.entity_uri IN (\(placeholders))
+        AND nt.entity_type = 'artist'
+        AND nt.raw_tag IS NOT NULL
+        AND TRIM(nt.raw_tag) <> ''
+      GROUP BY nt.entity_uri, LOWER(TRIM(nt.raw_tag))
+      ORDER BY score DESC, raw_tag ASC
+    """, arguments: StatementArguments(artistUris))
+
+    let signals: [ThemeSignal] = rows.compactMap { row in
+      let artistUri: String = row["artist_uri"]
+      let artistIndex = artistUris.firstIndex(of: artistUri) ?? 0
+      let rawTag: String = row["raw_tag"]
+      let artistName: String = row["artist_name"]
+      return themeSignal(
+        rawTag: rawTag,
+        artistName: artistName,
+        score: row["score"] ?? 0,
+        rank: row["rank"],
+        artistIndex: artistIndex)
+    }
+    return decision(forSignals: signals, source: .artistTags)
+  }
+
+  private static func spotifyGenreDecision(db: Database, artistUris: [String]) throws -> SoundThemeDecision? {
+    let placeholders = Array(repeating: "?", count: artistUris.count).joined(separator: ",")
+    let rows = try Row.fetchAll(db, sql: """
+      SELECT COALESCE(NULLIF(a.name, ''), a.uri) AS artist_name,
+             j.value AS genre
+      FROM artists a, json_each(a.genres_json) j
+      WHERE a.uri IN (\(placeholders))
+        AND a.genres_json IS NOT NULL
+        AND json_valid(a.genres_json) = 1
+        AND TRIM(j.value) <> ''
+    """, arguments: StatementArguments(artistUris))
+
+    let signals: [ThemeSignal] = rows.compactMap { row in
+      let rawTag: String = row["genre"]
+      let artistName: String = row["artist_name"]
+      return themeSignal(
+        rawTag: rawTag,
+        artistName: artistName,
+        score: 1,
+        rank: 999,
+        artistIndex: 0)
+    }
+    return decision(forSignals: signals, source: .spotifyGenres)
+  }
+
+  private static func recentSessionDecision(db: Database, excludingArtistUris artistUris: [String]) throws -> SoundThemeDecision? {
+    let cutoff = Int64(Date().timeIntervalSince1970) - 3 * 3_600
+    let excluded = Set(artistUris.filter { !$0.isEmpty })
+    let exclusion = excluded.isEmpty ? "" : "AND ra.artist_uri NOT IN (\(Array(repeating: "?", count: excluded.count).joined(separator: ",")))"
+    var arguments: [DatabaseValueConvertible] = [cutoff]
+    arguments.append(contentsOf: Array(excluded).sorted())
+
+    let rows = try Row.fetchAll(db, sql: """
+      WITH recent_plays AS (
+        SELECT p.id AS play_id,
+               p.played_at,
+               t.artists_json
+        FROM plays p
+        JOIN tracks t ON t.uri = p.track_uri
+        WHERE p.played_at >= ?
+          AND t.artists_json IS NOT NULL
+          AND json_valid(t.artists_json) = 1
+        ORDER BY p.played_at DESC
+        LIMIT 30
+      ),
+      recent_artists AS (
+        SELECT rp.play_id,
+               json_extract(j.value, '$.uri') AS artist_uri,
+               json_extract(j.value, '$.name') AS artist_name
+        FROM recent_plays rp
+        CROSS JOIN json_each(rp.artists_json) j
+        WHERE json_extract(j.value, '$.uri') LIKE 'spotify:artist:%'
+      ),
+      recent_artist_tags AS (
+        SELECT nt.entity_uri AS artist_uri,
+               LOWER(TRIM(nt.family)) AS family,
+               LOWER(TRIM(nt.raw_tag)) AS raw_tag,
+               MAX(nt.score) AS score
+        FROM normalized_tags nt
+        WHERE nt.entity_type = 'artist'
+          AND nt.family IS NOT NULL
+          AND TRIM(nt.family) <> ''
+          AND nt.raw_tag IS NOT NULL
+          AND TRIM(nt.raw_tag) <> ''
+        GROUP BY nt.entity_uri, LOWER(TRIM(nt.family)), LOWER(TRIM(nt.raw_tag))
+      )
+      SELECT ra.artist_uri AS artist_uri,
+             COALESCE(NULLIF(ra.artist_name, ''), ra.artist_uri) AS artist_name,
+             rat.family AS family,
+             rat.raw_tag AS raw_tag,
+             rat.score AS score,
+             COUNT(DISTINCT ra.play_id) AS plays
+      FROM recent_artists ra
+      JOIN recent_artist_tags rat ON rat.artist_uri = ra.artist_uri
+      WHERE 1 = 1
+        \(exclusion)
+      GROUP BY ra.artist_uri, ra.artist_name, rat.family, rat.raw_tag, rat.score
+    """, arguments: StatementArguments(arguments))
+
+    let signals: [ThemeSignal] = rows.compactMap { row in
+      let plays: Int = row["plays"]
+      let score: Double = row["score"] ?? 0
+      return themeSignal(
+        rawTag: row["raw_tag"],
+        artistName: row["artist_name"],
+        score: max(1, Double(plays)) * max(1, score / 25),
+        rank: nil,
+        artistIndex: 0)
+    }
+    guard let decision = decision(forSignals: signals, source: .recentSession) else { return nil }
+    let totalRecentPlays = rows.reduce(0) { partial, row in
+      max(partial, row["plays"] as Int)
+    }
+    guard totalRecentPlays >= 3 else { return nil }
+    return SoundThemeDecision(
+      theme: decision.theme,
+      confidence: min(0.72, decision.confidence),
+      source: .recentSession,
+      reason: "No current tags yet; recent listening is \(familyLabel(decision.theme)).")
+  }
+
+  private static func resolveConflict(
+    artistDecision: SoundThemeDecision,
+    metadataDecision: SoundThemeDecision?
+  ) -> SoundThemeDecision {
+    guard let metadataDecision, metadataDecision.theme != artistDecision.theme else {
+      return artistDecision
+    }
+
+    if artistDecision.theme == .classic,
+       metadataDecision.source == .trackMetadata,
+       metadataDecision.confidence >= 0.68
+    {
+      return SoundThemeDecision(
+        theme: metadataDecision.theme,
+        confidence: metadataDecision.confidence,
+        source: metadataDecision.source,
+        reason: "\(metadataDecision.reason) Overrides Latin/Spanish Smoke Gel fallback.")
+    }
+
+    if metadataDecision.confidence >= artistDecision.confidence + 0.18 {
+      return SoundThemeDecision(
+        theme: metadataDecision.theme,
+        confidence: metadataDecision.confidence,
+        source: metadataDecision.source,
+        reason: "\(metadataDecision.reason) Overrides weaker \(artistDecision.source.label.lowercased()) signal.")
+    }
+    return artistDecision
+  }
+
+  private struct ThemeSignal {
+    let theme: DialThemeID
+    let score: Double
+    let rank: Int
+    let strong: Bool
+    let rawTag: String
+    let artistName: String
+  }
+
+  private static func themeSignal(
+    rawTag: String,
+    artistName: String,
+    score: Double,
+    rank: Int?,
+    artistIndex: Int
+  ) -> ThemeSignal? {
+    let tag = normalizedTagText(rawTag)
+    guard !tag.isEmpty, !ambiguousColorTags.contains(tag) else { return nil }
+
+    if containsAny(tag, strongElectronicTags) {
+      return ThemeSignal(
+        theme: .slime,
+        score: weightedScore(score, rank: rank, artistIndex: artistIndex, multiplier: 1.45),
+        rank: rank ?? 999,
+        strong: true,
+        rawTag: tag,
+        artistName: artistName)
+    }
+    if containsAny(tag, strongPunkTags + strongHeavyTags) || containsWholeWord(tag, "punk") {
+      return ThemeSignal(
+        theme: .ember,
+        score: weightedScore(score, rank: rank, artistIndex: artistIndex, multiplier: 1.2),
+        rank: rank ?? 999,
+        strong: true,
+        rawTag: tag,
+        artistName: artistName)
+    }
+    guard let family = DialTagNormalizer.normalize(tag)?.family,
+          let theme = theme(forFamily: family)
+    else { return nil }
+
+    let multiplier: Double = {
+      switch theme {
+      case .slime:   return 1.08
+      case .ember:   return 1.0
+      case .aqua:    return 0.92
+      case .classic: return 1.12
+      }
+    }()
+    return ThemeSignal(
+      theme: theme,
+      score: weightedScore(score, rank: rank, artistIndex: artistIndex, multiplier: multiplier),
+      rank: rank ?? 999,
+      strong: false,
+      rawTag: tag,
+      artistName: artistName)
+  }
+
+  private static func decision(forSignals signals: [ThemeSignal], source: SoundThemeSource) -> SoundThemeDecision? {
+    guard !signals.isEmpty else { return nil }
+    var scores: [DialThemeID: Double] = [:]
+    var strongScores: [DialThemeID: Double] = [:]
+    var bestRank: [DialThemeID: Int] = [:]
+
+    for signal in signals {
+      scores[signal.theme, default: 0] += max(1, signal.score)
+      if signal.strong {
+        strongScores[signal.theme, default: 0] += max(1, signal.score)
+      }
+      bestRank[signal.theme] = min(bestRank[signal.theme] ?? 999, signal.rank)
+    }
+
+    let ordered = scores.sorted { lhs, rhs in
+      if abs(lhs.value - rhs.value) > 0.001 { return lhs.value > rhs.value }
+      let lhsRank = bestRank[lhs.key] ?? 999
+      let rhsRank = bestRank[rhs.key] ?? 999
+      if lhsRank != rhsRank { return lhsRank < rhsRank }
+      return themePriority(lhs.key) < themePriority(rhs.key)
+    }
+    guard var winner = ordered.first else { return nil }
+
+    if let slime = scores[.slime], slime >= 24 {
+      let rival = max(scores[.ember] ?? 0, scores[.aqua] ?? 0)
+      let slimeStrong = strongScores[.slime] ?? 0
+      if slimeStrong >= 24, slime >= rival * 0.55 {
+        winner = (key: .slime, value: slime)
+      }
+    }
+
+    let total = scores.values.reduce(0, +)
+    let winnerShare = winner.value / max(1, total)
+    let strongLift = min(0.18, (strongScores[winner.key] ?? 0) / max(1, winner.value) * 0.18)
+    let confidence = min(0.98, max(0.50, 0.46 + winnerShare * 0.36 + strongLift))
+    let reason = reason(for: winner.key, signals: signals)
+
+    return SoundThemeDecision(
+      theme: winner.key,
+      confidence: confidence,
+      source: source,
+      reason: reason)
+  }
+
+  private static func reason(for theme: DialThemeID, signals: [ThemeSignal]) -> String {
+    let winners = signals
+      .filter { $0.theme == theme }
+      .sorted { lhs, rhs in
+        if lhs.strong != rhs.strong { return lhs.strong && !rhs.strong }
+        return lhs.score > rhs.score
+      }
+
+    let details = winners.reduce(into: [(String, String)]()) { acc, signal in
+      guard !acc.contains(where: { $0.0 == signal.rawTag && $0.1 == signal.artistName }) else { return }
+      acc.append((signal.rawTag, signal.artistName))
+    }
+      .prefix(3)
+      .map { "\($0.0) from \($0.1)" }
+      .joined(separator: "; ")
+
+    if details.isEmpty {
+      return "Matched \(familyLabel(theme)) tags."
+    }
+    return "\(theme.label) from \(details)."
+  }
+
+  private static func themeScores(forFamilies families: [(String, Int)]) -> [DialThemeID: Int] {
+    var scores: [DialThemeID: Int] = [:]
+    for (family, score) in families {
+      guard let theme = theme(forFamily: family) else { continue }
+      scores[theme, default: 0] += max(1, score)
+    }
+    return scores
+  }
+
+  private static func orderedScores(_ scores: [DialThemeID: Int]) -> [(key: DialThemeID, value: Int)] {
+    scores.sorted { lhs, rhs in
+      if lhs.value != rhs.value { return lhs.value > rhs.value }
+      return themePriority(lhs.key) < themePriority(rhs.key)
+    }
+  }
+
+  private static func weightedScore(_ score: Double, rank: Int?, artistIndex: Int, multiplier: Double) -> Double {
+    let rankWeight: Double = {
+      switch rank ?? 999 {
+      case 1: 1.25
+      case 2: 1.15
+      case 3: 1.08
+      case 4...5: 1.0
+      default: 0.9
+      }
+    }()
+    let artistWeight = artistIndex == 0 ? 1.0 : 0.78
+    return max(1, score) * rankWeight * artistWeight * multiplier
+  }
+
+  private static func dedupedArtistUris(_ artistUris: [String]) -> [String] {
+    var seen = Set<String>()
+    return artistUris.filter { uri in
+      guard uri.hasPrefix("spotify:artist:"), !seen.contains(uri) else { return false }
+      seen.insert(uri)
+      return true
+    }
+  }
+
+  private static func normalizedTagText(_ raw: String) -> String {
+    raw
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .lowercased()
+      .replacingOccurrences(of: "_", with: " ")
+      .replacingOccurrences(of: "-", with: " ")
+      .replacingOccurrences(of: "  ", with: " ")
+  }
+
+  private static func containsAny(_ tag: String, _ needles: [String]) -> Bool {
+    needles.contains { tag.contains($0) }
+  }
+
+  private static func firstMatch(in tag: String, from needles: [String]) -> String? {
+    needles.sorted { $0.count > $1.count }.first { tag.contains($0) }
+  }
+
+  private static func containsWholeWord(_ tag: String, _ word: String) -> Bool {
+    tag
+      .split { !$0.isLetter && !$0.isNumber }
+      .contains { String($0) == word }
+  }
+
+  private static func familyLabel(_ theme: DialThemeID) -> String {
+    switch theme {
+    case .slime:   return "electronic"
+    case .aqua:    return "aqua/indie"
+    case .ember:   return "magenta/heavy"
+    case .classic: return "smoke gel"
+    }
+  }
+
+  private static let ambiguousColorTags: Set<String> = [
+    "hardcore", "beatdown hardcore", "alternative", "seen live"
+  ]
+
+  private static let strongElectronicTags = [
+    "techno", "hard techno", "industrial techno",
+    "house", "hardstyle", "rawstyle", "gabber",
+    "hard dance", "trance", "dubstep", "drum and bass", "dnb",
+    "breakbeat", "breaks", "edm", "idm"
+  ]
+
+  private static let strongTrackElectronicTags = [
+    "acid", "bassline", "breakcore", "club mix", "dance mix", "dj mix",
+    "eurodance", "garage", "hard bass", "jungle", "rave", "ukg"
+  ]
+
+  private static let strongPunkTags = [
+    "hardcore punk", "post hardcore", "post-hardcore", "pop punk", "screamo"
+  ]
+
+  private static let strongHeavyTags = [
+    "metal", "black metal", "death metal", "doom metal", "heavy metal", "metalcore"
+  ]
+
+  private static let latinCulturalTags = [
+    "corridos tumbados", "corridos", "regional mexican",
+    "reggaeton", "reggaetón", "urbano latino", "latin urban", "dembow",
+    "latin", "latino", "mexican", "spanish",
+    "salsa", "bachata", "cumbia", "merengue", "bolero", "bossa nova"
+  ]
+
+  fileprivate static func theme(forRawTags rawTags: [String], fallbackFamily: String?) -> DialThemeID? {
+    let signals = rawTags.compactMap {
+      themeSignal(rawTag: $0, artistName: "weekly memory", score: 1, rank: nil, artistIndex: 0)
+    }
+    if let decision = decision(forSignals: signals, source: .artistTags) {
+      return decision.theme
+    }
+    return fallbackFamily.flatMap { theme(forFamily: $0) }
+  }
+
+  fileprivate static func theme(forFamily family: String) -> DialThemeID? {
+    switch family {
+    case "experimental", "soundtrack":
+      return .slime
+    case "indie", "pop", "acoustic", "r&b", "rock", "jazz", "ambient", "electronic":
+      return .aqua
+    case "latin", "corridos", "reggaeton":
+      return .classic
+    case "rap", "punk/emo", "metal":
+      return .ember
+    default:
+      return nil
+    }
+  }
+
+  private static func themePriority(_ theme: DialThemeID) -> Int {
+    switch theme {
+    case .slime:   return 0
+    case .ember:   return 1
+    case .classic: return 2
+    case .aqua:    return 3
     }
   }
 }

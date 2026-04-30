@@ -1,13 +1,14 @@
 // Dial/App/AppDelegate.swift
 import AppKit
+import Combine
 import CoreText
 import Foundation
 import GRDB
 import SwiftUI
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
-  var coordinator: AppCoordinator?
+final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
+  @Published var coordinator: AppCoordinator?
   private var statusBar: StatusBarController?
   private var dockIcon: DockIconController?
 
@@ -250,9 +251,12 @@ final class SettingsWindowPresenter: NSObject, NSWindowDelegate {
 
   func show(coord: AppCoordinator) {
     if let window {
+      closeDuplicateSettingsWindows(except: window)
       present(window)
       return
     }
+
+    closeDuplicateSettingsWindows()
 
     let root = SettingsView(
       vm: coord.settings,
@@ -269,8 +273,8 @@ final class SettingsWindowPresenter: NSObject, NSWindowDelegate {
     window.styleMask = [.titled, .closable, .miniaturizable]
     window.isReleasedWhenClosed = false
     window.delegate = self
-    window.setContentSize(NSSize(width: 640, height: 500))
-    window.minSize = NSSize(width: 640, height: 500)
+    window.setContentSize(NSSize(width: 700, height: 540))
+    window.minSize = NSSize(width: 700, height: 540)
     window.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
     window.center()
     self.window = window
@@ -286,5 +290,11 @@ final class SettingsWindowPresenter: NSObject, NSWindowDelegate {
     window.level = .floating
     window.makeKeyAndOrderFront(nil)
     window.orderFrontRegardless()
+  }
+
+  private func closeDuplicateSettingsWindows(except expectedWindow: NSWindow? = nil) {
+    for candidate in NSApp.windows where candidate !== expectedWindow && candidate.title == "Dial Settings" {
+      candidate.close()
+    }
   }
 }

@@ -89,7 +89,7 @@ private struct Readout: View {
 
   private var deltaColor: Color {
     switch delta {
-    case "NEW", "DEBUT": return theme.accentAlt
+    case "NEW", "DEBUT": return theme.memoryAccent
     default:             return theme.accent
     }
   }

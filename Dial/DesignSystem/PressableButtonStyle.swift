@@ -50,3 +50,18 @@ extension ButtonStyle where Self == PressableButtonStyle {
   /// Convenience accessor — `Button(...).buttonStyle(.pressable)`.
   static var pressable: PressableButtonStyle { PressableButtonStyle() }
 }
+
+extension View {
+  /// Expands the interactive area without changing the visible layout.
+  ///
+  /// Use this for intentionally compact hardware controls: the glyph can stay
+  /// quiet, but the pointer target should still be forgiving.
+  func dialHitSlop(horizontal: CGFloat = 0, vertical: CGFloat = 0) -> some View {
+    self
+      .padding(.horizontal, horizontal)
+      .padding(.vertical, vertical)
+      .contentShape(Rectangle())
+      .padding(.horizontal, -horizontal)
+      .padding(.vertical, -vertical)
+  }
+}

@@ -177,6 +177,45 @@ enum Migrations {
       }
       try db.create(index: "metadata_state_by_status", on: "metadata_enrichment_state", columns: ["provider", "status"])
     }
+
+    // Imported Spotify history originally used synthetic artist identifiers
+    // like `artist:KETTAMA`. Live Spotify playback later supplies canonical
+    // IDs like `spotify:artist:...`. Older badge logic compared only exact
+    // artist URI, so the first canonical live play could falsely earn
+    // "New Artist" even when the normalized artist name already existed in
+    // imported history. Clean those false memories once; XP is intentionally
+    // not unwound, same as the duplicate-play cleanup above.
+    m.registerMigration("v8_cleanup_false_new_artist_badges") { db in
+      try db.execute(sql: """
+        DELETE FROM badge_events
+        WHERE id IN (
+          SELECT e.id
+          FROM badge_events e
+          JOIN tracks event_track ON event_track.uri = e.track_uri
+          WHERE e.kind = 'new_artist'
+            AND json_valid(event_track.artists_json) = 1
+            AND TRIM(json_extract(event_track.artists_json, '$[0].name')) <> ''
+            AND EXISTS (
+              SELECT 1
+              FROM plays prior_play
+              JOIN tracks prior_track ON prior_track.uri = prior_play.track_uri
+              WHERE prior_play.played_at < e.earned_at
+                AND json_valid(prior_track.artists_json) = 1
+                AND LOWER(TRIM(json_extract(prior_track.artists_json, '$[0].name'))) =
+                    LOWER(TRIM(json_extract(event_track.artists_json, '$[0].name')))
+            )
+        )
+      """)
+
+      if try db.tableExists("artifacts") {
+        try db.execute(sql: """
+          UPDATE artifacts
+          SET source_badge_event_id = NULL
+          WHERE source_badge_event_id IS NOT NULL
+            AND source_badge_event_id NOT IN (SELECT id FROM badge_events)
+        """)
+      }
+    }
     return m
   }
 }

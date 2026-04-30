@@ -18,12 +18,12 @@ struct ConnectSetupView: View {
         GlossaryPanel()
           .transition(.opacity.combined(with: .move(edge: .leading)))
       } else {
-        VStack(alignment: .center, spacing: 10) {
+        VStack(alignment: .center, spacing: 0) {
           DialChromeWordmark()
             .frame(maxWidth: .infinity, alignment: .center)
             .modifier(SetupAppear(delay: 0.00))
 
-          Text("Connect Spotify. Dial turns the songs that keep finding you into a pet, a room, and a private archive.")
+          Text("Now playing, remembered. Connect Spotify to start building your pet, room, and artifacts.")
             .font(Dial.Typography.sansCaption)
             .foregroundStyle(Dial.Palette.textMuted)
             .multilineTextAlignment(.center)
@@ -31,10 +31,12 @@ struct ConnectSetupView: View {
             .lineLimit(3)
             .frame(width: 296)
             .modifier(SetupAppear(delay: 0.06))
+            .padding(.top, Dial.Layout.Setup.wordmarkTextGap)
 
           setupPreview
-            .frame(width: 188)
+            .frame(width: Dial.Layout.Setup.previewWidth)
             .modifier(SetupAppear(delay: 0.12))
+            .padding(.top, Dial.Layout.Setup.textPreviewGap)
 
           Button(action: onConnect) {
             HStack(spacing: 8) {
@@ -54,10 +56,12 @@ struct ConnectSetupView: View {
                 .stroke(Color.white.opacity(0.42), lineWidth: 0.8)
             )
             .shadow(color: Color.black.opacity(0.30), radius: 3, x: 0, y: 1.5)
+            .dialHitSlop(vertical: 3)
           }
           .frame(width: 304)
           .buttonStyle(.pressable)
           .modifier(SetupAppear(delay: 0.18))
+          .padding(.top, Dial.Layout.Setup.previewCTAGap)
 
           Text("Secure OAuth. Token stays in Keychain.")
             .font(Dial.Typography.monoTiny)
@@ -67,10 +71,11 @@ struct ConnectSetupView: View {
             .minimumScaleFactor(0.78)
             .frame(maxWidth: .infinity, alignment: .center)
             .modifier(SetupAppear(delay: 0.24))
+            .padding(.top, Dial.Layout.Setup.ctaFooterGap)
         }
         .padding(.horizontal, 18)
-        .padding(.top, 4)
-        .padding(.bottom, 12)
+        .padding(.top, Dial.Layout.Setup.contentTopPadding)
+        .padding(.bottom, Dial.Layout.Setup.contentBottomPadding)
         .frame(maxHeight: .infinity, alignment: .top)
       }
     }
@@ -107,6 +112,7 @@ struct ConnectSetupView: View {
     }
     .padding(.horizontal, Dial.Layout.StatusRail.horizontalPadding)
     .padding(.vertical, Dial.Layout.StatusRail.verticalPadding)
+    .padding(.top, Dial.Layout.Setup.railTopPadding)
   }
 
   private var setupPreview: some View {
@@ -138,7 +144,7 @@ struct ConnectSetupView: View {
       .padding(8)
     }
     .frame(maxWidth: .infinity)
-    .frame(height: 104)
+    .frame(height: Dial.Layout.Setup.previewHeight)
     .dialRaisedGel(
       shape: RoundedRectangle(cornerRadius: Dial.Radius.control, style: .continuous),
       fill: theme.lcd,
@@ -163,7 +169,9 @@ struct ConnectSetupView: View {
       .frame(width: Dial.Layout.StatusRail.iconSize, height: Dial.Layout.StatusRail.iconSize)
       .foregroundStyle(theme.textMuted)
       .frame(width: Dial.Layout.StatusRail.hitSize, height: Dial.Layout.StatusRail.hitSize)
-      .contentShape(Rectangle())
+      .dialHitSlop(
+        horizontal: max(0, (44 - Dial.Layout.StatusRail.hitSize) / 2),
+        vertical: max(0, (44 - Dial.Layout.StatusRail.hitSize) / 2))
   }
 }
 

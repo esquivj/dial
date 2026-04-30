@@ -24,8 +24,8 @@ enum PetBondPrimaryAction: Equatable {
   var label: String {
     switch self {
     case .reactToBadge: return "REACT TO BADGE"
-    case .teachTrick(let trick): return "TEACH \(trick.shortLabel.uppercased())"
-    case .wakeUp: return "WAKE UP"
+    case .teachTrick(let trick): return "UNLOCK \(trick.shortLabel.uppercased())"
+    case .wakeUp: return "CHECK IN"
     case .showFavorite: return "SHOW FAVORITE"
     case .showTrick(let trick): return "SHOW \(trick.shortLabel.uppercased())"
     case .syncToBeat: return "SYNC"
@@ -45,12 +45,23 @@ struct PetBondSnapshot: Equatable {
   static func make(_ input: PetBondInputs) -> PetBondSnapshot {
     let xpScore = clamp(Double(input.xp) / 25_000)
     let streakScore = clamp(Double(input.streakDays) / 14)
-    let repeatScore = clamp(Double(input.playsYTDForCurrentTrack) / 12)
-    let bondScore = clamp((xpScore * 0.58) + (streakScore * 0.26) + (repeatScore * 0.16))
+    let trackHistoryScore = clamp(Double(input.playsYTDForCurrentTrack) / 12)
 
     let recentDiscovery = input.recentBadgeCounts[.discovery, default: 0]
+    let recentPatterns = input.recentBadgeCounts[.pattern, default: 0]
     let recentMilestones = input.recentBadgeCounts[.milestone, default: 0]
     let currentDiscoveryBoost = input.currentBadge?.kind.category == .discovery ? 0.35 : 0
+    let currentMemoryBoost = input.currentBadge == nil ? 0 : 0.15
+    let memoryScore = clamp(
+      (Double(recentDiscovery) / 8 * 0.45) +
+      (Double(recentPatterns) / 8 * 0.25) +
+      (Double(recentMilestones) / 6 * 0.30) +
+      currentMemoryBoost)
+    let bondScore = clamp(
+      (xpScore * 0.35) +
+      (streakScore * 0.25) +
+      (trackHistoryScore * 0.25) +
+      (memoryScore * 0.15))
     let discoveryScore = clamp(
       (Double(recentDiscovery) / 6) +
       (Double(recentMilestones) / 18) +
@@ -58,13 +69,14 @@ struct PetBondSnapshot: Equatable {
 
     let todayMinutes = Double(input.todayListeningMs) / 60_000
     let listeningScore = clamp(todayMinutes / 90)
+    let firstPlayLift = todayMinutes > 0 ? 0.12 : 0
     let energyScore: Double = switch input.playbackState {
     case .playing:
-      clamp((listeningScore * 0.75) + 0.25)
+      clamp((listeningScore * 0.65) + 0.35)
     case .paused:
-      clamp((listeningScore * 0.65) + 0.05)
+      clamp((listeningScore * 0.50) + firstPlayLift)
     case .nothingPlaying:
-      clamp(listeningScore * 0.45)
+      clamp((listeningScore * 0.30) + firstPlayLift)
     }
 
     let action = primaryAction(
@@ -107,7 +119,6 @@ struct PetBondSnapshot: Equatable {
     if discoveryScore >= 0.85, let trick = PetTrick.nextLocked(unlocked: unlockedTricks) {
       return .teachTrick(trick)
     }
-    if energyScore < 0.22 { return .wakeUp }
     if let trick = unlockedTricks.first, playbackState == .playing { return .showTrick(trick) }
     if bondScore >= 0.82 { return .showFavorite }
     if playbackState == .playing { return .syncToBeat }
@@ -122,7 +133,7 @@ struct PetBondSnapshot: Equatable {
     currentBadge: BadgeInsight?
   ) -> String {
     if let currentBadge { return currentBadge.kind.label }
-    if energyScore < 0.22 { return "Low power" }
+    if energyScore < 0.22 { return "Quiet" }
     if discoveryScore >= 0.85 { return "Curious" }
     if bondScore >= 0.82 { return "Bonded" }
     if playbackState == .playing { return "In rhythm" }
@@ -141,16 +152,17 @@ struct PetBondSnapshot: Equatable {
     }
 
     switch mood {
-    case "Low power":
-      return "Music has been quiet today."
+    case "Quiet":
+      let minutes = Int(todayMinutes.rounded())
+      return minutes > 0 ? "\(minutes) min remembered today." : "Waiting for the first play today."
     case "Curious":
-      return "Recent badges are pushing discovery up."
+      return "Recent discoveries are active."
     case "Bonded":
       return trackName.map { "Strong history with \($0)." } ?? "Your listening history is strong."
     case "In rhythm":
-      return trackName.map { "Moving with \($0)." } ?? "Playback is active."
+      return trackName.map { "Listening to \($0)." } ?? "Playback is active."
     case "Holding pattern":
-      return "Paused, but today's session still counts."
+      return "Paused. Today's listening is still remembered."
     default:
       let minutes = Int(todayMinutes.rounded())
       return minutes > 0 ? "\(minutes) min logged today." : "Waiting for the first play today."
@@ -168,11 +180,11 @@ struct PetBondSnapshot: Equatable {
     case .deepCut:
       return "Rare track from an artist you play a lot."
     case .onStreak:
-      return "This track is hot in your recent rotation."
+      return "Heavy rotation right now."
     case .repeatTrack:
-      return "You are running this one back."
+      return "Running this one back."
     case .albumMode:
-      return "You are moving through the album."
+      return "Album run in progress."
     case .play10, .play50, .play100:
       return badge.detail
     case .anniversary:

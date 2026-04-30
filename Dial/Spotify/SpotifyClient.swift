@@ -3,6 +3,7 @@ import Foundation
 
 enum SpotifyAPIError: Error, Equatable {
   case httpStatus(Int)
+  case invalidResponse
 }
 
 final class SpotifyClient {
@@ -47,7 +48,9 @@ final class SpotifyClient {
     var req = request
     req.setValue("Bearer \(token?.accessToken ?? "")", forHTTPHeaderField: "Authorization")
     let (data, resp) = try await session.data(for: req)
-    let http = resp as! HTTPURLResponse
+    guard let http = resp as? HTTPURLResponse else {
+      throw SpotifyAPIError.invalidResponse
+    }
 
     if http.statusCode == 401, retryOn401 {
       _ = try await refresh()

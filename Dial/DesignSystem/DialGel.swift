@@ -9,20 +9,20 @@ import SwiftUI
 /// into mall-kiosk nonsense.
 enum DialMaterial {
   enum Chassis {
-    static let topTintOpacity = 0.035
-    static let bottomShadeOpacity = 0.30
-    static let cornerShadeOpacity = 0.38
-    static let innerLipOpacity = 0.32
-    static let strokeTopOpacity = 0.62
-    static let strokeBottomOpacity = 0.10
-    static let topSheenOpacity = 0.10
+    static let topTintOpacity = 0.055
+    static let bottomShadeOpacity = 0.34
+    static let cornerShadeOpacity = 0.42
+    static let innerLipOpacity = 0.36
+    static let strokeTopOpacity = 0.68
+    static let strokeBottomOpacity = 0.12
+    static let topSheenOpacity = 0.16
   }
 
   enum Recessed {
-    static let strokeOpacity = 0.30
-    static let topSheenOpacity = 0.24
-    static let innerShadowOpacity = 0.42
-    static let lowerShadeOpacity = 0.14
+    static let strokeOpacity = 0.34
+    static let topSheenOpacity = 0.28
+    static let innerShadowOpacity = 0.46
+    static let lowerShadeOpacity = 0.17
   }
 
   enum Transport {
@@ -32,11 +32,11 @@ enum DialMaterial {
   }
 
   enum Raised {
-    static let fillTopOpacity = 0.13
-    static let fillBottomOpacity = 0.035
-    static let edgeOpacity = 0.30
-    static let sheenOpacity = 0.42
-    static let contactShadowOpacity = 0.28
+    static let fillTopOpacity = 0.16
+    static let fillBottomOpacity = 0.045
+    static let edgeOpacity = 0.34
+    static let sheenOpacity = 0.48
+    static let contactShadowOpacity = 0.30
   }
 
   enum Printed {

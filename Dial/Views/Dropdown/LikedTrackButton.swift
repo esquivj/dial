@@ -55,9 +55,9 @@ struct LikedTrackButton: View {
 
   private var likedColor: Color {
     switch menubar.likedTrackState {
-    case .liked:          return theme.accentAlt
+    case .liked:          return theme.memoryAccent
     case .checking:       return theme.textMuted
-    case .needsReconnect: return theme.accentAlt.opacity(0.55)
+    case .needsReconnect: return theme.memoryAccent.opacity(0.55)
     case .notLiked,
          .unknown:        return theme.textMuted
     }
@@ -66,11 +66,11 @@ struct LikedTrackButton: View {
   private var buttonFill: Color {
     switch menubar.likedTrackState {
     case .liked:
-      return theme.accentAlt.opacity(0.035)
+      return theme.memoryAccent.opacity(0.035)
     case .checking:
       return theme.surface.opacity(0.18)
     case .needsReconnect:
-      return theme.accentAlt.opacity(0.02)
+      return theme.memoryAccent.opacity(0.02)
     case .notLiked,
          .unknown:
       return theme.surface.opacity(0.24)

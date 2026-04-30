@@ -121,46 +121,37 @@ extension View {
 }
 
 /// Custom shape for the transport panel: flat hardware top, tight upper
-/// corners, and a shallow shield-bottom that eases into the sides.
+/// corners, and a straight lower ledge. The generated shell already owns
+/// the outer toy curvature; the live controls need to read as a stable
+/// inserted tray, not another curved shell piece.
 ///
 /// Geometry:
 ///   * Top corners: tiny radius, closer to stamped plastic than app chrome
 ///   * Top edge: flat
-///   * Sides: mostly straight
-///   * Bottom: side fillet -> shallow center arc -> side fillet
+///   * Sides: straight
+///   * Bottom: flat ledge with small corner fillets
 struct TransportPanelShape: Shape {
   var topCornerRadius: CGFloat = Dial.Radius.transportTop
   var bottomJoinRadius: CGFloat = Dial.Radius.transportFoot
-  var bottomCurveDepth: CGFloat = 11
 
   func path(in rect: CGRect) -> Path {
     var path = Path()
     let topR = min(max(0, topCornerRadius), rect.width / 2, rect.height / 2)
-    let footR = min(max(0, bottomJoinRadius), rect.width / 5, rect.height / 3)
-    let depth = min(max(8, bottomCurveDepth), rect.height * 0.22)
-    let baselineY = rect.height - depth
-    let sideJoinY = max(topR, baselineY - footR * 0.58)
-    let rightFoot = CGPoint(x: rect.maxX - footR, y: baselineY)
-    let leftFoot = CGPoint(x: rect.minX + footR, y: baselineY)
+    let bottomR = min(max(0, bottomJoinRadius), rect.width / 5, rect.height / 3)
 
     path.move(to: CGPoint(x: rect.minX + topR, y: rect.minY))
     path.addLine(to: CGPoint(x: rect.maxX - topR, y: rect.minY))
     path.addQuadCurve(
       to: CGPoint(x: rect.maxX, y: rect.minY + topR),
       control: CGPoint(x: rect.maxX, y: rect.minY))
-    path.addLine(to: CGPoint(x: rect.maxX, y: sideJoinY))
-    path.addCurve(
-      to: rightFoot,
-      control1: CGPoint(x: rect.maxX, y: sideJoinY + footR * 0.46),
-      control2: CGPoint(x: rect.maxX - footR * 0.20, y: baselineY))
-    path.addCurve(
-      to: leftFoot,
-      control1: CGPoint(x: rect.minX + rect.width * 0.72, y: rect.maxY),
-      control2: CGPoint(x: rect.minX + rect.width * 0.28, y: rect.maxY))
-    path.addCurve(
-      to: CGPoint(x: rect.minX, y: sideJoinY),
-      control1: CGPoint(x: rect.minX + footR * 0.20, y: baselineY),
-      control2: CGPoint(x: rect.minX, y: sideJoinY + footR * 0.46))
+    path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - bottomR))
+    path.addQuadCurve(
+      to: CGPoint(x: rect.maxX - bottomR, y: rect.maxY),
+      control: CGPoint(x: rect.maxX, y: rect.maxY))
+    path.addLine(to: CGPoint(x: rect.minX + bottomR, y: rect.maxY))
+    path.addQuadCurve(
+      to: CGPoint(x: rect.minX, y: rect.maxY - bottomR),
+      control: CGPoint(x: rect.minX, y: rect.maxY))
     path.addLine(to: CGPoint(x: rect.minX, y: rect.minY + topR))
     path.addQuadCurve(
       to: CGPoint(x: rect.minX + topR, y: rect.minY),
@@ -183,9 +174,15 @@ struct TransportPanel: ViewModifier {
     return content
       .dialRecessedPanel(
         shape: shape,
-        fill: theme.surface.opacity(0.92),
+        fill: theme.surface.opacity(0.96),
         strokeOpacity: strokeOpacity,
         topSheenOpacity: DialMaterial.Transport.topSheenOpacity,
         innerShadowOpacity: DialMaterial.Transport.innerShadowOpacity)
+      .overlay {
+        DialHardwareImage(name: "transport-faceplate")
+          .opacity(0.46)
+          .allowsHitTesting(false)
+          .clipShape(shape)
+      }
   }
 }

@@ -19,12 +19,18 @@ struct BulldogSprite: View {
   let behavior: PetBehavior
   /// Sprite is rendered at this height; width derives from native aspect (~1:1.93 portrait).
   let height: CGFloat
+  var matteColor: Color? = nil
 
   @State private var bob: CGFloat = 0
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   var body: some View {
-    spriteContent
+    ZStack {
+      if let matteColor {
+        spriteMatteContent(color: matteColor)
+      }
+      spriteContent
+    }
       .overlay(alignment: .topTrailing) {
         reactionOverlay
       }
@@ -48,6 +54,21 @@ struct BulldogSprite: View {
       }
     } else {
       BulldogSpriteImage(assetName: assets[0], height: height)
+    }
+  }
+
+  @ViewBuilder
+  private func spriteMatteContent(color: Color) -> some View {
+    let assets = Self.assets(for: stage, behavior: behavior)
+    if reduceMotion {
+      BulldogSpriteMatteImage(assetName: assets[0], height: height, color: color)
+    } else if assets.count > 1, let interval = Self.frameInterval(for: behavior) {
+      TimelineView(.periodic(from: .now, by: interval)) { ctx in
+        let frame = Int(ctx.date.timeIntervalSinceReferenceDate / interval) % assets.count
+        BulldogSpriteMatteImage(assetName: assets[frame], height: height, color: color)
+      }
+    } else {
+      BulldogSpriteMatteImage(assetName: assets[0], height: height, color: color)
     }
   }
 
@@ -258,6 +279,147 @@ private struct SleepOverlay: View {
       .foregroundStyle(Color.black.opacity(0.82))
       .frame(width: size, height: size)
   }
+}
+
+/// Fills enclosed transparent holes in the pet sprite with the LCD color.
+/// This is not decoration; it is the occlusion layer that prevents rugs,
+/// floor lines, and furniture sprites from showing through the pet body.
+private struct BulldogSpriteMatteImage: View {
+  let assetName: String
+  let height: CGFloat
+  let color: Color
+
+  var body: some View {
+    if let nsImage = Self.loadMatte(named: assetName) {
+      Image(nsImage: nsImage)
+        .renderingMode(.template)
+        .interpolation(.none)
+        .resizable()
+        .scaledToFit()
+        .foregroundStyle(color)
+        .frame(height: height)
+    }
+  }
+
+  private static func loadMatte(named name: String) -> NSImage? {
+    if let cached = matteCache[name] { return cached }
+    guard let source = loadSource(named: name),
+          let matte = makeMatte(from: source)
+    else { return nil }
+    matte.isTemplate = true
+    matteCache[name] = matte
+    return matte
+  }
+
+  private static func loadSource(named name: String) -> NSImage? {
+    if let url = Bundle.main.url(forResource: name, withExtension: "png", subdirectory: "Pets") {
+      return NSImage(contentsOf: url)
+    }
+    if let url = Bundle.main.url(forResource: name, withExtension: "png") {
+      return NSImage(contentsOf: url)
+    }
+    return nil
+  }
+
+  private static func makeMatte(from image: NSImage) -> NSImage? {
+    var proposed = CGRect(origin: .zero, size: image.size)
+    guard let cgImage = image.cgImage(forProposedRect: &proposed, context: nil, hints: nil) else {
+      return nil
+    }
+
+    let width = cgImage.width
+    let height = cgImage.height
+    let bytesPerRow = width * 4
+    var pixels = [UInt8](repeating: 0, count: width * height * 4)
+    let colorSpace = CGColorSpaceCreateDeviceRGB()
+    let bitmapInfo = CGImageAlphaInfo.premultipliedLast.rawValue
+    var didDraw = false
+
+    pixels.withUnsafeMutableBytes { buffer in
+      guard let context = CGContext(
+        data: buffer.baseAddress,
+        width: width,
+        height: height,
+        bitsPerComponent: 8,
+        bytesPerRow: bytesPerRow,
+        space: colorSpace,
+        bitmapInfo: bitmapInfo)
+      else { return }
+
+      context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+      didDraw = true
+    }
+
+    guard didDraw else { return nil }
+
+    let pixelCount = width * height
+    var solid = [Bool](repeating: false, count: pixelCount)
+    for idx in 0..<pixelCount {
+      solid[idx] = pixels[idx * 4 + 3] > 8
+    }
+
+    var exterior = [Bool](repeating: false, count: pixelCount)
+    var queue: [Int] = []
+    queue.reserveCapacity(pixelCount / 4)
+
+    func enqueue(_ x: Int, _ y: Int) {
+      guard x >= 0, x < width, y >= 0, y < height else { return }
+      let idx = y * width + x
+      guard !solid[idx], !exterior[idx] else { return }
+      exterior[idx] = true
+      queue.append(idx)
+    }
+
+    for x in 0..<width {
+      enqueue(x, 0)
+      enqueue(x, height - 1)
+    }
+    for y in 0..<height {
+      enqueue(0, y)
+      enqueue(width - 1, y)
+    }
+
+    var head = 0
+    while head < queue.count {
+      let idx = queue[head]
+      head += 1
+      let x = idx % width
+      let y = idx / width
+      enqueue(x + 1, y)
+      enqueue(x - 1, y)
+      enqueue(x, y + 1)
+      enqueue(x, y - 1)
+    }
+
+    var output = [UInt8](repeating: 0, count: pixelCount * 4)
+    for idx in 0..<pixelCount where solid[idx] || !exterior[idx] {
+      let offset = idx * 4
+      output[offset] = 255
+      output[offset + 1] = 255
+      output[offset + 2] = 255
+      output[offset + 3] = 255
+    }
+
+    let data = NSData(bytes: output, length: output.count)
+    guard let provider = CGDataProvider(data: data),
+          let matteCG = CGImage(
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bitsPerPixel: 32,
+            bytesPerRow: bytesPerRow,
+            space: colorSpace,
+            bitmapInfo: CGBitmapInfo(rawValue: bitmapInfo),
+            provider: provider,
+            decode: nil,
+            shouldInterpolate: false,
+            intent: .defaultIntent)
+    else { return nil }
+
+    return NSImage(cgImage: matteCG, size: image.size)
+  }
+
+  private static var matteCache: [String: NSImage] = [:]
 }
 
 /// Subdirectory-aware loader for the `Pets/<name>.png` assets. Renders a

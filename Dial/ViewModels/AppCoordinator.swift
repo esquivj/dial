@@ -6,11 +6,6 @@ import os.log
 
 private let coordLog = Logger(subsystem: "com.dial.Dial", category: "AppCoordinator")
 
-private enum PlaybackEventSource {
-  case poll
-  case desktopNotification
-}
-
 enum BackgroundEnrichmentPhase: Equatable {
   case off
   case waiting
@@ -64,7 +59,9 @@ final class AppCoordinator {
   private var desktopObserverStarted = false
   private var currentTagWarmTask: Task<Void, Never>?
   private var backgroundEnrichmentTask: Task<Void, Never>?
+  private var ambientTrickTask: Task<Void, Never>?
   private var currentTrackCountedAt: Int64?
+  private var playbackReducer = PlaybackStateReducer()
 
   var backgroundEnrichmentPhase: BackgroundEnrichmentPhase = .off
   var backgroundEnrichmentMessage = "Off"
@@ -121,12 +118,12 @@ final class AppCoordinator {
         // the connect view so the user knows to reconnect. Polling stays
         // stopped (loop exited via thrown stream) and a future signIn()
         // will re-call start() with the now-cleared pollingStarted guard.
-        print("[AppCoordinator] auth revoked — surfacing connect view")
+        coordLog.error("auth revoked; surfacing connect view")
         await MainActor.run { [weak self] in
           self?.settings.markSignedOut()
         }
       } catch {
-        print("[AppCoordinator] polling error: \(error)")
+        coordLog.error("polling error: \(String(describing: error), privacy: .public)")
       }
       // Allow re-start after the task exits (whether normally, errored, or
       // cancelled). Without this, the next signIn() would no-op because the
@@ -217,8 +214,23 @@ final class AppCoordinator {
           let after = try StatsQueries(dbq: dbq).enrichmentProgress()
           if attempted == 0 {
             if Self.enrichmentIsCaughtUp(after, includeTags: settings.lastFMTagEnrichmentEnabled && !key.isEmpty) {
-              self?.updateBackgroundEnrichment(.caughtUp, message: "library analyzed", error: nil)
-              try await Task.sleep(nanoseconds: 30 * 60 * 1_000_000_000)
+              self?.updateBackgroundEnrichment(.caughtUp, message: "maintenance scan", error: nil)
+              attempted += try await metadata.enrichMissing(rateLimitPerSec: 0.25, limit: 24)
+              try Task.checkCancellation()
+              attempted += try await metadata.enrichMissingArtists(rateLimitPerSec: 0.5, limit: 24)
+              try Task.checkCancellation()
+              if settings.lastFMTagEnrichmentEnabled, !key.isEmpty {
+                let tagger = TagEnricher(dbq: dbq, lastFM: LastFMClient(apiKey: key))
+                attempted += try await tagger.enrichMissingArtists(rateLimitPerSec: 0.75, limit: 30)
+                try Task.checkCancellation()
+              }
+              if attempted == 0 {
+                self?.updateBackgroundEnrichment(.caughtUp, message: "library warm", error: nil)
+                try await Task.sleep(nanoseconds: 30 * 60 * 1_000_000_000)
+              } else {
+                self?.updateBackgroundEnrichment(.waiting, message: "refreshed stale metadata", error: nil)
+                try await Task.sleep(nanoseconds: 5 * 1_000_000_000)
+              }
             } else {
               self?.updateBackgroundEnrichment(.waiting, message: "retry window", error: nil)
               try await Task.sleep(nanoseconds: 30 * 60 * 1_000_000_000)
@@ -292,7 +304,7 @@ final class AppCoordinator {
     guard !key.isEmpty else { return }
     let tagger = TagEnricher(dbq: dbq, lastFM: LastFMClient(apiKey: key))
     try await tagger.enrichMissingArtists(rateLimitPerSec: 1, limit: limit)
-    updateSoundTheme(for: nowPlaying.track?.artistUri)
+    refreshCurrentSoundTheme(allowFallback: false)
   }
 
   /// Composes the full sign-in flow: OAuth → mark signed in → start polling.
@@ -342,7 +354,7 @@ final class AppCoordinator {
         trackUri: nowPlaying.track?.uri,
         artistUri: nowPlaying.track?.artistUri,
         currentPlayAt: currentTrackCountedAt)
-      updateSoundTheme(for: nowPlaying.track?.artistUri)
+      refreshCurrentSoundTheme(allowFallback: false)
       nowPlaying.playsYTD = aggCache.playsYTD
       menubar.playsYTD = aggCache.playsYTD
     }
@@ -350,20 +362,37 @@ final class AppCoordinator {
   }
 
   private func handle(_ event: PlaybackEvent, source: PlaybackEventSource = .poll) async {
+    let perf: DialPerfInterval? = source == .poll ? DialPerf.begin("playback.poll_to_render") : nil
+    var perfEnded = false
+    func endPerf() {
+      guard !perfEnded else { return }
+      perf?.end()
+      perfEnded = true
+    }
+    defer { endPerf() }
+
     // Keep the Settings heartbeat tied to the Web API poller. Desktop
     // notifications are a faster local UI path, not proof the API is healthy.
     if source == .poll {
       lastSuccessfulPoll = Date()
     }
+    guard let reduction = playbackReducer.reduce(event, source: source) else {
+      if source == .poll {
+        DialPerf.event("playback.poll_suppressed")
+      }
+      return
+    }
+    let event = reduction.event
     switch event {
     case let .started(uri, name, artistName, artistUri, artists, albumName, artUrl, durationMs, _):
       let existingTrack = nowPlaying.track
-      let trackChanged = existingTrack?.uri != uri
+      let trackChanged = reduction.trackChanged || existingTrack?.uri != uri
       let storedTrack = trackChanged ? (try? TracksDAO(dbq: dbq).fetch(uri: uri)) : nil
       let storedArtists = Self.playbackArtists(from: storedTrack?.artistsJson)
       if trackChanged {
         currentTrackCountedAt = nil
         menubar.setOptimisticProgress(0)
+        clearAmbientTrick()
       }
 
       let canReuseExistingMetadata = !trackChanged
@@ -388,6 +417,7 @@ final class AppCoordinator {
       let resolvedDurationMs = durationMs > 0
         ? durationMs
         : (canReuseExistingMetadata ? menubar.durationMs : Int(storedTrack?.durationMs ?? 0))
+      await artworkCache.prefetch(resolvedArtUrl)
 
       // Persist track metadata so the SQL joins in `artistRank7d`,
       // `artistLifetimePlays`, and the PetEngine variety detection work.
@@ -417,22 +447,28 @@ final class AppCoordinator {
         name: resolvedName,
         artistName: resolvedArtistName,
         artistUri: resolvedArtistUri,
+        artistUris: resolvedArtists.map(\.uri).filter { $0.hasPrefix("spotify:artist:") },
         albumName: resolvedAlbumName,
         artUrl: resolvedArtUrl)
       nowPlaying.track = track
       menubar.track = track
-      await artworkCache.prefetch(resolvedArtUrl)
       menubar.state = .playing
       menubar.durationMs = resolvedDurationMs
       if trackChanged || menubar.likedTrackState == .unknown {
         refreshLikedState(for: uri)
       }
       aggCache.refresh(trackUri: uri, artistUri: resolvedArtistUri, currentPlayAt: nil)
-      updateSoundTheme(for: resolvedArtists.map(\.uri), allowFallback: !trackChanged)
+      updateSoundTheme(
+        for: resolvedArtists.map(\.uri),
+        allowFallback: !trackChanged,
+        trackName: resolvedName,
+        artistName: resolvedArtistName,
+        albumName: resolvedAlbumName)
       warmCurrentSoundTags(for: resolvedArtists)
       nowPlaying.playsYTD = aggCache.playsYTD
       menubar.playsYTD = aggCache.playsYTD
       updatePetMemoryText()
+      endPerf()
       // BPM lookup is best-effort for the beat-sync animation.
       if trackChanged,
          let trackId = uri.split(separator: ":").last,
@@ -443,17 +479,21 @@ final class AppCoordinator {
 
     case .paused:
       menubar.state = .paused
+      endPerf()
       resolvePetBehavior()
 
     case .resumed:
       menubar.state = .playing
+      endPerf()
       resolvePetBehavior()
 
     case .noPlayback:
       currentTrackCountedAt = nil
+      clearAmbientTrick()
       nowPlaying.track = nil
       nowPlaying.playsYTD = 0
       nowPlaying.soundTheme = .classic
+      nowPlaying.soundThemeDecision = nil
       menubar.track = nil
       menubar.state = .nothingPlaying
       menubar.likedTrackState = .unknown
@@ -463,15 +503,17 @@ final class AppCoordinator {
       menubar.playsYTD = 0
       pet.currentBPM = nil
       aggCache.refresh(trackUri: nil, artistUri: nil, currentPlayAt: nil)
+      endPerf()
       resolvePetBehavior()
 
     case let .progress(ms):
       menubar.progressMs = ms
       menubar.lastProgressUpdate = Date()
+      endPerf()
 
     case let .modesChanged(shuffle, repeatMode):
-      menubar.shuffle = shuffle
-      menubar.repeatMode = repeatMode
+      menubar.applyRemoteModes(shuffle: shuffle, repeatMode: repeatMode)
+      endPerf()
 
     case let .countedPlay(uri, ms, at):
       let xpBefore = pet.xp
@@ -487,6 +529,7 @@ final class AppCoordinator {
           .init(playedAt: at, trackUri: uri, msPlayed: ms, source: "live"))
       } catch {
         coordLog.error("recordPlay failed for \(uri, privacy: .public): \(String(describing: error), privacy: .public)")
+        endPerf()
         return
       }
       guard didRecord else {
@@ -496,6 +539,7 @@ final class AppCoordinator {
         nowPlaying.playsYTD = aggCache.playsYTD
         menubar.playsYTD = aggCache.playsYTD
         updatePetMemoryText()
+        endPerf()
         resolvePetBehavior()
         return
       }
@@ -508,11 +552,12 @@ final class AppCoordinator {
       let xpDelta = max(0, pet.xp - xpBefore)
       let trackName = nowPlaying.track?.name ?? "this play"
       pet.lastFeedingText = xpDelta > 0
-        ? "+\(xpDelta.formatted()) XP from \(trackName)"
-        : "Fed by \(trackName)"
+        ? "+\(xpDelta.formatted()) XP · \(trackName)"
+        : "Memory added · \(trackName)"
       updatePetMemoryText()
-      // Tamagotchi-style: a counted play "feeds" the pet — flip on the
-      // eating flag for ~600ms, then auto-clear so it returns to walk/idle.
+      endPerf()
+      // A counted play gets a tiny creature pulse, then settles back into the
+      // current listening motion. The UI copy stays about memory/XP, not chores.
       pet.isEating = true
       Task { @MainActor in
         try? await Task.sleep(nanoseconds: 600_000_000)
@@ -520,6 +565,7 @@ final class AppCoordinator {
         resolvePetBehavior()
       }
       resolvePetBehavior()
+      scheduleAmbientTrickIfNeeded()
     }
   }
 
@@ -536,6 +582,7 @@ final class AppCoordinator {
       rediscovered: settings.petRediscoveryAnimation && aggCache.rediscovered,
       eating: settings.petFeedingAnimation && pet.isEating,
       leveledUp: settings.petLevelUpAnimation && pet.justLeveledUp,
+      ambientTrick: pet.ambientTrickBehavior,
       lastPlayAt: pet.lastPlayAt,
       now: Int64(Date().timeIntervalSince1970),
       bpm: pet.currentBPM
@@ -544,22 +591,87 @@ final class AppCoordinator {
     updatePetReactionText()
   }
 
+  private func scheduleAmbientTrickIfNeeded() {
+    guard settings.petEnabled,
+          let badge = aggCache.currentBadgeInsight?.kind,
+          let trick = ambientTrick(for: badge)
+    else { return }
+
+    let unlockedTricks = ((try? PetTrickUnlocksDAO(dbq: dbq).all()) ?? []).map(\.trick)
+    guard unlockedTricks.contains(trick) else { return }
+
+    ambientTrickTask?.cancel()
+    let behavior = trick.displayBehavior
+    ambientTrickTask = Task { @MainActor [weak self] in
+      try? await Task.sleep(nanoseconds: 720_000_000)
+      guard !Task.isCancelled, let self, self.menubar.state == .playing else { return }
+      self.pet.ambientTrickBehavior = behavior
+      self.resolvePetBehavior()
+
+      try? await Task.sleep(nanoseconds: 1_150_000_000)
+      guard !Task.isCancelled else { return }
+      self.pet.ambientTrickBehavior = nil
+      self.resolvePetBehavior()
+      self.ambientTrickTask = nil
+    }
+  }
+
+  private func clearAmbientTrick() {
+    ambientTrickTask?.cancel()
+    ambientTrickTask = nil
+    pet.ambientTrickBehavior = nil
+  }
+
+  private func ambientTrick(for badge: BadgeMemoryKind) -> PetTrick? {
+    switch badge {
+    case .firstListen, .newArtist, .play10, .play50, .play100:
+      return .sparkStep
+    case .rediscovered, .deepCut, .anniversary:
+      return .memorySpin
+    case .onStreak, .repeatTrack, .albumMode:
+      return .beatBounce
+    }
+  }
+
   private func updateSoundTheme(for artistUri: String?) {
     guard let artistUri else { return }
     updateSoundTheme(for: [artistUri])
   }
 
-  private func updateSoundTheme(for artistUris: [String], allowFallback: Bool = true) {
+  private func updateSoundTheme(
+    for artistUris: [String],
+    allowFallback: Bool = true,
+    trackName: String? = nil,
+    artistName: String? = nil,
+    albumName: String? = nil
+  ) {
     let artistUris = artistUris.filter { $0.hasPrefix("spotify:artist:") }
-    guard !artistUris.isEmpty else { return }
-
     let queries = StatsQueries(dbq: dbq)
-    let theme = allowFallback
-      ? (try? queries.soundTheme(forArtistUris: artistUris))
-      : (try? queries.directSoundTheme(forArtistUris: artistUris))
-    if let theme {
-      nowPlaying.soundTheme = theme
+    let decision = try? queries.soundThemeDecision(
+      forArtistUris: artistUris,
+      trackName: trackName,
+      artistName: artistName,
+      albumName: albumName,
+      allowRecentFallback: allowFallback)
+    if let decision {
+      nowPlaying.soundTheme = decision.theme
+      nowPlaying.soundThemeDecision = decision
+    } else if nowPlaying.track != nil {
+      nowPlaying.soundThemeDecision = .holding(theme: nowPlaying.soundTheme)
     }
+  }
+
+  private func refreshCurrentSoundTheme(allowFallback: Bool = true) {
+    guard let track = nowPlaying.track else { return }
+    let artistUris = track.artistUris.isEmpty
+      ? [track.artistUri].compactMap { $0 }
+      : track.artistUris
+    updateSoundTheme(
+      for: artistUris,
+      allowFallback: allowFallback,
+      trackName: track.name,
+      artistName: track.artistName,
+      albumName: track.albumName)
   }
 
   private static func playbackArtists(from artistsJson: String?) -> [PlaybackArtist] {
@@ -590,23 +702,35 @@ final class AppCoordinator {
   }
 
   private func warmCurrentSoundTags(for artists: [PlaybackArtist]) {
-    let artistUris = artists
-      .map(\.uri)
-      .filter { $0.hasPrefix("spotify:artist:") }
+    var seen = Set<String>()
+    let artists = artists.filter { artist in
+      artist.uri.hasPrefix("spotify:artist:")
+        && !artist.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        && seen.insert(artist.uri).inserted
+    }
+    let artistUris = artists.map(\.uri)
     guard !artistUris.isEmpty else { return }
 
     let key = settings.lastFMAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard settings.lastFMTagEnrichmentEnabled, !key.isEmpty else { return }
 
     currentTagWarmTask?.cancel()
     let dbq = self.dbq
+    let client = self.client
+    let useLastFM = settings.lastFMTagEnrichmentEnabled && !key.isEmpty
     currentTagWarmTask = Task { [weak self] in
       do {
-        let tagger = TagEnricher(dbq: dbq, lastFM: LastFMClient(apiKey: key))
-        try await tagger.enrichMissingArtists(rateLimitPerSec: 2, limit: 12)
+        let metadata = MetadataEnricher(dbq: dbq, client: client)
+        _ = try await metadata.enrichArtists(uris: artistUris, rateLimitPerSec: 2)
+
+        if useLastFM {
+          let tagger = TagEnricher(dbq: dbq, lastFM: LastFMClient(apiKey: key))
+          _ = try await tagger.enrichArtists(
+            artists.map { ArtistTagCandidate(uri: $0.uri, name: $0.name) },
+            rateLimitPerSec: 2)
+        }
         try Task.checkCancellation()
         await MainActor.run { [weak self] in
-          self?.updateSoundTheme(for: artistUris, allowFallback: false)
+          self?.refreshCurrentSoundTheme(allowFallback: false)
         }
       } catch is CancellationError {
       } catch {
@@ -646,11 +770,11 @@ final class AppCoordinator {
         pet.reactionText = aggCache.currentBadgeInsight?.detail ?? "An old favorite came back."
       }
     case .eating:
-      pet.reactionText = pet.lastFeedingText ?? "Fed by this play."
+      pet.reactionText = pet.lastFeedingText ?? "Memory added."
     case .paused:
       pet.reactionText = "Paused with \(nowPlaying.track?.name ?? "this track")."
     case .dormant:
-      pet.reactionText = "Dormant. Play something to wake it."
+      pet.reactionText = "Quiet since the last session."
     case let .beatSync(bpm):
       pet.reactionText = "Synced to \(Int(bpm.rounded())) BPM."
     case .sparkStep:

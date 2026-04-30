@@ -35,7 +35,7 @@ enum BadgeResolver {
     }
 
     if let artistUri = context.artistUri {
-      let artistCount = try artistLifetimeCount(artistUri: artistUri, in: db)
+      let artistCount = try artistLifetimeCount(context: context, in: db)
       if artistCount == 1 {
         events.append(event(.newArtist, play: play, context: context, scope: "new_artist:\(artistUri)"))
       }
@@ -91,8 +91,8 @@ enum BadgeResolver {
         explanation: "Shown because this track has a prior play on this same calendar day at least one year ago.")
     }
 
-    if let artistUri = context.artistUri {
-      let artistCount = try artistLifetimeCount(artistUri: artistUri, in: db)
+    if context.artistUri != nil {
+      let artistCount = try artistLifetimeCount(context: context, in: db)
       if (countedCurrentPlay && artistCount == 1) || (!countedCurrentPlay && artistCount == 0) {
         let displayCount = countedCurrentPlay ? artistCount : artistCount + 1
         return BadgeInsight(
@@ -118,8 +118,8 @@ enum BadgeResolver {
         explanation: "Shown because the previous play was \(days.formatted()) days ago. Rediscovered triggers after a 90+ day gap.")
     }
 
-    if let artistUri = context.artistUri {
-      let artistCount = try artistLifetimeCount(artistUri: artistUri, in: db)
+    if context.artistUri != nil {
+      let artistCount = try artistLifetimeCount(context: context, in: db)
       if artistCount >= 20, effectiveTrackCount <= 3 {
         return BadgeInsight(
           kind: .deepCut,
@@ -202,15 +202,25 @@ enum BadgeResolver {
       arguments: [trackUri]) ?? 0
   }
 
-  private static func artistLifetimeCount(artistUri: String, in db: Database) throws -> Int {
-    try Int.fetchOne(db, sql: """
+  private static func artistLifetimeCount(context: TrackContext, in db: Database) throws -> Int {
+    let normalizedName = context.normalizedArtistName
+    return try Int.fetchOne(db, sql: """
       SELECT COUNT(*)
       FROM plays p
       JOIN tracks t ON t.uri = p.track_uri
       WHERE t.artists_json IS NOT NULL
         AND json_valid(t.artists_json) = 1
-        AND json_extract(t.artists_json, '$[0].uri') = ?
-      """, arguments: [artistUri]) ?? 0
+        AND (
+          (? IS NOT NULL AND json_extract(t.artists_json, '$[0].uri') = ?)
+          OR
+          (? IS NOT NULL AND LOWER(TRIM(json_extract(t.artists_json, '$[0].name'))) = ?)
+        )
+      """, arguments: [
+        context.artistUri,
+        context.artistUri,
+        normalizedName,
+        normalizedName,
+      ]) ?? 0
   }
 
   private static func wasRediscovered(play: Play, in db: Database) throws -> Bool {
@@ -468,6 +478,10 @@ private struct TrackContext {
   let albumName: String?
   let artistName: String?
   let artistUri: String?
+  var normalizedArtistName: String? {
+    let normalized = artistName?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    return normalized?.isEmpty == false ? normalized : nil
+  }
 
   static func fetch(trackUri: String, in db: Database) throws -> TrackContext {
     guard let track = try Track.fetchOne(db, key: trackUri) else {

@@ -34,18 +34,20 @@ struct ControlsBar: View {
       }
       .padding(.horizontal, TransportHardware.deckHorizontalPadding)
     }
-    .foregroundStyle(theme.textPrimary.opacity(0.85))
+    .foregroundStyle(theme.textPrimary.opacity(0.92))
     .frame(maxWidth: .infinity, minHeight: TransportHardware.rowHeight)
+    .offset(y: Dial.Layout.Transport.buttonRowYOffset)
   }
 
   private var shuffleButton: some View {
     Button {
       let prev = menubar.shuffle
-      menubar.shuffle = !prev
+      let next = !prev
+      menubar.setOptimisticShuffle(next)
       Task {
-        do { try await client.setShuffle(!prev) }
+        do { try await client.setShuffle(next) }
         catch {
-          await MainActor.run { menubar.shuffle = prev }
+          await MainActor.run { menubar.revertOptimisticShuffle(to: prev) }
         }
       }
     } label: {
@@ -115,11 +117,11 @@ struct ControlsBar: View {
         case .track:   return .off
         }
       }()
-      menubar.repeatMode = next
+      menubar.setOptimisticRepeatMode(next)
       Task {
         do { try await client.setRepeat(next.rawValue) }
         catch {
-          await MainActor.run { menubar.repeatMode = prev }
+          await MainActor.run { menubar.revertOptimisticRepeatMode(to: prev) }
         }
       }
     } label: {
@@ -143,7 +145,7 @@ struct ControlsBar: View {
     switch menubar.repeatMode {
     case .off:     return theme.textMuted
     case .context: return theme.accent
-    case .track:   return theme.accentAlt
+    case .track:   return theme.memoryAccent
     }
   }
 
@@ -196,6 +198,7 @@ private struct PlaybackScrubber: View {
       .foregroundStyle(isSeekable ? theme.textPrimary.opacity(0.78) : theme.textMuted.opacity(0.6))
       .monospacedDigit()
     }
+    .offset(y: Dial.Layout.Transport.scrubberYOffset)
     .opacity(isSeekable ? 1 : 0.55)
     .allowsHitTesting(isSeekable)
     .help(isSeekable ? "Seek in track" : "No seekable track")
@@ -318,13 +321,19 @@ private struct PlaybackScrubber: View {
   }
 }
 
-private enum TransportHardware {
+enum TransportHardware {
   static let rowHeight: CGFloat = 39
   static let deckHorizontalPadding: CGFloat = 22
   static let centralSpacing: CGFloat = 8
   static let utilitySize = CGSize(width: 38, height: 28)
   static let transportSize = CGSize(width: 44, height: 31)
   static let playSize = CGSize(width: 58, height: 35)
+  static let buttonInset: CGFloat = 2.5
+
+  static func buttonSize(prominent: Bool) -> CGSize {
+    let slot = prominent ? playSize : transportSize
+    return CGSize(width: slot.width - buttonInset, height: slot.height - buttonInset)
+  }
 }
 
 private struct TransportWellRow: View {
@@ -357,6 +366,12 @@ private struct TransportDeckWell: View {
   let glowOpacity: Double
   @Environment(\.dialTheme) private var theme
 
+  private var assetName: String {
+    if size == TransportHardware.playSize { return "transport-well-play" }
+    if size == TransportHardware.transportSize { return "transport-well-button" }
+    return "transport-well-utility"
+  }
+
   var body: some View {
     Capsule()
       .fill(LinearGradient(
@@ -377,8 +392,13 @@ private struct TransportDeckWell: View {
       )
       .overlay(
         Capsule()
-          .stroke(Color.white.opacity(0.055), lineWidth: 0.6)
+          .stroke(Color.white.opacity(0.075), lineWidth: 0.65)
       )
+      .overlay {
+        DialHardwareImage(name: assetName)
+          .opacity(0.62)
+          .allowsHitTesting(false)
+      }
   }
 }
 
@@ -400,10 +420,10 @@ private struct ToyTransportStyle: ButtonStyle {
     @Environment(\.dialTheme) private var theme
 
     private var buttonWidth: CGFloat {
-      prominent ? TransportHardware.playSize.width - 2.5 : TransportHardware.transportSize.width - 2.5
+      TransportHardware.buttonSize(prominent: prominent).width
     }
     private var buttonHeight: CGFloat {
-      prominent ? TransportHardware.playSize.height - 2.5 : TransportHardware.transportSize.height - 2.5
+      TransportHardware.buttonSize(prominent: prominent).height
     }
     private var slotWidth: CGFloat {
       prominent ? TransportHardware.playSize.width : TransportHardware.transportSize.width
@@ -426,13 +446,13 @@ private struct ToyTransportStyle: ButtonStyle {
     }
 
     private var chromeOpacity: Double {
-      if prominent { return hovering ? 0.48 : 0.40 }
-      return hovering ? 0.38 : 0.30
+      if prominent { return hovering ? 0.56 : 0.48 }
+      return hovering ? 0.46 : 0.38
     }
 
     private var rimOpacity: Double {
-      if prominent { return hovering ? 0.38 : 0.28 }
-      return hovering ? 0.28 : 0.20
+      if prominent { return hovering ? 0.32 : 0.24 }
+      return hovering ? 0.25 : 0.17
     }
 
     private var iconGlowOpacity: Double {
@@ -516,6 +536,11 @@ private struct ToyTransportStyle: ButtonStyle {
           .frame(width: lowerSeatWidth, height: lowerSeatHeight)
           .blur(radius: 0.45)
           .offset(y: lowerSeatYOffset)
+          .allowsHitTesting(false)
+
+        DialHardwareImage(name: prominent ? "transport-button-play" : "transport-button")
+          .opacity(pressed ? 0.14 : 0.24)
+          .frame(width: buttonWidth, height: buttonHeight)
           .allowsHitTesting(false)
 
         Capsule()

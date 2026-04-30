@@ -16,6 +16,47 @@ final class BadgeResolverTests: XCTestCase {
     XCTAssertTrue(kinds.contains(.newArtist))
   }
 
+  func test_livePlay_doesNotRecordNewArtistWhenImportedArtistNameAlreadyExists() throws {
+    let dbq = try InMemoryDatabase.make()
+    let engine = PetEngine(dbq: dbq, clock: { 1_700_000_000 })
+    try seedTrack(dbq, uri: "OLD", artistUri: "artist:KETTAMA", artistName: "KETTAMA")
+    try seedTrack(dbq, uri: "LIVE", artistUri: "spotify:artist:kettama", artistName: "KETTAMA")
+
+    try engine.recordPlay(.init(
+      playedAt: 1_600_000_000,
+      trackUri: "OLD",
+      msPlayed: 60_000,
+      source: "import"))
+    try engine.recordPlay(.init(
+      playedAt: 1_700_000_000,
+      trackUri: "LIVE",
+      msPlayed: 60_000,
+      source: "live"))
+
+    let kinds = try BadgeEventsDAO(dbq: dbq).recent().map(\.kind)
+    XCTAssertTrue(kinds.contains(.firstListen))
+    XCTAssertFalse(kinds.contains(.newArtist))
+  }
+
+  func test_currentInsight_beforeCountedPlay_usesImportedArtistNameAsKnownArtist() throws {
+    let dbq = try InMemoryDatabase.make()
+    let engine = PetEngine(dbq: dbq, clock: { 1_700_000_000 })
+    try seedTrack(dbq, uri: "OLD", artistUri: "artist:KETTAMA", artistName: "KETTAMA")
+    try seedTrack(dbq, uri: "LIVE", artistUri: "spotify:artist:kettama", artistName: "KETTAMA")
+
+    try engine.recordPlay(.init(
+      playedAt: 1_600_000_000,
+      trackUri: "OLD",
+      msPlayed: 60_000,
+      source: "import"))
+
+    let insight = try PlayAggregations(dbq: dbq, now: { 1_700_000_000 })
+      .currentBadgeInsight(trackUri: "LIVE", currentPlayAt: nil)
+
+    XCTAssertEqual(insight?.kind, .firstListen)
+    XCTAssertEqual(insight?.detail, "No plays in your history")
+  }
+
   func test_importedHistory_skipsDiscoverySpam_butRecordsMilestones() throws {
     let dbq = try InMemoryDatabase.make()
     let engine = PetEngine(dbq: dbq, clock: { 1_700_000_000 })
@@ -92,6 +133,51 @@ final class BadgeResolverTests: XCTestCase {
       .currentBadgeInsight(trackUri: "T", currentPlayAt: nil)
 
     XCTAssertNil(insight)
+  }
+
+  func test_currentInsight_skipBackToAlreadyCountedTrackDoesNotShowFirstListen() throws {
+    let dbq = try InMemoryDatabase.make()
+    let anchor: Int64 = 1_700_000_000
+    let engine = PetEngine(dbq: dbq, clock: { anchor })
+    try seedTrack(dbq, uri: "T", artistUri: "art:known", artistName: "Known Artist")
+    try seedTrack(dbq, uri: "OTHER", artistUri: "art:known", artistName: "Known Artist")
+
+    try engine.recordPlay(.init(
+      playedAt: anchor - 240,
+      trackUri: "T",
+      msPlayed: 60_000,
+      source: "live"))
+    try engine.recordPlay(.init(
+      playedAt: anchor - 120,
+      trackUri: "OTHER",
+      msPlayed: 60_000,
+      source: "live"))
+
+    let insight = try PlayAggregations(dbq: dbq, now: { anchor })
+      .currentBadgeInsight(trackUri: "T", currentPlayAt: nil)
+
+    XCTAssertNil(insight)
+  }
+
+  func test_badgeMemoryScopeIsUnique() throws {
+    let dbq = try InMemoryDatabase.make()
+    let event = BadgeEvent(
+      id: nil,
+      kind: .firstListen,
+      category: .discovery,
+      trackUri: "T",
+      artistUri: "art:known",
+      albumName: "Album",
+      earnedAt: 1_700_000_000,
+      payloadJson: nil,
+      scopeKey: "first_listen:T")
+
+    try dbq.write { db in
+      try BadgeEventsDAO.insertIgnoring(event, in: db)
+      try BadgeEventsDAO.insertIgnoring(event, in: db)
+    }
+
+    XCTAssertEqual(try BadgeEventsDAO(dbq: dbq).recent().count, 1)
   }
 
   func test_currentInsight_afterCountedReplay_doesNotReuseFirstListenMemory() throws {

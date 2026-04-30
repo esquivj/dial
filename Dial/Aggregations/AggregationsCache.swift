@@ -1,5 +1,8 @@
 import Foundation
 import Observation
+import os.log
+
+private let aggregationsLog = Logger(subsystem: "com.dial.Dial", category: "AggregationsCache")
 
 /// Observable bag of derived readouts for the currently-playing track. Views
 /// (dropdown, menubar) read from this; `AppCoordinator` calls `refresh()`
@@ -36,7 +39,7 @@ final class AggregationsCache {
       artistLifetimePlays = try artistUri.flatMap { try agg.artistLifetimePlays(artistUri: $0) } ?? 0
       last60Min    = try agg.last60MinTracks()
     } catch {
-      print("[AggregationsCache] refresh failed: \(error)")
+      aggregationsLog.error("refresh failed: \(String(describing: error), privacy: .public)")
     }
   }
 }

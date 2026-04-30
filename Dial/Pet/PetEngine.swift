@@ -103,10 +103,9 @@ final class PetEngine {
   /// same artist/album. Runs inside the same transaction the play was just inserted into.
   private static func variety(for play: Play, in db: Database) throws -> VarietyBonus {
     let track = try Track.fetchOne(db, key: play.trackUri)
-    let artistUri: String? = {
+    let artist: ArtistEntry? = {
       guard let json = track?.artistsJson?.data(using: .utf8) else { return nil }
-      struct A: Decodable { let uri: String }
-      return (try? JSONDecoder().decode([A].self, from: json))?.first?.uri
+      return (try? JSONDecoder().decode([ArtistEntry].self, from: json))?.first
     }()
 
     // newArtist: this play is the only one whose track maps to this artist.
@@ -114,28 +113,60 @@ final class PetEngine {
     // rows in the DB from imported extended-history) — without it, the
     // bad-JSON exception propagates up and the pet's "new artist" XP
     // bonus silently disappears for every play.
-    if let au = artistUri {
-      let count = try Int.fetchOne(db, sql: """
-        SELECT COUNT(*) FROM plays p JOIN tracks t ON t.uri = p.track_uri
-        WHERE p.id != ? AND json_valid(t.artists_json) = 1
-          AND json_extract(t.artists_json, '$[0].uri') = ?
-      """, arguments: [play.id ?? -1, au]) ?? 0
+    if let artist {
+      let count = try priorArtistPlayCount(excludingPlayID: play.id, artist: artist, in: db)
       if count == 0 { return .newArtist }
     }
 
     // newAlbum: this play is the only one for tracks with the same (album, artist).
     // Same `json_valid` guard.
-    if let albumName = track?.albumName, let artistUri {
+    if let albumName = track?.albumName, let artist {
       let count = try Int.fetchOne(db, sql: """
         SELECT COUNT(*) FROM plays p JOIN tracks t ON t.uri = p.track_uri
         WHERE p.id != ? AND t.album_name = ?
           AND json_valid(t.artists_json) = 1
-          AND json_extract(t.artists_json, '$[0].uri') = ?
-      """, arguments: [play.id ?? -1, albumName, artistUri]) ?? 0
+          AND (
+            (? IS NOT NULL AND json_extract(t.artists_json, '$[0].uri') = ?)
+            OR
+            (? IS NOT NULL AND LOWER(TRIM(json_extract(t.artists_json, '$[0].name'))) = ?)
+          )
+      """, arguments: [
+        play.id ?? -1,
+        albumName,
+        artist.uri,
+        artist.uri,
+        artist.normalizedName,
+        artist.normalizedName,
+      ]) ?? 0
       if count == 0 { return .newAlbum }
     }
 
     return .none
+  }
+
+  private static func priorArtistPlayCount(
+    excludingPlayID playID: Int64?,
+    artist: ArtistEntry,
+    in db: Database
+  ) throws -> Int {
+    try Int.fetchOne(db, sql: """
+      SELECT COUNT(*)
+      FROM plays p
+      JOIN tracks t ON t.uri = p.track_uri
+      WHERE p.id != ?
+        AND json_valid(t.artists_json) = 1
+        AND (
+          (? IS NOT NULL AND json_extract(t.artists_json, '$[0].uri') = ?)
+          OR
+          (? IS NOT NULL AND LOWER(TRIM(json_extract(t.artists_json, '$[0].name'))) = ?)
+        )
+    """, arguments: [
+      playID ?? -1,
+      artist.uri,
+      artist.uri,
+      artist.normalizedName,
+      artist.normalizedName,
+    ]) ?? 0
   }
 
   /// Returns true if a live play of the same track already exists within
@@ -168,5 +199,15 @@ final class PetEngine {
         """,
       arguments: [play.trackUri, cutoff])
     return row != nil
+  }
+}
+
+private struct ArtistEntry: Decodable {
+  let name: String
+  let uri: String
+
+  var normalizedName: String? {
+    let normalized = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    return normalized.isEmpty ? nil : normalized
   }
 }

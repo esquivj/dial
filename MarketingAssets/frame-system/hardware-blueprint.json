@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "scale": 2,
+  "canvas": { "width": 440, "height": 440, "radius": 36 },
+  "content": { "x": 15, "y": 15, "width": 410, "height": 410, "radius": 30 },
+  "shell": { "x": 2, "y": 2, "width": 436, "height": 436, "radius": 36 },
+  "rail": { "x": 50, "y": 25, "width": 340, "height": 34, "radius": 10 },
+  "hudLcd": { "x": 21, "y": 68, "width": 398, "height": 246, "radius": 10 },
+  "hudTransport": { "x": 24, "y": 326, "width": 392, "height": 74, "radius": 8 },
+  "hudNoTransportLcd": { "x": 24, "y": 68, "width": 392, "height": 348, "radius": 10 },
+  "fullLcd": { "x": 24, "y": 24, "width": 392, "height": 392, "radius": 11 },
+  "occlusion": {
+    "outerLip": 14,
+    "apertureLip": 5,
+    "transportLip": 5
+  }
+}

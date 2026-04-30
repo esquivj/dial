@@ -13,6 +13,8 @@ private let authLog = Logger(subsystem: "com.dial.Dial", category: "Auth")
 /// on a revoked refresh token.
 enum SpotifyAuthError: Error, Equatable {
   case refreshFailed
+  case invalidResponse
+  case tokenEndpointStatus(Int)
 }
 
 final class SpotifyAuthService: NSObject {
@@ -82,7 +84,13 @@ final class SpotifyAuthService: NSObject {
       "client_id":    clientID,
       "code_verifier": verifier
     ]).data(using: .utf8)
-    let (data, _) = try await URLSession.shared.data(for: req)
+    let (data, resp) = try await URLSession.shared.data(for: req)
+    guard let http = resp as? HTTPURLResponse else {
+      throw SpotifyAuthError.invalidResponse
+    }
+    guard (200...299).contains(http.statusCode) else {
+      throw SpotifyAuthError.tokenEndpointStatus(http.statusCode)
+    }
     struct R: Decodable {
       let access_token: String
       let refresh_token: String
@@ -111,7 +119,9 @@ final class SpotifyAuthService: NSObject {
       "client_id":     clientID
     ]).data(using: .utf8)
     let (data, resp) = try await URLSession.shared.data(for: req)
-    let http = resp as! HTTPURLResponse
+    guard let http = resp as? HTTPURLResponse else {
+      throw SpotifyAuthError.invalidResponse
+    }
 
     // 4xx on the token endpoint = the refresh token is dead (revoked, expired,
     // or the user disconnected Dial from their Spotify account web settings).
@@ -123,6 +133,9 @@ final class SpotifyAuthService: NSObject {
       authLog.error("refresh: 4xx status \(http.statusCode), clearing token")
       try? tokenStore.clear()
       throw SpotifyAuthError.refreshFailed
+    }
+    guard (200...299).contains(http.statusCode) else {
+      throw SpotifyAuthError.tokenEndpointStatus(http.statusCode)
     }
     struct R: Decodable {
       let access_token: String

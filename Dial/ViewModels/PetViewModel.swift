@@ -12,6 +12,7 @@ final class PetViewModel {
   var behavior: PetBehavior = .idle
   var currentBPM: Double? = nil
   var justLeveledUp: Bool = false
+  var ambientTrickBehavior: PetBehavior? = nil
   var reactionText: String = "Waiting for playback."
   var lastFeedingText: String?
   var lastMemoryText: String?

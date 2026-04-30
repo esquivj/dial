@@ -17,6 +17,15 @@ final class MetadataEnricher {
   private let dbq: DatabaseQueue
   private let client: SpotifyClient
 
+  private enum QueuePolicy {
+    static let retryFailedAfter: Int64 = 24 * 60 * 60
+    static let retryPartialAfter: Int64 = 24 * 60 * 60
+    static let retryLimitedAfter: Int64 = 15 * 60
+    static let refreshTrackAfter: Int64 = 90 * 24 * 60 * 60
+    static let refreshArtistAfter: Int64 = 60 * 24 * 60 * 60
+    static let recentFirstWindow: Int64 = 45 * 24 * 60 * 60
+  }
+
   init(dbq: DatabaseQueue, client: SpotifyClient) {
     self.dbq = dbq
     self.client = client
@@ -38,14 +47,18 @@ final class MetadataEnricher {
   func enrichMissing(batchSize: Int = 50, rateLimitPerSec: Double = 5, limit: Int? = nil) async throws -> Int {
     enricherLog.notice("enrichMissing started")
     let now = Int64(Date().timeIntervalSince1970)
-    let retryFailedBefore = now - 7 * 86_400
-    let retryPartialBefore = now - 86_400
-    let retryLimitedBefore = now - 15 * 60
+    let retryFailedBefore = now - QueuePolicy.retryFailedAfter
+    let retryPartialBefore = now - QueuePolicy.retryPartialAfter
+    let retryLimitedBefore = now - QueuePolicy.retryLimitedAfter
+    let refreshSuccessBefore = now - QueuePolicy.refreshTrackAfter
+    let recentCutoff = now - QueuePolicy.recentFirstWindow
     let missing: [String] = try await dbq.read { db in
       // Order by most-recent play DESC so visible/recent rows get upgraded
       // first. "Missing" now includes rows that already have oEmbed art but
       // still only carry synthetic import artist IDs (`artist:Name`), because
-      // genre enrichment needs real `spotify:artist:*` URIs.
+      // genre enrichment needs real `spotify:artist:*` URIs. It also includes
+      // a tiny stale-success queue for recent tracks so album art/duration/
+      // artist IDs do not freeze forever after one old fetch.
       var sql = """
         SELECT p.track_uri
         FROM plays p
@@ -66,17 +79,27 @@ final class MetadataEnricher {
                    ELSE NULL END,
               ''
             ) NOT LIKE 'spotify:artist:%'
+            OR (s.status = 'success' AND s.fetched_at < ? AND p.played_at >= ?)
           )
           AND (
             s.entity_uri IS NULL
             OR (s.status = 'failed' AND s.fetched_at < ?)
             OR (s.status = 'partial' AND s.fetched_at < ?)
             OR (s.status = 'limited' AND s.fetched_at < ?)
+            OR (s.status = 'success' AND s.fetched_at < ? AND p.played_at >= ?)
           )
         GROUP BY p.track_uri
         ORDER BY MAX(p.played_at) DESC
       """
-      var arguments: [DatabaseValueConvertible] = [retryFailedBefore, retryPartialBefore, retryLimitedBefore]
+      var arguments: [DatabaseValueConvertible] = [
+        refreshSuccessBefore,
+        recentCutoff,
+        retryFailedBefore,
+        retryPartialBefore,
+        retryLimitedBefore,
+        refreshSuccessBefore,
+        recentCutoff
+      ]
       if let limit {
         sql += "\nLIMIT ?"
         arguments.append(max(0, limit))
@@ -160,6 +183,11 @@ final class MetadataEnricher {
   @discardableResult
   func enrichMissingArtists(rateLimitPerSec: Double = 5, limit: Int? = nil) async throws -> Int {
     enricherLog.notice("enrichMissingArtists started")
+    let now = Int64(Date().timeIntervalSince1970)
+    let retryFailedBefore = now - QueuePolicy.retryFailedAfter
+    let retryLimitedBefore = now - QueuePolicy.retryLimitedAfter
+    let refreshSuccessBefore = now - QueuePolicy.refreshArtistAfter
+    let recentCutoff = now - QueuePolicy.recentFirstWindow
     let candidates: [String] = try await dbq.read { db in
       var sql = """
         WITH track_artists AS (
@@ -175,21 +203,47 @@ final class MetadataEnricher {
         SELECT ta.artist_uri
         FROM track_artists ta
         LEFT JOIN artists a ON a.uri = ta.artist_uri
+        LEFT JOIN metadata_enrichment_state s
+          ON s.entity_uri = ta.artist_uri
+         AND s.entity_type = 'artist'
+         AND s.provider = 'spotify'
         WHERE ta.artist_uri LIKE 'spotify:artist:%'
-          AND (a.uri IS NULL OR a.genres_json IS NULL)
+          AND (
+            a.uri IS NULL
+            OR a.genres_json IS NULL
+            OR s.entity_uri IS NULL
+            OR (s.status = 'failed' AND s.fetched_at < ?)
+            OR (s.status = 'limited' AND s.fetched_at < ?)
+            OR (s.status = 'success' AND s.fetched_at < ? AND ta.last_played >= ?)
+          )
         ORDER BY ta.last_played DESC
       """
-      if let limit {
-        sql += "\nLIMIT \(max(0, limit))"
+      if limit != nil {
+        sql += "\nLIMIT ?"
       }
-      return try String.fetchAll(db, sql: sql)
+      var arguments: [DatabaseValueConvertible] = [
+        retryFailedBefore,
+        retryLimitedBefore,
+        refreshSuccessBefore,
+        recentCutoff
+      ]
+      if let limit { arguments.append(max(0, limit)) }
+      return try String.fetchAll(db, sql: sql, arguments: StatementArguments(arguments))
     }
 
+    return try await enrichArtists(uris: candidates, rateLimitPerSec: rateLimitPerSec)
+  }
+
+  /// Immediate small-batch artist warmup for the current track. The normal
+  /// background queue is play-history driven; the currently playing track may
+  /// not have been recorded as a play yet, so warm it directly.
+  @discardableResult
+  func enrichArtists(uris: [String], rateLimitPerSec: Double = 5) async throws -> Int {
+    let candidates = Array(Set(uris.filter { $0.hasPrefix("spotify:artist:") })).sorted()
     let total = candidates.count
     let effectiveRateLimit = max(0.1, rateLimitPerSec)
     let nominalDelay = UInt64(1_000_000_000.0 / effectiveRateLimit)
-    let limitLabel = limit.map { ", capped at \($0)" } ?? ""
-    enricherLog.notice("\(total) missing artists\(limitLabel) (~\(Int(Double(total) / effectiveRateLimit))s ETA)")
+    enricherLog.notice("\(total) Spotify artist candidates (~\(Int(Double(total) / effectiveRateLimit))s ETA)")
 
     var consecutiveFailures = 0
 
@@ -199,6 +253,7 @@ final class MetadataEnricher {
         let artist = try Self.artist(from: meta)
         try await dbq.write { db in
           try artist.mergeUpsert(db)
+          try Self.storeMetadataState(db, entityUri: uri, entityType: "artist", provider: "spotify", status: "success", fetchedAt: Int64(Date().timeIntervalSince1970), error: nil)
         }
         consecutiveFailures = 0
         if (idx + 1) % 25 == 0 || idx == 0 {
@@ -206,6 +261,16 @@ final class MetadataEnricher {
         }
       } catch {
         consecutiveFailures += 1
+        try? await dbq.write { db in
+          try Self.storeMetadataState(
+            db,
+            entityUri: uri,
+            entityType: "artist",
+            provider: "spotify",
+            status: Self.isRateLimited(error) ? "limited" : "failed",
+            fetchedAt: Int64(Date().timeIntervalSince1970),
+            error: String(describing: error))
+        }
         enricherLog.warning("artist \(idx + 1)/\(total) (\(uri, privacy: .public)) skipped: \(String(describing: error), privacy: .public)")
         if Self.isRateLimited(error) {
           enricherLog.error("pausing artist backfill after Spotify rate limit")
@@ -292,6 +357,7 @@ struct LastFMTag: Equatable {
 enum LastFMError: Error, Equatable {
   case httpStatus(Int)
   case api(Int, String)
+  case invalidResponse
 }
 
 final class LastFMClient {
@@ -314,7 +380,9 @@ final class LastFMClient {
     ]
     let url = comps.url!
     let (data, response) = try await session.data(from: url)
-    let http = response as! HTTPURLResponse
+    guard let http = response as? HTTPURLResponse else {
+      throw LastFMError.invalidResponse
+    }
     guard (200...299).contains(http.statusCode) else {
       throw LastFMError.httpStatus(http.statusCode)
     }
@@ -336,6 +404,13 @@ final class TagEnricher {
   private let dbq: DatabaseQueue
   private let lastFM: LastFMClient
 
+  private enum QueuePolicy {
+    static let retryFailedAfter: Int64 = 24 * 60 * 60
+    static let retryLimitedAfter: Int64 = 15 * 60
+    static let refreshAfter: Int64 = 60 * 24 * 60 * 60
+    static let recentFirstWindow: Int64 = 45 * 24 * 60 * 60
+  }
+
   init(dbq: DatabaseQueue, lastFM: LastFMClient) {
     self.dbq = dbq
     self.lastFM = lastFM
@@ -344,7 +419,10 @@ final class TagEnricher {
   @discardableResult
   func enrichMissingArtists(rateLimitPerSec: Double = 1, limit: Int? = nil) async throws -> Int {
     let now = Int64(Date().timeIntervalSince1970)
-    let retryFailedBefore = now - 7 * 86_400
+    let retryFailedBefore = now - QueuePolicy.retryFailedAfter
+    let retryLimitedBefore = now - QueuePolicy.retryLimitedAfter
+    let refreshBefore = now - QueuePolicy.refreshAfter
+    let recentCutoff = now - QueuePolicy.recentFirstWindow
     let candidates: [ArtistTagCandidate] = try await dbq.read { db in
       var sql = """
         WITH track_artists AS (
@@ -373,10 +451,17 @@ final class TagEnricher {
           AND (
             s.entity_uri IS NULL
             OR (s.status = 'failed' AND s.fetched_at < ?)
+            OR (s.status = 'limited' AND s.fetched_at < ?)
+            OR (s.status IN ('success', 'empty') AND s.fetched_at < ? AND ta.last_played >= ?)
           )
         ORDER BY ta.last_played DESC, ta.play_count DESC
       """
-      var arguments: [DatabaseValueConvertible] = [retryFailedBefore]
+      var arguments: [DatabaseValueConvertible] = [
+        retryFailedBefore,
+        retryLimitedBefore,
+        refreshBefore,
+        recentCutoff
+      ]
       if let limit {
         sql += "\nLIMIT ?"
         arguments.append(max(0, limit))
@@ -386,11 +471,25 @@ final class TagEnricher {
       }
     }
 
+    return try await enrichArtists(candidates, rateLimitPerSec: rateLimitPerSec)
+  }
+
+  /// Immediate Last.fm warmup for the current track's artists. This bypasses
+  /// the play-history queue so a new track can get its sound cartridge without
+  /// waiting until it has been counted as a full play.
+  @discardableResult
+  func enrichArtists(_ candidates: [ArtistTagCandidate], rateLimitPerSec: Double = 1) async throws -> Int {
+    let now = Int64(Date().timeIntervalSince1970)
+    var seen = Set<String>()
+    let candidates = candidates.filter { candidate in
+      candidate.uri.hasPrefix("spotify:artist:")
+        && !candidate.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        && seen.insert(candidate.uri).inserted
+    }
     let total = candidates.count
     let effectiveRateLimit = max(0.1, rateLimitPerSec)
     let nominalDelay = UInt64(1_000_000_000.0 / effectiveRateLimit)
-    let limitLabel = limit.map { ", capped at \($0)" } ?? ""
-    enricherLog.notice("\(total) Last.fm artist tag candidates\(limitLabel) (~\(Int(Double(total) / effectiveRateLimit))s ETA)")
+    enricherLog.notice("\(total) Last.fm artist tag candidates (~\(Int(Double(total) / effectiveRateLimit))s ETA)")
 
     for (idx, candidate) in candidates.enumerated() {
       do {
@@ -414,11 +513,20 @@ final class TagEnricher {
             fetchedAt: now)
         }
         enricherLog.warning("Last.fm artist \(idx + 1)/\(total) (\(candidate.name, privacy: .public)) failed: \(String(describing: error), privacy: .public)")
+        if Self.isRateLimited(error) {
+          enricherLog.error("pausing Last.fm tag backfill after rate limit")
+          return idx + 1
+        }
       }
       try await Task.sleep(nanoseconds: nominalDelay)
     }
     enricherLog.notice("Last.fm artist tag enrichment finished: \(total) artists attempted")
     return total
+  }
+
+  private static func isRateLimited(_ error: Error) -> Bool {
+    if case LastFMError.httpStatus(429) = error { return true }
+    return false
   }
 
   private static func store(
@@ -478,12 +586,12 @@ final class TagEnricher {
   ) throws {
     try db.execute(sql: """
       INSERT INTO tag_enrichment_state (entity_uri, entity_type, provider, status, fetched_at, error)
-      VALUES (?, 'artist', 'lastfm', 'failed', ?, ?)
+          VALUES (?, 'artist', 'lastfm', ?, ?, ?)
       ON CONFLICT(entity_uri, entity_type, provider) DO UPDATE SET
         status = excluded.status,
         fetched_at = excluded.fetched_at,
         error = excluded.error
-      """, arguments: [artistUri, fetchedAt, String(error.prefix(240))])
+      """, arguments: [artistUri, error.contains("httpStatus(429)") ? "limited" : "failed", fetchedAt, String(error.prefix(240))])
   }
 }
 
@@ -543,7 +651,7 @@ private struct Rule {
   }
 }
 
-private struct ArtistTagCandidate {
+struct ArtistTagCandidate {
   let uri: String
   let name: String
 }

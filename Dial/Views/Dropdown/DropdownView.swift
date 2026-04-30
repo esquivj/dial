@@ -5,6 +5,8 @@ enum DropdownScreen: Equatable { case hud, history, stats, pet }
 enum DropdownLayout {
   static let width = Dial.Layout.Dropdown.width
   static let height = Dial.Layout.Dropdown.height
+  static let contentWidth = Dial.Layout.Dropdown.contentWidth
+  static let contentHeight = Dial.Layout.Dropdown.contentHeight
 }
 
 @Observable
@@ -44,10 +46,27 @@ struct DropdownView: View {
         connectView
       }
     }
-    // Popover shell: calm continuous plastic. The transport cradle keeps
-    // the custom hardware curve; the window itself should not compete.
+    .frame(width: DropdownLayout.contentWidth, height: DropdownLayout.contentHeight)
     .frame(width: DropdownLayout.width, height: DropdownLayout.height)
-    .dialChassisPlastic(shape: deviceShape)
+    .contentShape(Rectangle())
+    .background {
+      ZStack {
+        DialHardwareImage(name: shellChassisAssetName)
+        DialHardwareImage(name: shellWellsAssetName)
+          .opacity(shellWellsOpacity)
+        if !shellChromeAboveContent {
+          shellChromeLayer
+        }
+      }
+      .allowsHitTesting(false)
+    }
+    .clipShape(deviceShape)
+    .overlay {
+      if shellChromeAboveContent {
+        shellChromeLayer
+          .allowsHitTesting(false)
+      }
+    }
     .environment(\.dialTheme, activeTheme)
     .animation(.easeOut(duration: 0.22), value: activeThemeID)
   }
@@ -58,6 +77,75 @@ struct DropdownView: View {
 
   private var activeTheme: DialTheme {
     DialTheme.palette(for: activeThemeID)
+  }
+
+  private var shellChromeAboveContent: Bool {
+    true
+  }
+
+  private var shellChromeLayer: some View {
+    ZStack {
+      DialHardwareImage(name: shellApertureAssetName)
+      DialHardwareImage(name: shellReflectionsAssetName)
+    }
+  }
+
+  private var shellSkinID: String {
+    switch activeThemeID {
+    case .classic: "smoke"
+    case .slime:   "slime"
+    case .aqua:    "aqua"
+    case .ember:   "ember"
+    }
+  }
+
+  private var shellChassisAssetName: String {
+    "shell-\(shellSkinID)-chassis"
+  }
+
+  private var shellReflectionsAssetName: String {
+    "shell-\(shellSkinID)-reflections"
+  }
+
+  private var shellApertureAssetName: String {
+    if !coord.settings.signedIn {
+      return "shell-\(shellSkinID)-apertures-hud-no-transport"
+    }
+    if coord.dropdownScreen == .history || coord.dropdownScreen == .stats {
+      return "shell-\(shellSkinID)-apertures-hud-no-transport"
+    }
+    if coord.settings.signedIn && !isHUDScreen {
+      return "shell-\(shellSkinID)-apertures-full"
+    }
+    if isHUDScreen && !coord.settings.showTransportInHUD {
+      return "shell-\(shellSkinID)-apertures-hud-no-transport"
+    }
+    return "shell-\(shellSkinID)-apertures-hud"
+  }
+
+  private var shellWellsAssetName: String {
+    if !coord.settings.signedIn {
+      return "shell-\(shellSkinID)-wells-hud-no-transport"
+    }
+    if coord.dropdownScreen == .history || coord.dropdownScreen == .stats {
+      return "shell-\(shellSkinID)-wells-hud-no-transport"
+    }
+    if coord.settings.signedIn && !isHUDScreen {
+      return "shell-\(shellSkinID)-wells-full"
+    }
+    if isHUDScreen && !coord.settings.showTransportInHUD {
+      return "shell-\(shellSkinID)-wells-hud-no-transport"
+    }
+    return "shell-\(shellSkinID)-wells-hud"
+  }
+
+  private var shellWellsOpacity: Double {
+    switch activeThemeID {
+    case .classic: return 0.42
+    case .slime:   return 0.34
+    case .aqua:    return 0.30
+    case .ember:   return 0.32
+    }
   }
 
   private var screenTransitionAnimation: Animation? {
@@ -74,15 +162,94 @@ struct DropdownView: View {
 
   // MARK: - Signed-in body (HUD / History / Stats / Glossary)
 
+  @ViewBuilder
   private var signedInView: some View {
-    VStack(spacing: Dial.Layout.Dropdown.shellSpacing) {
+    if isHUDScreen {
+      hudChromeLayout
+    } else if coord.dropdownScreen == .history {
+      historyChromeLayout
+    } else if coord.dropdownScreen == .stats {
+      statsChromeLayout
+    } else {
+      fullScreenLayout
+    }
+  }
+
+  private var hudChromeLayout: some View {
+    VStack(spacing: 0) {
       topChromeSlot
+        .frame(height: Dial.Layout.Dropdown.hudTopChromeHeight)
+
       screenPanel
-      bottomChromeSlot
+        .frame(height: adjustedHudScreenHeight)
+        .padding(.top, adjustedHudRailScreenGap)
+
+      if coord.settings.showTransportInHUD {
+        bottomChromeSlot
+          .frame(height: Dial.Layout.Dropdown.hudTransportHeight)
+          .padding(.top, adjustedHudScreenTransportGap)
+      }
     }
     .padding(.top, Dial.Layout.Dropdown.outerTopPadding)
-    .padding(.bottom, Dial.Layout.Dropdown.outerBottomPadding)
+    .padding(.bottom, hudBottomPadding)
     .frame(maxHeight: .infinity, alignment: .top)
+  }
+
+  private var fullScreenLayout: some View {
+    screenPanel
+      .padding(.vertical, Dial.Layout.Dropdown.fullScreenVerticalPadding)
+      .frame(maxHeight: .infinity, alignment: .top)
+  }
+
+  private var historyChromeLayout: some View {
+    HistoryView(
+      dbq: coord.dbq,
+      onBack: { withAnimation(screenTransitionAnimation) { coord.dropdownScreen = .hud } },
+      placement: .hardwareShell
+    )
+    .transition(.move(edge: .trailing).combined(with: .opacity))
+  }
+
+  private var statsChromeLayout: some View {
+    StatsView(
+      dbq: coord.dbq,
+      artworkCache: coord.artworkCache,
+      onBack: { withAnimation(screenTransitionAnimation) { coord.dropdownScreen = .hud } },
+      placement: .hardwareShell
+    )
+    .transition(.move(edge: .trailing).combined(with: .opacity))
+  }
+
+  private var hudScreenHeight: CGFloat {
+    coord.settings.showTransportInHUD
+      ? Dial.Layout.Dropdown.hudScreenHeightWithTransport
+      : Dial.Layout.Dropdown.hudScreenHeightWithoutTransport
+  }
+
+  private var adjustedHudScreenHeight: CGFloat {
+    hudScreenHeight + infoScreenHeightBonus
+  }
+
+  private var adjustedHudRailScreenGap: CGFloat {
+    Dial.Layout.Dropdown.hudRailScreenGap + infoScreenTopNudge
+  }
+
+  private var adjustedHudScreenTransportGap: CGFloat {
+    max(0, Dial.Layout.Dropdown.hudScreenTransportGap - infoScreenTopNudge - infoScreenHeightBonus)
+  }
+
+  private var infoScreenTopNudge: CGFloat {
+    showingGlossary && isHUDScreen ? 6 : 0
+  }
+
+  private var infoScreenHeightBonus: CGFloat {
+    showingGlossary && isHUDScreen ? 6 : 0
+  }
+
+  private var hudBottomPadding: CGFloat {
+    coord.settings.showTransportInHUD
+      ? Dial.Layout.Dropdown.hudBottomPaddingWithTransport
+      : Dial.Layout.Dropdown.hudBottomPaddingWithoutTransport
   }
 
   @ViewBuilder
@@ -95,6 +262,7 @@ struct DropdownView: View {
         onOpenStats: openStats,
         onOpenSettings: openSettings
       )
+      .offset(y: Dial.Layout.Dropdown.hudRailContentYOffset)
       .transition(topChromeTransition)
       .zIndex(2)
     }
@@ -106,8 +274,9 @@ struct DropdownView: View {
       ControlsBar(
         menubar: coord.menubar,
         client: coord.client)
+        .frame(height: Dial.Layout.Dropdown.hudTransportHeight)
         .id(showingGlossary ? "transport-glossary" : "transport-hud")
-        .transportPanel()
+        .background { transportTrayBacking }
         .padding(.horizontal, Dial.Layout.Transport.panelHorizontalPadding)
         .modifier(StaggeredAppear(delay: 0.20))
         .transition(bottomChromeTransition)
@@ -115,13 +284,45 @@ struct DropdownView: View {
     }
   }
 
+  private var transportTrayBacking: some View {
+    Color.clear
+      .allowsHitTesting(false)
+  }
+
   @ViewBuilder
   private var screenPanel: some View {
-    screenContent
-      .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-      .overlay(LCDScanlines())
-      .lcdPanel()
-      .padding(.horizontal, Dial.Layout.Dropdown.panelHorizontalPadding)
+    if isHUDScreen {
+      screenContent
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .overlay {
+          if screenUsesScanlines {
+            LCDScanlines()
+          }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: Dial.Radius.panel, style: .continuous))
+        .padding(.horizontal, Dial.Layout.Dropdown.hudScreenHorizontalPadding)
+    } else {
+      fullScreenPanel(
+        screenContent
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+      )
+        .padding(.horizontal, Dial.Layout.Dropdown.panelHorizontalPadding)
+    }
+  }
+
+  @ViewBuilder
+  private func fullScreenPanel<Content: View>(_ content: Content) -> some View {
+    content
+      .lcdPanel(fill: screenPanelFill, strokeOpacity: 0.08)
+  }
+
+  private var screenPanelFill: Color {
+    let opacity: Double = isHUDScreen ? 0.28 : 0.58
+    return activeTheme.subtle.opacity(opacity)
+  }
+
+  private var screenUsesScanlines: Bool {
+    coord.dropdownScreen == .hud && !showingGlossary
   }
 
   /// What lives inside the "screen" area — glossary overlay or one of the
@@ -129,7 +330,7 @@ struct DropdownView: View {
   @ViewBuilder
   private var screenContent: some View {
     if showingGlossary && isHUDScreen {
-      GlossaryPanel()
+      glossaryViewport
         .transition(.opacity.combined(with: .move(edge: .leading)))
     } else {
       switch coord.dropdownScreen {
@@ -156,6 +357,15 @@ struct DropdownView: View {
         .transition(.move(edge: .trailing).combined(with: .opacity))
       }
     }
+  }
+
+  private var glossaryViewport: some View {
+    GlossaryPanel()
+      .padding(.top, infoScrollViewportTopInset)
+  }
+
+  private var infoScrollViewportTopInset: CGFloat {
+    showingGlossary && isHUDScreen ? 24 : 0
   }
 
   private var hudBody: some View {

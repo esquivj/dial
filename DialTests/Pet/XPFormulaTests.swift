@@ -7,6 +7,16 @@ final class XPFormulaTests: XCTestCase {
     XCTAssertEqual(XPFormula.compute(msPlayed: 60_000, variety: .none, streakDays: 0), 1)
     XCTAssertEqual(XPFormula.compute(msPlayed: 300_000, variety: .none, streakDays: 0), 5)
   }
+
+  func test_countedPlayAlwaysGetsAtLeastOneXP() {
+    XCTAssertEqual(XPFormula.compute(msPlayed: 30_000, variety: .none, streakDays: 0), 1)
+  }
+
+  func test_baseXP_roundsToNearestMinute() {
+    XCTAssertEqual(XPFormula.compute(msPlayed: 89_000, variety: .none, streakDays: 0), 1)
+    XCTAssertEqual(XPFormula.compute(msPlayed: 90_000, variety: .none, streakDays: 0), 2)
+  }
+
   func test_newArtistBonus_adds50() {
     XCTAssertEqual(XPFormula.compute(msPlayed: 60_000, variety: .newArtist, streakDays: 0), 51)
   }

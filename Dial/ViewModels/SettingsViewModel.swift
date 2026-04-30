@@ -78,7 +78,7 @@ enum DialAnimationLevel: String, CaseIterable, Identifiable {
 
   var label: String {
     switch self {
-    case .low:    "Low"
+    case .low:    "Subtle"
     case .normal: "Normal"
     case .extra:  "Extra"
     }
@@ -93,7 +93,7 @@ enum SpectrumStyle: String, CaseIterable, Identifiable {
 
   var label: String {
     switch self {
-    case .precise: "Precise"
+    case .precise: "Steady"
     case .punchy:  "Punchy"
     }
   }
@@ -151,20 +151,20 @@ enum HUDSettingsPreset: String, CaseIterable, Identifiable {
   var label: String {
     switch self {
     case .balanced:    "Balanced"
-    case .minimal:     "Minimal"
-    case .dense:       "Dense"
-    case .performance: "Performance"
-    case .showOff:     "Show-off"
+    case .minimal:     "Clean"
+    case .dense:       "Data-rich"
+    case .performance: "Calm"
+    case .showOff:     "Maxed out"
     }
   }
 
   var detail: String {
     switch self {
-    case .balanced:    "Default Dial feel."
-    case .minimal:     "Quieter Now Playing."
-    case .dense:       "More data, less air."
-    case .performance: "Less live motion."
-    case .showOff:     "Maximum motion and detail."
+    case .balanced:    "Dial's default HUD."
+    case .minimal:     "Fewer extras."
+    case .dense:       "More readouts."
+    case .performance: "Less motion."
+    case .showOff:     "Everything on."
     }
   }
 }
@@ -180,8 +180,8 @@ enum HUDColorMode: String, CaseIterable, Identifiable {
 
   var label: String {
     switch self {
-    case .followSound: "Follow Sound"
-    case .classic:     "Classic"
+    case .followSound: "Auto by Sound"
+    case .classic:     "Smoke Gel"
     case .slime:       "Slime"
     case .aqua:        "Aqua"
     case .ember:       "Magenta"
@@ -363,8 +363,7 @@ final class SettingsViewModel {
     self.showTransportInHUD = Self.boolValue(Key.showTransportInHUD, default: true, defaults: defaults)
     self.animationLevel = Self.enumValue(
       DialAnimationLevel.self, key: Key.animationLevel, default: .normal, defaults: defaults)
-    self.hudColorMode = Self.enumValue(
-      HUDColorMode.self, key: Key.hudColorMode, default: .followSound, defaults: defaults)
+    self.hudColorMode = Self.hudColorModeValue(defaults: defaults)
     self.hudHeroTitleSize = Self.doubleValue(
       Key.hudHeroTitleSize, default: 15, defaults: defaults)
     self.hudHeroArtistSize = Self.doubleValue(
@@ -405,6 +404,8 @@ final class SettingsViewModel {
 
     // Read keychain once on launch so the UI reflects sign-in state immediately.
     self.signedIn = ((try? tokenStore.load()) ?? nil) != nil
+    defaults.set(true, forKey: Key.didMigrateSmokeGelDefault)
+    defaults.set(self.hudColorMode.rawValue, forKey: Key.hudColorMode)
     defaults.set(self.menuBarTitleWidth, forKey: Key.menuBarTitleWidth)
   }
 
@@ -433,7 +434,7 @@ final class SettingsViewModel {
     showVisualizerInHUD = true
     showTransportInHUD = true
     animationLevel = .normal
-    hudColorMode = .followSound
+    hudColorMode = .classic
     discoveryBadgesEnabled = true
     patternBadgesEnabled = true
     milestoneBadgesEnabled = true
@@ -576,6 +577,7 @@ final class SettingsViewModel {
     static let showTransportInHUD = "settings.showTransportInHUD"
     static let animationLevel = "settings.animationLevel"
     static let hudColorMode = "settings.hudColorMode"
+    static let didMigrateSmokeGelDefault = "settings.didMigrateSmokeGelDefault"
     static let hudHeroTitleSize = "settings.hudHeroTitleSize"
     static let hudHeroArtistSize = "settings.hudHeroArtistSize"
     static let hudHeroAlbumSize = "settings.hudHeroAlbumSize"
@@ -632,5 +634,14 @@ final class SettingsViewModel {
       let value = T(rawValue: raw)
     else { return defaultValue }
     return value
+  }
+
+  private static func hudColorModeValue(defaults: UserDefaults) -> HUDColorMode {
+    let stored = defaults.string(forKey: Key.hudColorMode)
+    let migrated = Self.boolValue(Key.didMigrateSmokeGelDefault, default: false, defaults: defaults)
+    if !migrated, stored == HUDColorMode.followSound.rawValue {
+      return .classic
+    }
+    return Self.enumValue(HUDColorMode.self, key: Key.hudColorMode, default: .classic, defaults: defaults)
   }
 }

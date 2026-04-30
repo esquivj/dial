@@ -3,6 +3,9 @@ import AppKit
 import CoreGraphics
 import Foundation
 import Observation
+import os.log
+
+private let visualizerLog = Logger(subsystem: "com.dial.Dial", category: "VisualizerEngine")
 
 /// Orchestrates capture → FFT → smoothed band heights for the SwiftUI grid.
 ///
@@ -222,7 +225,7 @@ final class VisualizerEngine: @unchecked Sendable {
       // SCShareableContent. Map any failure to either `.denied` (most common
       // first-launch case) or `.error`. Either way the UI shows a fallback.
       let nsErr = error as NSError
-      print("[VisualizerEngine] start failed: domain=\(nsErr.domain) code=\(nsErr.code) — \(nsErr.localizedDescription)")
+      visualizerLog.error("start failed: domain=\(nsErr.domain, privacy: .public) code=\(nsErr.code) \(nsErr.localizedDescription, privacy: .public)")
       if nsErr.domain == "com.apple.ScreenCaptureKit.SCStreamErrorDomain"
         || nsErr.domain == "com.apple.TCC"
         || nsErr.code == -3801
@@ -321,6 +324,9 @@ final class VisualizerEngine: @unchecked Sendable {
     }
     lock.unlock()
     guard let s = snapshot else { return }
+
+    let perf = DialPerf.begin("visualizer.frame_work")
+    defer { perf.end() }
 
     let mags = s.withUnsafeBufferPointer { buf in
       localFFT.magnitudes(of: buf.baseAddress!, frameCount: buf.count)

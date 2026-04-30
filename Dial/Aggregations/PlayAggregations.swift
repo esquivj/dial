@@ -161,8 +161,10 @@ extension PlayAggregations {
     }
   }
 
-  /// Total all-time plays for an artist (live + import combined).
-  /// Joins via `tracks.artists_json[0].uri`; tracks without artist metadata are skipped.
+  /// Total all-time plays for an artist (live + import combined). Imported
+  /// history can use synthetic IDs like `artist:KETTAMA` while live playback
+  /// uses canonical Spotify IDs, so artist identity falls back to normalized
+  /// display name when available.
   /// `json_valid` guard skips ~108 rows in the DB with malformed JSON
   /// (unescaped backslashes from imported extended-history data) — without
   /// it, hitting one of those rows mid-query throws "malformed JSON" and
@@ -170,33 +172,69 @@ extension PlayAggregations {
   func artistLifetimePlays(artistUri: String) throws -> Int {
     try dbq.read { db in
       try Int.fetchOne(db, sql: """
-        SELECT COUNT(*) FROM plays p JOIN tracks t ON t.uri = p.track_uri
+        WITH target AS (
+          SELECT COALESCE(
+            (
+              SELECT NULLIF(LOWER(TRIM(json_extract(t.artists_json, '$[0].name'))), '')
+              FROM tracks t
+              WHERE json_valid(t.artists_json) = 1
+                AND json_extract(t.artists_json, '$[0].uri') = ?
+              LIMIT 1
+            ),
+            ?
+          ) AS artist_key
+        )
+        SELECT COUNT(*)
+        FROM plays p
+        JOIN tracks t ON t.uri = p.track_uri
         WHERE json_valid(t.artists_json) = 1
-          AND json_extract(t.artists_json, '$[0].uri') = ?
-      """, arguments: [artistUri]) ?? 0
+          AND COALESCE(
+            NULLIF(LOWER(TRIM(json_extract(t.artists_json, '$[0].name'))), ''),
+            json_extract(t.artists_json, '$[0].uri')
+          ) = (SELECT artist_key FROM target)
+      """, arguments: [artistUri, artistUri]) ?? 0
     }
   }
 
-  /// Ranks artists by play count in the last 7d via `tracks.artists_json[0].uri`.
+  /// Ranks artists by play count in the last 7d using the same normalized
+  /// identity key as `artistLifetimePlays`.
   /// Ties broken by recent play. `json_valid` guard same as `artistLifetimePlays`.
   func artistRank7d(artistUri: String) throws -> Int? {
     let cutoff = now() - 7 * 86_400
     return try dbq.read { db in
       try Int.fetchOne(db, sql: """
-        WITH artist_plays AS (
-          SELECT json_extract(t.artists_json, '$[0].uri') AS aurl, p.played_at
-          FROM plays p JOIN tracks t ON t.uri = p.track_uri
-          WHERE p.played_at > ? AND t.artists_json IS NOT NULL
+        WITH target AS (
+          SELECT COALESCE(
+            (
+              SELECT NULLIF(LOWER(TRIM(json_extract(t.artists_json, '$[0].name'))), '')
+              FROM tracks t
+              WHERE json_valid(t.artists_json) = 1
+                AND json_extract(t.artists_json, '$[0].uri') = ?
+              LIMIT 1
+            ),
+            ?
+          ) AS artist_key
+        ),
+        artist_plays AS (
+          SELECT COALESCE(
+                   NULLIF(LOWER(TRIM(json_extract(t.artists_json, '$[0].name'))), ''),
+                   json_extract(t.artists_json, '$[0].uri')
+                 ) AS artist_key,
+                 p.played_at
+          FROM plays p
+          JOIN tracks t ON t.uri = p.track_uri
+          WHERE p.played_at > ?
+            AND t.artists_json IS NOT NULL
             AND json_valid(t.artists_json) = 1
         ),
         ranked AS (
-          SELECT aurl, COUNT(*) AS c, MAX(played_at) AS last
-          FROM artist_plays GROUP BY aurl
+          SELECT artist_key, COUNT(*) AS c, MAX(played_at) AS last
+          FROM artist_plays GROUP BY artist_key
         )
         SELECT rnk FROM (
-          SELECT aurl, ROW_NUMBER() OVER (ORDER BY c DESC, last DESC) AS rnk FROM ranked
-        ) WHERE aurl = ?
-        """, arguments: [cutoff, artistUri])
+          SELECT artist_key, ROW_NUMBER() OVER (ORDER BY c DESC, last DESC) AS rnk FROM ranked
+        ) WHERE artist_key = (SELECT artist_key FROM target)
+        """, arguments: [artistUri, artistUri, cutoff])
     }
   }
 }

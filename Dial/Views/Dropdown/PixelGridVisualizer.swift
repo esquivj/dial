@@ -163,7 +163,7 @@ struct PixelGridVisualizer: View {
         }
       }
       .frame(maxWidth: .infinity, maxHeight: .infinity)
-      .background(Dial.Palette.ground.opacity(0.85))
+      .background(theme.ground.opacity(0.85))
     }
     .buttonStyle(.pressable)
   }

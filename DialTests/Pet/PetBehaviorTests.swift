@@ -11,6 +11,7 @@ final class PetBehaviorTests: XCTestCase {
     rediscovered: Bool = false,
     eating: Bool = false,
     leveledUp: Bool = false,
+    ambientTrick: PetBehavior? = nil,
     lastPlayAt: Int64? = nil,
     now: Int64 = 0,
     bpm: Double? = nil
@@ -18,7 +19,8 @@ final class PetBehaviorTests: XCTestCase {
     PetContext(
       playing: playing, paused: paused,
       firstListen: firstListen, rediscovered: rediscovered, eating: eating,
-      leveledUp: leveledUp, lastPlayAt: lastPlayAt, now: now, bpm: bpm)
+      leveledUp: leveledUp, ambientTrick: ambientTrick,
+      lastPlayAt: lastPlayAt, now: now, bpm: bpm)
   }
 
   func test_levelUpBeatsAll() {
@@ -46,6 +48,14 @@ final class PetBehaviorTests: XCTestCase {
   func test_pausedWhenNotPlaying() {
     let r = PetBehaviorResolver.resolve(ctx(paused: true))
     XCTAssertEqual(r, .paused)
+  }
+
+  func test_ambientTrickComesAfterCountedPlayPulse() {
+    let eating = PetBehaviorResolver.resolve(ctx(playing: true, eating: true, ambientTrick: .sparkStep))
+    XCTAssertEqual(eating, .eating)
+
+    let trick = PetBehaviorResolver.resolve(ctx(playing: true, ambientTrick: .sparkStep))
+    XCTAssertEqual(trick, .sparkStep)
   }
 
   func test_dormantAfter7Days() {

@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 struct TrackHero: View {
   @Bindable var vm: NowPlayingViewModel
@@ -16,6 +17,10 @@ struct TrackHero: View {
   let onOpenPet: () -> Void
   let onOpenHistory: () -> Void
   let onOpenBadge: () -> Void
+  @State private var lcdRefreshActive = false
+  @State private var lcdRefreshTask: Task<Void, Never>?
+  @State private var artworkState: TrackArtworkState = .empty
+  @State private var artworkLoadTask: Task<Void, Never>?
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.dialTheme) private var theme
 
@@ -38,6 +43,11 @@ struct TrackHero: View {
         .animation(trackChangeAnimation, value: transitionID)
         .frame(width: Dial.Layout.Hero.artworkSize, height: Dial.Layout.Hero.artworkSize)
         .dialMediaFrame(shape: RoundedRectangle(cornerRadius: Dial.Layout.Hero.artworkCornerRadius, style: .continuous))
+        .overlay {
+          if lcdRefreshActive {
+            TrackLCDRefresh(color: theme.accent)
+          }
+        }
       }
       .buttonStyle(.pressable)
       .help("Open listening history")
@@ -50,6 +60,11 @@ struct TrackHero: View {
         .animation(trackChangeAnimation, value: transitionID)
         .frame(maxWidth: .infinity, minHeight: Dial.Layout.Hero.textMinHeight, alignment: .leading)
         .layoutPriority(1)
+        .overlay(alignment: .topLeading) {
+          if lcdRefreshActive {
+            TrackLCDRefresh(color: theme.accent)
+          }
+        }
 
       // Pet block — moved from StatusRail (where it was 24×24, too small to
       // read the new pixel-art detail) to TrackHero inside a readable LCD
@@ -64,6 +79,36 @@ struct TrackHero: View {
     // 12/14/14/14; trimmed to 10/12/12/12 so the album art, title, and
     // pet block sit closer to the LCD panel's inner edges.
     .padding(Dial.Layout.Hero.padding)
+    .onChange(of: transitionID) { oldValue, newValue in
+      guard oldValue != newValue else { return }
+      triggerLCDRefresh()
+      refreshDisplayedArtwork(for: vm.track?.artUrl)
+    }
+    .onChange(of: vm.track?.artUrl) { _, newValue in
+      refreshDisplayedArtwork(for: newValue)
+    }
+    .onAppear {
+      refreshDisplayedArtwork(for: vm.track?.artUrl)
+    }
+    .onDisappear {
+      lcdRefreshTask?.cancel()
+      lcdRefreshTask = nil
+      artworkLoadTask?.cancel()
+      artworkLoadTask = nil
+    }
+  }
+
+  private func triggerLCDRefresh() {
+    guard !reduceMotion else { return }
+    lcdRefreshTask?.cancel()
+    lcdRefreshActive = false
+    lcdRefreshTask = Task { @MainActor in
+      try? await Task.sleep(for: .milliseconds(16))
+      lcdRefreshActive = true
+      try? await Task.sleep(for: .milliseconds(220))
+      lcdRefreshActive = false
+      lcdRefreshTask = nil
+    }
   }
 
   private var trackReadout: some View {
@@ -95,19 +140,67 @@ struct TrackHero: View {
 
   @ViewBuilder
   private var heroArtwork: some View {
-    if let urlString = vm.track?.artUrl,
-       let image = artworkCache.image(for: urlString)
-    {
+    if let image = currentArtworkImage {
       Image(nsImage: image)
         .resizable()
         .aspectRatio(contentMode: .fill)
     } else {
-      LinearGradient(
-        colors: [Dial.Palette.subtle, Dial.Palette.hairline],
-        startPoint: .topLeading, endPoint: .bottomTrailing)
-        .task(id: vm.track?.artUrl) {
-          await artworkCache.load(vm.track?.artUrl)
-        }
+      fallbackArtwork(showBrandIcon: vm.track == nil)
+    }
+  }
+
+  @MainActor
+  private func refreshDisplayedArtwork(for urlString: String?) {
+    artworkLoadTask?.cancel()
+    artworkLoadTask = nil
+
+    guard let urlString, !urlString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+      artworkState = vm.track == nil ? .empty : .failed(nil)
+      return
+    }
+
+    if let cached = artworkCache.image(for: urlString) {
+      artworkState = .loaded(url: urlString, image: cached)
+      return
+    }
+
+    artworkState = .loading(url: urlString)
+    artworkLoadTask = Task { @MainActor in
+      let loaded = await artworkCache.load(urlString)
+      guard !Task.isCancelled, vm.track?.artUrl == urlString else { return }
+      if let loaded {
+        artworkState = .loaded(url: urlString, image: loaded)
+      } else {
+        artworkState = .failed(urlString)
+      }
+      artworkLoadTask = nil
+    }
+  }
+
+  private var currentArtworkImage: NSImage? {
+    guard let urlString = vm.track?.artUrl else { return nil }
+    if let image = artworkCache.image(for: urlString) { return image }
+    if case let .loaded(url, image) = artworkState, url == urlString { return image }
+    return nil
+  }
+
+  private func fallbackArtwork(showBrandIcon: Bool) -> some View {
+    ZStack {
+      Rectangle()
+        .fill(theme.ground)
+      Rectangle()
+        .fill(theme.surface.opacity(0.58))
+        .overlay(LCDScanlines(pitch: 3, opacity: 0.08, color: .black))
+      if showBrandIcon, let icon = NSImage(named: "dial-app-icon") {
+        Image(nsImage: icon)
+          .resizable()
+          .aspectRatio(contentMode: .fit)
+          .padding(13)
+          .opacity(0.88)
+      } else {
+        DialThickIcon("music.note", size: 22)
+          .foregroundStyle(theme.textMuted.opacity(0.72))
+      }
     }
   }
 
@@ -196,9 +289,9 @@ struct TrackHero: View {
   private func badgeColor(for kind: BadgeMemoryKind) -> Color {
     switch kind.category {
     case .discovery:
-      return kind == .firstListen || kind == .newArtist ? theme.accentAlt : theme.accent
+      return kind == .firstListen || kind == .newArtist ? theme.memoryAccent : theme.accent
     case .pattern:
-      return theme.accentAlt
+      return theme.memoryAccent
     case .milestone:
       return theme.textPrimary
     }
@@ -288,5 +381,50 @@ struct TrackHero: View {
   private var albumArtAccessibilityLabel: String {
     guard let track = vm.track else { return "Nothing playing" }
     return "Album art for \(track.albumName)"
+  }
+}
+
+private enum TrackArtworkState {
+  case empty
+  case loading(url: String)
+  case loaded(url: String, image: NSImage)
+  case failed(String?)
+}
+
+private struct TrackLCDRefresh: View {
+  let color: Color
+  @State private var phase: CGFloat = 0
+
+  var body: some View {
+    GeometryReader { proxy in
+      let height = proxy.size.height
+      let bandHeight = max(3, height * 0.18)
+      let bandOpacity = max(0, sin(Double(phase) * .pi)) * 0.46
+
+      ZStack(alignment: .top) {
+        Rectangle()
+          .fill(color.opacity(max(0, Double(1 - phase)) * 0.035))
+        Rectangle()
+          .fill(
+            LinearGradient(
+              colors: [
+                color.opacity(0),
+                color.opacity(bandOpacity),
+                color.opacity(0),
+              ],
+              startPoint: .top,
+              endPoint: .bottom)
+          )
+          .frame(height: bandHeight)
+          .offset(y: -bandHeight + (height + bandHeight * 2) * phase)
+      }
+      .clipped()
+      .allowsHitTesting(false)
+    }
+    .onAppear {
+      withAnimation(.easeOut(duration: 0.18)) {
+        phase = 1
+      }
+    }
   }
 }
