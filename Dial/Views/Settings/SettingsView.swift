@@ -88,6 +88,8 @@ private struct GeneralSettingsTab: View {
   let onImport: (URL) -> Void
 
   @State private var showDisconnectAlert = false
+  @State private var isRunningTagPass = false
+  @State private var tagRunMessage: String?
 
   var body: some View {
     VStack(alignment: .leading, spacing: SettingsLayout.sectionGap) {
@@ -216,14 +218,28 @@ private struct GeneralSettingsTab: View {
                 }
                 .buttonStyle(SettingsButtonStyle(prominent: true))
                 .disabled(!vm.signedIn)
-                .help("Start a fresh analysis pass now.")
+                .help("Restart the background artwork, artist, and tag queue.")
+
+                Button(isRunningTagPass ? "Tagging..." : "Finish Tags") {
+                  finishTagsNow()
+                }
+                .buttonStyle(SettingsButtonStyle())
+                .disabled(!canRunTagPass)
+                .help("Run a one-shot Last.fm pass for the remaining artist tag queue.")
+              }
+
+              if let tagRunMessage {
+                Text(tagRunMessage)
+                  .font(SettingsType.caption)
+                  .foregroundStyle(SettingsPalette.muted)
+                  .frame(maxWidth: .infinity, alignment: .trailing)
               }
             }
             .padding(.top, 10)
           } label: {
             SettingsDisclosureLabel(
               title: "Tag sources",
-              detail: "Last.fm tags, API key, and manual analysis.")
+              detail: "Last.fm is Dial's main sound signal. Spotify artist data is a fallback when present.")
           }
           .tint(SettingsPalette.accent)
         }
@@ -248,6 +264,34 @@ private struct GeneralSettingsTab: View {
       return "Last import: \(last.rowsInserted.formatted(.number)) plays"
     }
     return "No history folder imported."
+  }
+
+  private var canRunTagPass: Bool {
+    vm.signedIn
+      && vm.lastFMTagEnrichmentEnabled
+      && !vm.lastFMAPIKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      && !isRunningTagPass
+  }
+
+  private func finishTagsNow() {
+    guard canRunTagPass else { return }
+    isRunningTagPass = true
+    tagRunMessage = "Last.fm queue running..."
+
+    Task {
+      do {
+        try await coord.runTagEnrichment(limit: 1_000)
+        await MainActor.run {
+          tagRunMessage = "Last.fm queue checked."
+          isRunningTagPass = false
+        }
+      } catch {
+        await MainActor.run {
+          tagRunMessage = "Last.fm queue paused."
+          isRunningTagPass = false
+        }
+      }
+    }
   }
 }
 
@@ -577,6 +621,7 @@ private struct SettingsStatusPanel: View {
   @State private var enrichment: StatsQueries.EnrichmentProgress = .empty
   @State private var enrichmentError: String?
   @State private var lastRefresh: Date?
+  @State private var showThemeInspector = false
 
   var body: some View {
     SettingsSection("STATUS") {
@@ -590,6 +635,29 @@ private struct SettingsStatusPanel: View {
           if let lastRefresh {
             statusRow("Last check", value: lastSyncLabel(last: lastRefresh, now: ctx.date))
           }
+
+          Divider()
+            .overlay(SettingsPalette.rule)
+            .padding(.vertical, 2)
+
+          DisclosureGroup(isExpanded: $showThemeInspector) {
+            VStack(alignment: .leading, spacing: 7) {
+              statusRow("Theme", value: themeLabel)
+              statusRow("Source", value: themeSourceLabel)
+              statusRow("Confidence", value: themeConfidenceLabel)
+              Text(themeReasonLabel)
+                .font(SettingsType.caption)
+                .foregroundStyle(SettingsPalette.muted)
+                .fixedSize(horizontal: false, vertical: true)
+                .textSelection(.enabled)
+            }
+            .padding(.top, 6)
+          } label: {
+            SettingsDisclosureLabel(
+              title: "Theme inspector",
+              detail: "Shows why the current cartridge color was selected.")
+          }
+          .tint(SettingsPalette.accent)
         }
       }
     }
@@ -633,6 +701,23 @@ private struct SettingsStatusPanel: View {
     }
   }
 
+  private var themeLabel: String {
+    coord.nowPlaying.soundTheme.label
+  }
+
+  private var themeSourceLabel: String {
+    coord.nowPlaying.soundThemeDecision?.source.label ?? "none"
+  }
+
+  private var themeConfidenceLabel: String {
+    guard let confidence = coord.nowPlaying.soundThemeDecision?.confidence else { return "-" }
+    return "\(Int((confidence * 100).rounded()))%"
+  }
+
+  private var themeReasonLabel: String {
+    coord.nowPlaying.soundThemeDecision?.reason ?? "No current sound decision."
+  }
+
   private func refreshEnrichmentLoop() async {
     await refreshEnrichment()
     while !Task.isCancelled {
@@ -674,7 +759,7 @@ private struct SettingsStatusPanel: View {
     let total = enrichment.total.formatted(.number.notation(.compactName))
     let artistDone = enrichment.artistEnriched.formatted(.number.notation(.compactName))
     let artistTotal = enrichment.artistTotal.formatted(.number.notation(.compactName))
-    return "\(idDone) / \(total) matched · \(artDone) covers · \(artistDone) / \(artistTotal) artists"
+    return "\(idDone) / \(total) matched · \(artDone) covers · \(artistDone) / \(artistTotal) Spotify profiles"
   }
 
   private func tagLabel(_ enrichment: StatsQueries.EnrichmentProgress) -> String {
@@ -682,7 +767,7 @@ private struct SettingsStatusPanel: View {
     let checked = enrichment.tagArtistChecked.formatted(.number.notation(.compactName))
     let tagged = enrichment.tagArtistTagged.formatted(.number.notation(.compactName))
     let total = enrichment.tagArtistTotal.formatted(.number.notation(.compactName))
-    return "\(checked) / \(total) checked · \(tagged) with tags"
+    return "Last.fm \(checked) / \(total) checked · \(tagged) tagged"
   }
 }
 

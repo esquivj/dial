@@ -452,6 +452,111 @@ final class StatsQueriesTests: XCTestCase {
     XCTAssertEqual(try queries.soundTheme(forArtistUri: "spotify:artist:juniorh"), .classic)
   }
 
+  func test_soundTheme_defaultsMainstreamRapAndRnbToSmokeGel() throws {
+    let dbq = try InMemoryDatabase.make()
+    try dbq.write { db in
+      try db.execute(sql: """
+        INSERT INTO normalized_tags (entity_uri, entity_type, provider, family, raw_tag, score, updated_at)
+        VALUES
+          ('spotify:artist:drake', 'artist', 'lastfm', 'rap', 'rap', 71, 10),
+          ('spotify:artist:drake', 'artist', 'lastfm', 'r&b', 'rnb', 34, 10),
+          ('spotify:artist:drake', 'artist', 'lastfm', 'rap', 'hip hop', 26, 10),
+          ('spotify:artist:drake', 'artist', 'lastfm', 'pop', 'pop', 3, 10)
+      """)
+    }
+
+    let decision = try StatsQueries(dbq: dbq).soundThemeDecision(
+      forArtistUris: ["spotify:artist:drake"],
+      trackName: "What Did I Miss?",
+      artistName: "Drake",
+      albumName: "",
+      allowRecentFallback: false)
+
+    XCTAssertEqual(decision?.theme, .classic)
+    XCTAssertEqual(decision?.source, .artistTags)
+  }
+
+  func test_soundTheme_biasesCoreLibraryArtistsToSmokeGelWhenSignalIsWeak() throws {
+    let dbq = try InMemoryDatabase.make()
+    let tracks = TracksDAO(dbq: dbq)
+    let plays = PlaysDAO(dbq: dbq)
+    try dbq.write { db in
+      try db.execute(sql: """
+        INSERT INTO normalized_tags (entity_uri, entity_type, provider, family, raw_tag, score, updated_at)
+        VALUES
+          ('spotify:artist:core', 'artist', 'lastfm', 'indie', 'indie', 100, 10),
+          ('spotify:artist:core', 'artist', 'lastfm', 'pop', 'pop', 40, 10)
+      """)
+    }
+    try tracks.upsert(.init(
+      uri: "spotify:track:core",
+      name: "Core Memory",
+      albumName: nil,
+      albumArtUrl: nil,
+      durationMs: nil,
+      artistsJson: #"[{"name":"Core Artist","uri":"spotify:artist:core"}]"#))
+    for idx in 0..<50 {
+      try plays.insert(.init(
+        playedAt: Int64(idx + 1),
+        trackUri: "spotify:track:core",
+        msPlayed: 180_000,
+        source: "import"))
+    }
+
+    let decision = try StatsQueries(dbq: dbq).soundThemeDecision(
+      forArtistUris: ["spotify:artist:core"],
+      trackName: "Core Memory",
+      artistName: "Core Artist",
+      albumName: "",
+      allowRecentFallback: false)
+
+    XCTAssertEqual(decision?.theme, .classic)
+    XCTAssertTrue(decision?.reason.contains("core-library artist") == true)
+  }
+
+  func test_soundTheme_doesNotLetCoreLibraryBiasOverrideStrongElectronic() throws {
+    let dbq = try InMemoryDatabase.make()
+    let tracks = TracksDAO(dbq: dbq)
+    let plays = PlaysDAO(dbq: dbq)
+    try dbq.write { db in
+      try db.execute(sql: """
+        INSERT INTO normalized_tags (entity_uri, entity_type, provider, family, raw_tag, score, updated_at)
+        VALUES
+          ('spotify:artist:coretechno', 'artist', 'lastfm', 'electronic', 'hard techno', 100, 10),
+          ('spotify:artist:coretechno', 'artist', 'lastfm', 'pop', 'pop', 10, 10)
+      """)
+    }
+    try tracks.upsert(.init(
+      uri: "spotify:track:coretechno",
+      name: "Core Techno",
+      albumName: nil,
+      albumArtUrl: nil,
+      durationMs: nil,
+      artistsJson: #"[{"name":"Core Techno","uri":"spotify:artist:coretechno"}]"#))
+    for idx in 0..<50 {
+      try plays.insert(.init(
+        playedAt: Int64(idx + 1),
+        trackUri: "spotify:track:coretechno",
+        msPlayed: 180_000,
+        source: "import"))
+    }
+
+    let theme = try StatsQueries(dbq: dbq).soundTheme(forArtistUri: "spotify:artist:coretechno")
+
+    XCTAssertEqual(theme, .slime)
+  }
+
+  func test_soundThemeTransitionKeepsPreviousThemeWhenNewTrackHasNoFreshDecision() {
+    let resolved = AppCoordinator.resolvedSoundThemeState(
+      currentTheme: .slime,
+      hasTrack: true,
+      decision: nil)
+
+    XCTAssertEqual(resolved.theme, .slime)
+    XCTAssertEqual(resolved.decision?.source, .held)
+    XCTAssertEqual(resolved.decision?.theme, .slime)
+  }
+
   func test_soundTheme_keepsLatinHouseElectronic() throws {
     let dbq = try InMemoryDatabase.make()
     try dbq.write { db in

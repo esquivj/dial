@@ -653,12 +653,28 @@ final class AppCoordinator {
       artistName: artistName,
       albumName: albumName,
       allowRecentFallback: allowFallback)
-    if let decision {
-      nowPlaying.soundTheme = decision.theme
-      nowPlaying.soundThemeDecision = decision
-    } else if nowPlaying.track != nil {
-      nowPlaying.soundThemeDecision = .holding(theme: nowPlaying.soundTheme)
+    let resolved = Self.resolvedSoundThemeState(
+      currentTheme: nowPlaying.soundTheme,
+      hasTrack: nowPlaying.track != nil,
+      decision: decision)
+    nowPlaying.soundTheme = resolved.theme
+    if let resolvedDecision = resolved.decision {
+      nowPlaying.soundThemeDecision = resolvedDecision
     }
+  }
+
+  static func resolvedSoundThemeState(
+    currentTheme: DialThemeID,
+    hasTrack: Bool,
+    decision: SoundThemeDecision?
+  ) -> (theme: DialThemeID, decision: SoundThemeDecision?) {
+    if let decision {
+      return (decision.theme, decision)
+    }
+    if hasTrack {
+      return (currentTheme, .holding(theme: currentTheme))
+    }
+    return (currentTheme, nil)
   }
 
   private func refreshCurrentSoundTheme(allowFallback: Bool = true) {

@@ -12,7 +12,7 @@ enum SoundThemeSource: String, Equatable {
   var label: String {
     switch self {
     case .artistTags:    "Artist tags"
-    case .spotifyGenres: "Spotify genres"
+    case .spotifyGenres: "Spotify fallback"
     case .trackMetadata: "Track text"
     case .recentSession: "Recent session"
     case .held:          "Holding"
@@ -721,12 +721,12 @@ struct StatsQueries {
       let artistRow = try Row.fetchOne(db, sql: """
         WITH track_artists AS (
           SELECT DISTINCT
-                 CASE WHEN json_valid(artists_json) = 1
-                      THEN json_extract(artists_json, '$[0].uri')
-                      ELSE NULL END AS artist_uri
-          FROM tracks
-          WHERE artists_json IS NOT NULL
-            AND json_valid(artists_json) = 1
+                 json_extract(j.value, '$.uri') AS artist_uri
+          FROM tracks t
+          JOIN plays p ON p.track_uri = t.uri
+          CROSS JOIN json_each(t.artists_json) j
+          WHERE t.artists_json IS NOT NULL
+            AND json_valid(t.artists_json) = 1
         )
         SELECT COUNT(*) AS total,
                COUNT(CASE WHEN a.genres_json IS NOT NULL THEN 1 END) AS enriched
@@ -736,13 +736,21 @@ struct StatsQueries {
       """)
       let tagRow = try Row.fetchOne(db, sql: """
         WITH track_artists AS (
-          SELECT DISTINCT
-                 CASE WHEN json_valid(artists_json) = 1
-                      THEN json_extract(artists_json, '$[0].uri')
-                      ELSE NULL END AS artist_uri
-          FROM tracks
-          WHERE artists_json IS NOT NULL
-            AND json_valid(artists_json) = 1
+          SELECT json_extract(j.value, '$.uri') AS artist_uri,
+                 MAX(json_extract(j.value, '$.name')) AS artist_name
+          FROM tracks t
+          JOIN plays p ON p.track_uri = t.uri
+          CROSS JOIN json_each(t.artists_json) j
+          WHERE t.artists_json IS NOT NULL
+            AND json_valid(t.artists_json) = 1
+          GROUP BY artist_uri
+        ),
+        taggable_artists AS (
+          SELECT ta.artist_uri
+          FROM track_artists ta
+          LEFT JOIN artists a ON a.uri = ta.artist_uri
+          WHERE ta.artist_uri LIKE 'spotify:artist:%'
+            AND COALESCE(NULLIF(a.name, ''), NULLIF(ta.artist_name, '')) IS NOT NULL
         ),
         tagged_artists AS (
           SELECT DISTINCT entity_uri
@@ -752,13 +760,12 @@ struct StatsQueries {
         SELECT COUNT(*) AS total,
                COUNT(CASE WHEN s.status IN ('success', 'empty') THEN 1 END) AS checked,
                COUNT(CASE WHEN tagged.entity_uri IS NOT NULL THEN 1 END) AS tagged
-        FROM track_artists ta
+        FROM taggable_artists ta
         LEFT JOIN tag_enrichment_state s
           ON s.entity_uri = ta.artist_uri
          AND s.entity_type = 'artist'
          AND s.provider = 'lastfm'
         LEFT JOIN tagged_artists tagged ON tagged.entity_uri = ta.artist_uri
-        WHERE ta.artist_uri LIKE 'spotify:artist:%'
       """)
       return EnrichmentProgress(
         total: row?["total"] ?? 0,
@@ -968,7 +975,12 @@ private struct SoundThemeResolver {
         rank: row["rank"],
         artistIndex: artistIndex)
     }
-    return decision(forSignals: signals, source: .artistTags)
+    guard let decision = decision(forSignals: signals, source: .artistTags) else { return nil }
+    return try coreLibraryAdjustedDecision(
+      decision,
+      signals: signals,
+      db: db,
+      artistUris: artistUris)
   }
 
   private static func spotifyGenreDecision(db: Database, artistUris: [String]) throws -> SoundThemeDecision? {
@@ -993,7 +1005,12 @@ private struct SoundThemeResolver {
         rank: 999,
         artistIndex: 0)
     }
-    return decision(forSignals: signals, source: .spotifyGenres)
+    guard let decision = decision(forSignals: signals, source: .spotifyGenres) else { return nil }
+    return try coreLibraryAdjustedDecision(
+      decision,
+      signals: signals,
+      db: db,
+      artistUris: artistUris)
   }
 
   private static func recentSessionDecision(db: Database, excludingArtistUris artistUris: [String]) throws -> SoundThemeDecision? {
@@ -1138,6 +1155,15 @@ private struct SoundThemeResolver {
         rawTag: tag,
         artistName: artistName)
     }
+    if containsAny(tag, strongAggressiveRapTags + strongHarshTags) {
+      return ThemeSignal(
+        theme: .ember,
+        score: weightedScore(score, rank: rank, artistIndex: artistIndex, multiplier: 1.12),
+        rank: rank ?? 999,
+        strong: true,
+        rawTag: tag,
+        artistName: artistName)
+    }
     guard let family = DialTagNormalizer.normalize(tag)?.family,
           let theme = theme(forFamily: family)
     else { return nil }
@@ -1255,6 +1281,45 @@ private struct SoundThemeResolver {
     return max(1, score) * rankWeight * artistWeight * multiplier
   }
 
+  private static func coreLibraryAdjustedDecision(
+    _ decision: SoundThemeDecision,
+    signals: [ThemeSignal],
+    db: Database,
+    artistUris: [String]
+  ) throws -> SoundThemeDecision {
+    guard decision.theme != .classic else { return decision }
+    guard !signals.contains(where: { $0.theme == decision.theme && $0.strong }) else {
+      return decision
+    }
+
+    let plays = try artistPlayCount(db: db, artistUris: artistUris)
+    guard plays >= coreLibraryPlayThreshold else { return decision }
+
+    return SoundThemeDecision(
+      theme: .classic,
+      confidence: min(0.86, max(0.64, decision.confidence)),
+      source: decision.source,
+      reason: "Smoke Gel because this is a core-library artist (\(plays) plays); weak \(decision.theme.label) signal held back.")
+  }
+
+  private static func artistPlayCount(db: Database, artistUris: [String]) throws -> Int {
+    let artistUris = dedupedArtistUris(artistUris)
+    guard !artistUris.isEmpty else { return 0 }
+    let placeholders = Array(repeating: "?", count: artistUris.count).joined(separator: ",")
+    return try Int.fetchOne(db, sql: """
+      WITH artist_tracks AS (
+        SELECT DISTINCT t.uri AS track_uri
+        FROM tracks t, json_each(t.artists_json) j
+        WHERE t.artists_json IS NOT NULL
+          AND json_valid(t.artists_json) = 1
+          AND json_extract(j.value, '$.uri') IN (\(placeholders))
+      )
+      SELECT COUNT(*)
+      FROM plays p
+      JOIN artist_tracks at ON at.track_uri = p.track_uri
+    """, arguments: StatementArguments(artistUris)) ?? 0
+  }
+
   private static func dedupedArtistUris(_ artistUris: [String]) -> [String] {
     var seen = Set<String>()
     return artistUris.filter { uri in
@@ -1320,6 +1385,14 @@ private struct SoundThemeResolver {
     "metal", "black metal", "death metal", "doom metal", "heavy metal", "metalcore"
   ]
 
+  private static let strongAggressiveRapTags = [
+    "drill", "rage rap", "horrorcore", "trap metal", "industrial hip hop", "industrial rap"
+  ]
+
+  private static let strongHarshTags = [
+    "noise", "power electronics", "harsh noise", "industrial"
+  ]
+
   private static let latinCulturalTags = [
     "corridos tumbados", "corridos", "regional mexican",
     "reggaeton", "reggaetón", "urbano latino", "latin urban", "dembow",
@@ -1339,13 +1412,11 @@ private struct SoundThemeResolver {
 
   fileprivate static func theme(forFamily family: String) -> DialThemeID? {
     switch family {
-    case "experimental", "soundtrack":
-      return .slime
-    case "indie", "pop", "acoustic", "r&b", "rock", "jazz", "ambient", "electronic":
+    case "indie", "rock", "jazz", "ambient", "electronic", "experimental", "soundtrack":
       return .aqua
-    case "latin", "corridos", "reggaeton":
+    case "latin", "corridos", "reggaeton", "rap", "r&b", "pop", "acoustic":
       return .classic
-    case "rap", "punk/emo", "metal":
+    case "punk/emo", "metal":
       return .ember
     default:
       return nil
@@ -1360,4 +1431,6 @@ private struct SoundThemeResolver {
     case .aqua:    return 3
     }
   }
+
+  private static let coreLibraryPlayThreshold = 50
 }
