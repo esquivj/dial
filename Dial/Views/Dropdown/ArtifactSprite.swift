@@ -8,7 +8,7 @@ struct ArtifactSprite: View {
 
   var body: some View {
     ResourceTemplateSprite(
-      name: kind.rawValue,
+      name: kind.assetName,
       subdirectory: "Artifacts",
       color: color,
       size: size)

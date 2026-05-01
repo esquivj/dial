@@ -17,6 +17,7 @@ struct ArtifactsDAO {
     try dbq.write { db in
       try syncBadgeArtifacts(in: db)
       try syncTrickArtifacts(in: db)
+      try syncWeeklyMemoryArtifacts(in: db)
       return try Artifact
         .order(Artifact.Columns.unlockedAt.desc, Artifact.Columns.kind.asc)
         .fetchAll(db)
@@ -42,7 +43,8 @@ struct ArtifactsDAO {
           sourceBadgeEventId: event.id,
           trackUri: event.trackUri,
           artistUri: event.artistUri,
-          detail: event.kind.label),
+          detail: event.kind.label,
+          sourceWeekStart: nil),
         in: db)
     }
   }
@@ -69,7 +71,33 @@ struct ArtifactsDAO {
           sourceBadgeEventId: nil,
           trackUri: nil,
           artistUri: nil,
-          detail: trick.label),
+          detail: trick.label,
+          sourceWeekStart: nil),
+        in: db)
+    }
+  }
+
+  private func syncWeeklyMemoryArtifacts(in db: Database) throws {
+    let memories = try WeeklyMemoryRecord
+      .order(WeeklyMemoryRecord.Columns.weekStart.asc)
+      .fetchAll(db)
+
+    var unlockedKinds = Set<ArtifactKind>()
+    for memory in memories {
+      guard let kind = ArtifactKind(memento: memory.memento),
+            unlockedKinds.insert(kind).inserted
+      else { continue }
+
+      try insertIgnoring(
+        Artifact(
+          kind: kind,
+          source: .weeklyMemory,
+          unlockedAt: memory.weekEnd,
+          sourceBadgeEventId: nil,
+          trackUri: nil,
+          artistUri: nil,
+          detail: "\(memory.memento) · \(memory.trait)",
+          sourceWeekStart: memory.weekStart),
         in: db)
     }
   }
@@ -77,8 +105,8 @@ struct ArtifactsDAO {
   private func insertIgnoring(_ artifact: Artifact, in db: Database) throws {
     try db.execute(sql: """
       INSERT OR IGNORE INTO artifacts
-        (kind, source, unlocked_at, source_badge_event_id, track_uri, artist_uri, detail)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+        (kind, source, unlocked_at, source_badge_event_id, track_uri, artist_uri, detail, source_week_start)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       """, arguments: [
         artifact.kind.rawValue,
         artifact.source.rawValue,
@@ -87,6 +115,7 @@ struct ArtifactsDAO {
         artifact.trackUri,
         artifact.artistUri,
         artifact.detail,
+        artifact.sourceWeekStart,
       ])
   }
 }

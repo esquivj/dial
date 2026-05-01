@@ -16,6 +16,7 @@ struct PetView: View {
   @Bindable var aggCache: AggregationsCache
   @Bindable var menubar: MenubarStripViewModel
   let dbq: DatabaseQueue
+  let livingMemoriesEnabled: Bool
   let onBack: () -> Void
 
   @State private var todayListeningMs: Int64 = 0
@@ -23,6 +24,7 @@ struct PetView: View {
   @State private var unlockedTricks: [PetTrickUnlock] = []
   @State private var artifacts: [Artifact] = []
   @State private var weeklyMemory: StatsQueries.WeeklyMemorySnapshot?
+  @State private var weeklyMemoryLog: [WeeklyMemoryRecord] = []
   @State private var petState: PetState? = nil
   @State private var actionFeedback: String?
   @State private var interactionBehavior: PetBehavior?
@@ -31,6 +33,36 @@ struct PetView: View {
   @State private var reloadLoader = CoalescedSnapshotLoader<PetViewSnapshot>("pet.snapshot.load")
   @Environment(\.dialTheme) private var theme
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+  init(
+    pet: PetViewModel,
+    aggCache: AggregationsCache,
+    menubar: MenubarStripViewModel,
+    dbq: DatabaseQueue,
+    livingMemoriesEnabled: Bool,
+    initialTodayListeningMs: Int64 = 0,
+    initialBadgeCounts: [BadgeCategory: Int] = [:],
+    initialUnlockedTricks: [PetTrickUnlock] = [],
+    initialArtifacts: [Artifact] = [],
+    initialWeeklyMemory: StatsQueries.WeeklyMemorySnapshot? = nil,
+    initialWeeklyMemoryLog: [WeeklyMemoryRecord] = [],
+    initialPetState: PetState? = nil,
+    onBack: @escaping () -> Void
+  ) {
+    self.pet = pet
+    self.aggCache = aggCache
+    self.menubar = menubar
+    self.dbq = dbq
+    self.livingMemoriesEnabled = livingMemoriesEnabled
+    self.onBack = onBack
+    _todayListeningMs = State(initialValue: initialTodayListeningMs)
+    _recentBadgeCounts = State(initialValue: initialBadgeCounts)
+    _unlockedTricks = State(initialValue: initialUnlockedTricks)
+    _artifacts = State(initialValue: initialArtifacts)
+    _weeklyMemory = State(initialValue: initialWeeklyMemory)
+    _weeklyMemoryLog = State(initialValue: initialWeeklyMemoryLog)
+    _petState = State(initialValue: initialPetState)
+  }
 
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
@@ -42,6 +74,7 @@ struct PetView: View {
     .task(id: ObjectIdentifier(dbq)) {
       reload()
     }
+    .onChange(of: livingMemoriesEnabled) { _, _ in reload() }
     .onChange(of: pet.xp) { _, _ in reload() }
     .onChange(of: pet.streakDays) { _, _ in reload() }
     .onDisappear {
@@ -79,7 +112,10 @@ struct PetView: View {
   private var content: some View {
     VStack(alignment: .leading, spacing: 5) {
       petCompanionPanel
-      weeklyMemoryCapsule
+      if livingMemoriesEnabled {
+        weeklyMemoryCapsule
+        memoryLogShelf
+      }
       memoryObjectsShelf
       xpSection
     }
@@ -99,7 +135,7 @@ struct PetView: View {
       RoomSceneView(
         pet: pet,
         behavior: displayBehavior,
-        featuredObjectName: weeklyMemory?.roomObjectName,
+        featuredObjectName: livingMemoriesEnabled ? weeklyMemory?.roomObjectName : nil,
         notesActive: menubar.state == .playing || actionPulse,
         actionPulse: actionPulse)
 
@@ -233,6 +269,73 @@ struct PetView: View {
         .accessibilityValue("No room memory yet.")
       }
     }
+  }
+
+  private var memoryLogShelf: some View {
+    let visibleMemories = Array(weeklyMemoryLog.prefix(4))
+    let latest = visibleMemories.first
+    let latestLine = latest.map { "\(weekLabel($0.weekStart)) · \($0.trait.uppercased())" } ?? "NO WEEKS SAVED"
+
+    return HStack(alignment: .center, spacing: 8) {
+      VStack(alignment: .leading, spacing: 2) {
+        HStack(spacing: 5) {
+          Text("LOG")
+            .font(Dial.Typography.monoTiny)
+            .tracking(0.8)
+            .foregroundStyle(theme.textMuted.opacity(0.72))
+          Text("\(weeklyMemoryLog.count)W")
+            .font(Dial.Typography.monoTiny)
+            .foregroundStyle(theme.memoryAccent)
+            .monospacedDigit()
+        }
+
+        Text(latestLine)
+          .font(Dial.Typography.monoSmall)
+          .foregroundStyle(latest == nil ? theme.textMuted.opacity(0.72) : theme.textPrimary.opacity(0.86))
+          .lineLimit(1)
+          .minimumScaleFactor(0.72)
+      }
+      .frame(width: 132, alignment: .leading)
+
+      Spacer(minLength: 0)
+
+      HStack(spacing: 5) {
+        if visibleMemories.isEmpty {
+          ForEach(0..<4, id: \.self) { _ in
+            RoundedRectangle(cornerRadius: Dial.Radius.tiny, style: .continuous)
+              .stroke(theme.hairline.opacity(0.42), lineWidth: 1)
+              .frame(width: 28, height: 28)
+          }
+        } else {
+          ForEach(visibleMemories) { memory in
+            let color = weeklyMemoryColor(memory)
+            let kind = ArtifactKind(memento: memory.memento) ?? .listeningCrate
+
+            ArtifactSprite(kind: kind, color: color, size: 21)
+              .frame(width: 28, height: 28)
+              .dialPrintedChip(
+                shape: RoundedRectangle(cornerRadius: Dial.Radius.tiny, style: .continuous),
+                color: color,
+                fillOpacity: 0.055,
+                edgeOpacity: 0.16)
+              .help(weeklyMemoryHelp(memory))
+          }
+        }
+      }
+    }
+    .padding(.horizontal, 8)
+    .padding(.vertical, 4)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .frame(height: 38)
+    .dialPrintedChip(
+      shape: RoundedRectangle(cornerRadius: Dial.Radius.tiny, style: .continuous),
+      color: theme.memoryAccent,
+      fillOpacity: 0.030,
+      edgeOpacity: 0.12)
+    .help("Saved weekly memories. Hover a memento for week, trait, recap, and dominant sound.")
+    .accessibilityElement(children: .combine)
+    .accessibilityLabel("Memory log")
+    .accessibilityValue(latest.map { weeklyMemoryHelp($0) } ?? "No weeks saved.")
   }
 
   private func petStateSummary(_ snapshot: PetBondSnapshot) -> some View {
@@ -472,8 +575,12 @@ struct PetView: View {
 
   private func reload() {
     let startOfToday = startOfTodayEpoch()
+    let shouldLoadLivingMemories = livingMemoriesEnabled
     reloadLoader.schedule {
-      await PetViewSnapshot.load(dbq: dbq, startOfToday: startOfToday)
+      await PetViewSnapshot.load(
+        dbq: dbq,
+        startOfToday: startOfToday,
+        livingMemoriesEnabled: shouldLoadLivingMemories)
     } apply: { snapshot in
       apply(snapshot)
     }
@@ -486,6 +593,7 @@ struct PetView: View {
     unlockedTricks = snapshot.unlockedTricks
     artifacts = snapshot.artifacts
     weeklyMemory = snapshot.weeklyMemory
+    weeklyMemoryLog = snapshot.weeklyMemoryLog
   }
 
   private struct PetViewSnapshot {
@@ -494,30 +602,49 @@ struct PetView: View {
     let unlockedTricks: [PetTrickUnlock]
     let artifacts: [Artifact]
     let weeklyMemory: StatsQueries.WeeklyMemorySnapshot?
+    let weeklyMemoryLog: [WeeklyMemoryRecord]
     let petState: PetState?
 
-    static func load(dbq: DatabaseQueue, startOfToday: Int64) async -> PetViewSnapshot {
+    static func load(
+      dbq: DatabaseQueue,
+      startOfToday: Int64,
+      livingMemoriesEnabled: Bool
+    ) async -> PetViewSnapshot {
       await withCheckedContinuation { continuation in
         DispatchQueue.global(qos: .userInitiated).async {
-          continuation.resume(returning: make(dbq: dbq, startOfToday: startOfToday))
+          continuation.resume(returning: make(
+            dbq: dbq,
+            startOfToday: startOfToday,
+            livingMemoriesEnabled: livingMemoriesEnabled))
         }
       }
     }
 
-    private static func make(dbq: DatabaseQueue, startOfToday: Int64) -> PetViewSnapshot {
+    private static func make(
+      dbq: DatabaseQueue,
+      startOfToday: Int64,
+      livingMemoriesEnabled: Bool
+    ) -> PetViewSnapshot {
       let queries = StatsQueries(dbq: dbq)
       let recentCutoff = Int64(Date().timeIntervalSince1970) - 7 * 86_400
       let summaries = (try? queries.badgeSummaries(since: recentCutoff)) ?? []
       let badgeCounts = summaries.reduce(into: [:]) { acc, summary in
         acc[summary.category] = summary.count
       }
+      let weeklyLog = livingMemoriesEnabled
+        ? ((try? WeeklyMemoriesDAO(dbq: dbq).ensureRecentWeeks(limit: 12)) ?? [])
+        : []
+      let liveWeeklyMemory = livingMemoriesEnabled
+        ? (weeklyLog.first.map(StatsQueries.WeeklyMemorySnapshot.init(record:)) ?? (try? queries.weeklyMemory()))
+        : nil
 
       return PetViewSnapshot(
         todayListeningMs: (try? queries.totals(since: startOfToday).listeningMs) ?? 0,
         recentBadgeCounts: badgeCounts,
         unlockedTricks: (try? PetTrickUnlocksDAO(dbq: dbq).all()) ?? [],
         artifacts: (try? ArtifactsDAO(dbq: dbq).syncFromMemoriesAndTricks()) ?? [],
-        weeklyMemory: try? queries.weeklyMemory(),
+        weeklyMemory: liveWeeklyMemory,
+        weeklyMemoryLog: weeklyLog,
         petState: try? PetStateDAO(dbq: dbq).get())
     }
   }
@@ -558,10 +685,19 @@ struct PetView: View {
       }
     case .trick:
       return theme.memoryAccent
+    case .weeklyMemory:
+      return artifact.sourceWeekStart.flatMap { weekStart in
+        weeklyMemoryLog.first(where: { $0.weekStart == weekStart }).map(weeklyMemoryColor)
+      } ?? theme.memoryAccent
     }
   }
 
   private func weeklyMemoryColor(_ memory: StatsQueries.WeeklyMemorySnapshot) -> Color {
+    if memory.theme == theme.id { return theme.accent }
+    return DialTheme.palette(for: memory.theme).accent
+  }
+
+  private func weeklyMemoryColor(_ memory: WeeklyMemoryRecord) -> Color {
     if memory.theme == theme.id { return theme.accent }
     return DialTheme.palette(for: memory.theme).accent
   }
@@ -575,6 +711,18 @@ struct PetView: View {
   private func weeklyMemoryHelp(_ memory: StatsQueries.WeeklyMemorySnapshot) -> String {
     let genre = memory.dominantGenre ?? memory.theme.label
     return "\(memory.trait): \(memory.recapLine) Memento: \(memory.memento). Room object: \(roomObjectLabel(memory.roomObjectName)). Dominant sound: \(genre)."
+  }
+
+  private func weeklyMemoryHelp(_ memory: WeeklyMemoryRecord) -> String {
+    let genre = memory.dominantGenre ?? memory.theme.label
+    return "\(weekLabel(memory.weekStart)): \(memory.trait). \(memory.recapLine) Memento: \(memory.memento). Room object: \(roomObjectLabel(memory.roomObjectName)). Dominant sound: \(genre)."
+  }
+
+  private func weekLabel(_ weekStart: Int64) -> String {
+    let date = Date(timeIntervalSince1970: TimeInterval(weekStart))
+    let formatter = DateFormatter()
+    formatter.dateFormat = "MMM d"
+    return formatter.string(from: date).uppercased()
   }
 
   private func iconName(for action: PetBondPrimaryAction) -> String {

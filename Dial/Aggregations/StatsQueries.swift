@@ -106,10 +106,20 @@ struct StatsQueries {
     var id: String { uri }
   }
 
-  func topTracks(limit: Int = 10, since: Int64? = nil) throws -> [TopRow] {
+  func topTracks(limit: Int = 10, since: Int64? = nil, until: Int64? = nil) throws -> [TopRow] {
     try dbq.read { db in
-      let filter = since == nil ? "" : "WHERE p.played_at >= ?"
-      let arguments = since.map { [$0, Int64(limit)] } ?? [Int64(limit)]
+      var filters: [String] = []
+      var arguments: [Int64] = []
+      if let since {
+        filters.append("p.played_at >= ?")
+        arguments.append(since)
+      }
+      if let until {
+        filters.append("p.played_at < ?")
+        arguments.append(until)
+      }
+      let filter = filters.isEmpty ? "" : "WHERE \(filters.joined(separator: " AND "))"
+      arguments.append(Int64(limit))
       return try Row.fetchAll(db, sql: """
         SELECT p.track_uri AS uri,
                COALESCE(t.name, p.track_uri) AS name,
@@ -166,10 +176,19 @@ struct StatsQueries {
   /// A play can contribute to multiple family buckets when its primary artist
   /// has several tags. That's intentional: this powers "sound weather," not
   /// exact accounting.
-  func topGenres(limit: Int = 8, since: Int64? = nil) throws -> [GenreRow] {
+  func topGenres(limit: Int = 8, since: Int64? = nil, until: Int64? = nil) throws -> [GenreRow] {
     try dbq.read { db in
-      let rangeFilter = since == nil ? "" : "AND p.played_at >= ?"
-      let arguments = since.map { [$0, Int64(limit)] } ?? [Int64(limit)]
+      var rangeFilters: [String] = []
+      var arguments: [Int64] = []
+      if let since {
+        rangeFilters.append("AND p.played_at >= ?")
+        arguments.append(since)
+      }
+      if let until {
+        rangeFilters.append("AND p.played_at < ?")
+        arguments.append(until)
+      }
+      arguments.append(Int64(limit))
       return try Row.fetchAll(db, sql: """
         WITH normalized_artist_families AS (
           SELECT nt.entity_uri AS artist_uri,
@@ -216,7 +235,7 @@ struct StatsQueries {
                ELSE NULL END
         WHERE t.artists_json IS NOT NULL
           AND json_valid(t.artists_json) = 1
-          \(rangeFilter)
+          \(rangeFilters.joined(separator: "\n          "))
         GROUP BY ag.genre
         ORDER BY plays DESC, artists DESC, genre ASC
         LIMIT ?
@@ -277,16 +296,20 @@ struct StatsQueries {
   /// room object, and one recap line for the current listening week.
   func weeklyMemory(now: Int64 = Int64(Date().timeIntervalSince1970)) throws -> WeeklyMemorySnapshot? {
     let bounds = Self.weekBounds(containing: now)
-    let totals = try totals(since: bounds.start)
+    return try weeklyMemory(weekStart: bounds.start, weekEnd: bounds.end)
+  }
+
+  func weeklyMemory(weekStart: Int64, weekEnd: Int64) throws -> WeeklyMemorySnapshot? {
+    let totals = try totals(since: weekStart, until: weekEnd)
     guard totals.plays > 0 else { return nil }
 
-    let genres = try topGenres(limit: 3, since: bounds.start)
+    let genres = try topGenres(limit: 3, since: weekStart, until: weekEnd)
     let dominantGenre = genres.first?.genre
     let family = dominantGenre.flatMap { DialTagNormalizer.normalize($0)?.family } ?? dominantGenre
-    let lateNightPlays = try countLateNightPlays(since: bounds.start)
-    let topTrack = try topTracks(limit: 1, since: bounds.start).first
-    let topArtist = try topArtists(limit: 1, since: bounds.start).first
-    let newArtists = try countNewArtists(since: bounds.start)
+    let lateNightPlays = try countLateNightPlays(since: weekStart, until: weekEnd)
+    let topTrack = try topTracks(limit: 1, since: weekStart, until: weekEnd).first
+    let topArtist = try topArtists(limit: 1, since: weekStart, until: weekEnd).first
+    let newArtists = try countNewArtists(since: weekStart, until: weekEnd)
 
     let weeklyTheme = SoundThemeResolver.theme(
       forRawTags: genres.first?.detailTags ?? [],
@@ -304,8 +327,8 @@ struct StatsQueries {
       topArtist: topArtist)
 
     return WeeklyMemorySnapshot(
-      weekStart: bounds.start,
-      weekEnd: bounds.end,
+      weekStart: weekStart,
+      weekEnd: weekEnd,
       trait: blueprint.trait,
       memento: blueprint.memento,
       recapLine: blueprint.recap,
@@ -326,23 +349,30 @@ struct StatsQueries {
       .filter { !$0.isEmpty }
   }
 
-  private func countLateNightPlays(since: Int64) throws -> Int {
+  private func countLateNightPlays(since: Int64, until: Int64? = nil) throws -> Int {
     try dbq.read { db in
-      try Int.fetchOne(db, sql: """
+      let untilFilter = until == nil ? "" : "AND played_at < ?"
+      var arguments = [since]
+      if let until { arguments.append(until) }
+      return try Int.fetchOne(db, sql: """
         SELECT COUNT(*)
         FROM plays
         WHERE played_at >= ?
+          \(untilFilter)
           AND (
             CAST(strftime('%H', played_at, 'unixepoch', 'localtime') AS INTEGER) >= 22
             OR CAST(strftime('%H', played_at, 'unixepoch', 'localtime') AS INTEGER) <= 4
           )
-      """, arguments: [since]) ?? 0
+      """, arguments: StatementArguments(arguments)) ?? 0
     }
   }
 
-  private func countNewArtists(since: Int64) throws -> Int {
+  private func countNewArtists(since: Int64, until: Int64? = nil) throws -> Int {
     try dbq.read { db in
-      try Int.fetchOne(db, sql: """
+      let untilFilter = until == nil ? "" : "AND first_seen < ?"
+      var arguments = [since]
+      if let until { arguments.append(until) }
+      return try Int.fetchOne(db, sql: """
         WITH artist_first AS (
           SELECT COALESCE(
                    NULLIF(LOWER(TRIM(json_extract(t.artists_json, '$[0].name'))), ''),
@@ -358,11 +388,12 @@ struct StatsQueries {
         SELECT COUNT(*)
         FROM artist_first
         WHERE first_seen >= ?
-      """, arguments: [since]) ?? 0
+          \(untilFilter)
+      """, arguments: StatementArguments(arguments)) ?? 0
     }
   }
 
-  private static func weekBounds(containing epoch: Int64) -> (start: Int64, end: Int64) {
+  static func weekBounds(containing epoch: Int64) -> (start: Int64, end: Int64) {
     var calendar = Calendar(identifier: .gregorian)
     calendar.timeZone = .current
     calendar.firstWeekday = 2
@@ -452,10 +483,19 @@ struct StatsQueries {
   /// Top artists by play count. Collapses imported synthetic artist IDs and
   /// later Spotify IDs by normalized display name so rankings never show the
   /// same artist twice.
-  func topArtists(limit: Int = 10, since: Int64? = nil) throws -> [TopRow] {
+  func topArtists(limit: Int = 10, since: Int64? = nil, until: Int64? = nil) throws -> [TopRow] {
     try dbq.read { db in
-      let rangeFilter = since == nil ? "" : "AND p.played_at >= ?"
-      let arguments = since.map { [$0, Int64(limit)] } ?? [Int64(limit)]
+      var rangeFilters: [String] = []
+      var arguments: [Int64] = []
+      if let since {
+        rangeFilters.append("AND p.played_at >= ?")
+        arguments.append(since)
+      }
+      if let until {
+        rangeFilters.append("AND p.played_at < ?")
+        arguments.append(until)
+      }
+      arguments.append(Int64(limit))
       return try Row.fetchAll(db, sql: """
         WITH artist_plays AS (
           SELECT
@@ -466,7 +506,7 @@ struct StatsQueries {
           JOIN tracks t ON t.uri = p.track_uri
           WHERE t.artists_json IS NOT NULL
             AND json_valid(t.artists_json) = 1
-            \(rangeFilter)
+            \(rangeFilters.joined(separator: "\n            "))
         ),
         normalized AS (
           SELECT
@@ -522,11 +562,24 @@ struct StatsQueries {
     let uniqueArtists: Int
   }
 
-  func totals(since: Int64? = nil) throws -> Totals {
+  func totals(since: Int64? = nil, until: Int64? = nil) throws -> Totals {
     try dbq.read { db in
-      let playsFilter = since == nil ? "" : "WHERE played_at >= ?"
-      let artistRangeFilter = since == nil ? "" : "AND p.played_at >= ?"
-      let arguments = since.map { StatementArguments([$0]) } ?? StatementArguments()
+      var playFilters: [String] = []
+      var artistFilters: [String] = []
+      var arguments: [Int64] = []
+      if let since {
+        playFilters.append("played_at >= ?")
+        artistFilters.append("AND p.played_at >= ?")
+        arguments.append(since)
+      }
+      if let until {
+        playFilters.append("played_at < ?")
+        artistFilters.append("AND p.played_at < ?")
+        arguments.append(until)
+      }
+      let playsFilter = playFilters.isEmpty ? "" : "WHERE \(playFilters.joined(separator: " AND "))"
+      let artistRangeFilter = artistFilters.joined(separator: "\n          ")
+      let statementArguments = StatementArguments(arguments)
       // One scan of `plays` for the three play-derived metrics — was three
       // separate scans, which at 193k rows is 3× the work for no reason.
       // COUNT, SUM, and COUNT(DISTINCT) all share the same row stream and
@@ -537,7 +590,7 @@ struct StatsQueries {
                COUNT(DISTINCT track_uri) AS uniq_tracks
         FROM plays
         \(playsFilter)
-      """, arguments: arguments)
+      """, arguments: statementArguments)
       // Artists live in a different table, so this stays as a separate
       // query. Filter to rows with VALID `artists_json` — some imported
       // rows have malformed JSON (unescaped backslashes in URIs) which
@@ -550,7 +603,7 @@ struct StatsQueries {
         FROM plays p JOIN tracks t ON t.uri = p.track_uri
         WHERE t.artists_json IS NOT NULL AND json_valid(t.artists_json) = 1
           \(artistRangeFilter)
-      """, arguments: arguments) ?? 0
+      """, arguments: statementArguments) ?? 0
       return Totals(
         plays: row?["plays"] ?? 0,
         listeningMs: row?["total_ms"] ?? 0,

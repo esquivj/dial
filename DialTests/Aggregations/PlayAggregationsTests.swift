@@ -975,6 +975,81 @@ final class StatsQueriesTests: XCTestCase {
     XCTAssertEqual(memory.newArtists, 12)
   }
 
+  func test_weeklyMemoryCanBeGeneratedForHistoricalWeekWithoutFutureBleed() throws {
+    let dbq = try InMemoryDatabase.make()
+    let plays = PlaysDAO(dbq: dbq)
+    let tracks = TracksDAO(dbq: dbq)
+    let weekStart = localEpoch(year: 2024, month: 1, day: 8, hour: 0)
+    let weekEnd = localEpoch(year: 2024, month: 1, day: 15, hour: 0)
+    let nextWeek = localEpoch(year: 2024, month: 1, day: 16, hour: 12)
+
+    try tracks.upsert(.init(
+      uri: "spotify:track:bounded",
+      name: "Bounded",
+      albumName: nil,
+      albumArtUrl: nil,
+      durationMs: nil,
+      artistsJson: #"[{"name":"Week One","uri":"spotify:artist:week-one"}]"#))
+    try tracks.upsert(.init(
+      uri: "spotify:track:future",
+      name: "Future",
+      albumName: nil,
+      albumArtUrl: nil,
+      durationMs: nil,
+      artistsJson: #"[{"name":"Week Two","uri":"spotify:artist:week-two"}]"#))
+
+    for idx in 0..<3 {
+      try plays.insert(.init(
+        playedAt: weekStart + 86_400 + Int64(idx * 60),
+        trackUri: "spotify:track:bounded",
+        msPlayed: 180_000,
+        source: "import"))
+    }
+    for idx in 0..<10 {
+      try plays.insert(.init(
+        playedAt: nextWeek + Int64(idx * 60),
+        trackUri: "spotify:track:future",
+        msPlayed: 180_000,
+        source: "import"))
+    }
+
+    let memory = try XCTUnwrap(StatsQueries(dbq: dbq).weeklyMemory(weekStart: weekStart, weekEnd: weekEnd))
+
+    XCTAssertEqual(memory.playCount, 3)
+    XCTAssertFalse(memory.recapLine.contains("Week Two"))
+  }
+
+  func test_weeklyMemoriesPersistAndUnlockMementoArtifacts() throws {
+    let dbq = try InMemoryDatabase.make()
+    let plays = PlaysDAO(dbq: dbq)
+    let tracks = TracksDAO(dbq: dbq)
+    let now = localEpoch(year: 2024, month: 1, day: 17, hour: 12)
+    let lateNight = localEpoch(year: 2024, month: 1, day: 16, hour: 23)
+
+    for idx in 0..<6 {
+      let trackUri = "spotify:track:weekly-persist:\(idx)"
+      try tracks.upsert(.init(
+        uri: trackUri,
+        name: "Saved Week \(idx)",
+        albumName: nil,
+        albumArtUrl: nil,
+        durationMs: nil,
+        artistsJson: #"[{"name":"Memory Artist \#(idx)","uri":"spotify:artist:memory:\#(idx)"}]"#))
+      try plays.insert(.init(
+        playedAt: lateNight + Int64(idx * 60),
+        trackUri: trackUri,
+        msPlayed: 180_000,
+        source: "import"))
+    }
+
+    let memories = try WeeklyMemoriesDAO(dbq: dbq, now: { now }).ensureRecentWeeks(limit: 2)
+    let artifacts = try ArtifactsDAO(dbq: dbq).all()
+
+    XCTAssertEqual(memories.first?.memento, "Moonlit Tape")
+    XCTAssertEqual(memories.first?.trait, "Nocturnal")
+    XCTAssertTrue(artifacts.contains { $0.kind == .moonlitTape && $0.source == .weeklyMemory })
+  }
+
   func test_enrichmentProgressIncludesArtistProgress() throws {
     let dbq = try InMemoryDatabase.make()
     let plays = PlaysDAO(dbq: dbq)

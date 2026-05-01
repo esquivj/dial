@@ -131,6 +131,7 @@ final class AppCoordinator {
       self.pollingStarted = false
     }
     syncBackgroundEnrichment()
+    refreshWeeklyMemoriesIfNeeded()
   }
 
   func syncBackgroundEnrichment() {
@@ -578,6 +579,7 @@ final class AppCoordinator {
         ? "+\(xpDelta.formatted()) XP · \(trackName)"
         : "Memory added · \(trackName)"
       updatePetMemoryText()
+      refreshWeeklyMemoriesIfNeeded()
       endPerf()
       // A counted play gets a tiny creature pulse, then settles back into the
       // current listening motion. The UI copy stays about memory/XP, not chores.
@@ -589,6 +591,18 @@ final class AppCoordinator {
       }
       resolvePetBehavior()
       scheduleAmbientTrickIfNeeded()
+    }
+  }
+
+  private func refreshWeeklyMemoriesIfNeeded(limit: Int = 12) {
+    guard settings.petEnabled, settings.livingMemoriesEnabled else { return }
+    let dbq = self.dbq
+    Task(priority: .utility) {
+      do {
+        _ = try WeeklyMemoriesDAO(dbq: dbq).ensureRecentWeeks(limit: limit)
+      } catch {
+        coordLog.error("weekly memories refresh failed: \(String(describing: error), privacy: .public)")
+      }
     }
   }
 

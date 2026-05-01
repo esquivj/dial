@@ -352,6 +352,7 @@ struct DropdownView: View {
           aggCache: coord.aggCache,
           menubar: coord.menubar,
           dbq: coord.dbq,
+          livingMemoriesEnabled: coord.settings.livingMemoriesEnabled,
           onBack: { withAnimation(screenTransitionAnimation) { coord.dropdownScreen = .hud } }
         )
         .transition(.move(edge: .trailing).combined(with: .opacity))

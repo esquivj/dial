@@ -1,7 +1,7 @@
 // Dial/DesignSystem/Dial+Tokens.swift
 import SwiftUI
 
-enum DialThemeID: String, CaseIterable, Identifiable {
+enum DialThemeID: String, CaseIterable, Identifiable, Codable {
   case classic
   case slime
   case aqua

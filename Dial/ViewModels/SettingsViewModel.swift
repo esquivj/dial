@@ -291,6 +291,9 @@ final class SettingsViewModel {
   var showPetInHUD: Bool {
     didSet { defaults.set(showPetInHUD, forKey: Key.showPetInHUD) }
   }
+  var livingMemoriesEnabled: Bool {
+    didSet { defaults.set(livingMemoriesEnabled, forKey: Key.livingMemoriesEnabled) }
+  }
   var petFeedingAnimation: Bool {
     didSet { defaults.set(petFeedingAnimation, forKey: Key.petFeedingAnimation) }
   }
@@ -379,6 +382,7 @@ final class SettingsViewModel {
 
     self.petEnabled = Self.boolValue(Key.petEnabled, default: true, defaults: defaults)
     self.showPetInHUD = Self.boolValue(Key.showPetInHUD, default: true, defaults: defaults)
+    self.livingMemoriesEnabled = Self.boolValue(Key.livingMemoriesEnabled, default: true, defaults: defaults)
     self.petFeedingAnimation = Self.boolValue(Key.petFeedingAnimation, default: true, defaults: defaults)
     self.petFirstListenAnimation = Self.boolValue(Key.petFirstListenAnimation, default: true, defaults: defaults)
     self.petRediscoveryAnimation = Self.boolValue(Key.petRediscoveryAnimation, default: true, defaults: defaults)
@@ -448,6 +452,7 @@ final class SettingsViewModel {
   func resetPetDefaults() {
     petEnabled = true
     showPetInHUD = true
+    livingMemoriesEnabled = true
     petFeedingAnimation = true
     petFirstListenAnimation = true
     petRediscoveryAnimation = true
@@ -586,6 +591,7 @@ final class SettingsViewModel {
 
     static let petEnabled = "settings.petEnabled"
     static let showPetInHUD = "settings.showPetInHUD"
+    static let livingMemoriesEnabled = "settings.livingMemoriesEnabled"
     static let petFeedingAnimation = "settings.petFeedingAnimation"
     static let petFirstListenAnimation = "settings.petFirstListenAnimation"
     static let petRediscoveryAnimation = "settings.petRediscoveryAnimation"

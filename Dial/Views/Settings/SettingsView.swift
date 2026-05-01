@@ -556,6 +556,13 @@ private struct PetSettingsTab: View {
             isOn: $vm.showPetInHUD)
             .disabled(!vm.petEnabled)
             .opacity(vm.petEnabled ? 1 : 0.35)
+
+          SettingsToggle(
+            title: "Living memories",
+            detail: "Save weekly traits, mementos, and room objects from your history.",
+            isOn: $vm.livingMemoriesEnabled)
+            .disabled(!vm.petEnabled)
+            .opacity(vm.petEnabled ? 1 : 0.35)
         }
       }
 

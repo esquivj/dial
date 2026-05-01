@@ -113,6 +113,51 @@ final class VisualRegressionTests: XCTestCase {
     XCTAssertEqual(playCenter - previousCenter, nextCenter - playCenter, accuracy: 0.001)
   }
 
+  func test_petScreenRendersCompactLivingMemoryLog() throws {
+    let context = try makeSnapshotContext(themeID: .slime)
+    let memories = try seedWeeklyMemoryLog(in: context.dbq)
+    let artifacts = try ArtifactsDAO(dbq: context.dbq).syncFromMemoriesAndTricks()
+    let petState = PetState(
+      id: 1,
+      xp: 36_800,
+      stage: .companion,
+      hatchedAt: nil,
+      lastPlayAt: Int64(Date().timeIntervalSince1970) - 480,
+      streakDays: 9,
+      streakAnchorDate: nil,
+      elderUnlockedAt: nil,
+      installedAt: Int64(Date().timeIntervalSince1970) - 18 * 86_400)
+
+    context.settings.livingMemoriesEnabled = true
+    context.pet.stage = .companion
+    context.pet.xp = petState.xp
+    context.pet.streakDays = petState.streakDays
+    context.pet.behavior = .beatSync(bpm: 126)
+    context.menubar.state = .playing
+    context.agg.currentBadgeInsight = BadgeInsight(
+      kind: .rediscovered,
+      detail: "REDISCOVERED",
+      explanation: "Fixture keeps the room action and badge response visible.")
+
+    let view = PetScreenSnapshotHarness(
+      context: context,
+      memories: memories,
+      artifacts: artifacts,
+      petState: petState)
+      .preferredColorScheme(.dark)
+
+    let image = try render(view, size: CGSize(width: DropdownLayout.width, height: DropdownLayout.height))
+    let snapshotName = "dial-pet-memory-log"
+    try attach(image, name: snapshotName)
+    try assertMatchesBaseline(image, name: snapshotName)
+
+    XCTAssertGreaterThan(opaquePixelCount(in: image), 40_000, "Pet screen rendered blank.")
+    XCTAssertGreaterThan(
+      accentPixelCount(in: image, expected: expectedAccent(for: .slime)),
+      600,
+      "Pet screen lost its slime memory accent.")
+  }
+
   private func makeSnapshotContext(themeID: DialThemeID) throws -> SnapshotContext {
     let dbq = try InMemoryDatabase.make()
     let tokenStore = SnapshotTokenStore()
@@ -242,6 +287,94 @@ final class VisualRegressionTests: XCTestCase {
     coord.visualizer.setPreviewSpectrum(bands: marketingSpectrum(for: themeID))
 
     return coord
+  }
+
+  private func seedWeeklyMemoryLog(in dbq: DatabaseQueue) throws -> [WeeklyMemoryRecord] {
+    let now = Int64(Date().timeIntervalSince1970)
+    let currentBounds = StatsQueries.weekBounds(containing: now)
+    let dao = WeeklyMemoriesDAO(dbq: dbq, now: { now })
+    let fixtures: [(String, String, String, String, String?, DialThemeID, Int, Int64, Int, Int)] = [
+      (
+        "Nocturnal",
+        "Moonlit Tape",
+        "Late-night plays kept the room awake.",
+        "moonlit_tape",
+        "electronic",
+        .slime,
+        42,
+        6_840_000,
+        18,
+        4
+      ),
+      (
+        "Loyal",
+        "Repeat Charm",
+        "One artist kept looping back into the week.",
+        "repeat_charm",
+        "latin",
+        .classic,
+        31,
+        5_220_000,
+        9,
+        1
+      ),
+      (
+        "Curious",
+        "Fresh Sticker",
+        "New artists left bright stickers on the shelf.",
+        "fresh_sticker",
+        "pop",
+        .aqua,
+        27,
+        4_680_000,
+        21,
+        8
+      ),
+      (
+        "Deep-Cut",
+        "Signal Cube",
+        "Rare tracks kept glowing under the screen.",
+        "signal_cube",
+        "underground",
+        .ember,
+        19,
+        3_240_000,
+        16,
+        3
+      ),
+    ]
+
+    for (index, fixture) in fixtures.enumerated() {
+      let bounds = weekBounds(offset: index, from: currentBounds)
+      let snapshot = StatsQueries.WeeklyMemorySnapshot(
+        weekStart: bounds.start,
+        weekEnd: bounds.end,
+        trait: fixture.0,
+        memento: fixture.1,
+        recapLine: fixture.2,
+        roomObjectName: fixture.3,
+        dominantGenre: fixture.4,
+        theme: fixture.5,
+        playCount: fixture.6,
+        listeningMs: fixture.7,
+        uniqueArtists: fixture.8,
+        newArtists: fixture.9)
+      try dao.upsert(snapshot, now: now)
+    }
+
+    return try dao.recent(limit: fixtures.count)
+  }
+
+  private func weekBounds(
+    offset: Int,
+    from currentBounds: (start: Int64, end: Int64)
+  ) -> (start: Int64, end: Int64) {
+    guard offset > 0 else { return currentBounds }
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = .current
+    let currentStart = Date(timeIntervalSince1970: TimeInterval(currentBounds.start))
+    let shifted = calendar.date(byAdding: .weekOfYear, value: -offset, to: currentStart) ?? currentStart
+    return StatsQueries.weekBounds(containing: Int64(shifted.timeIntervalSince1970))
   }
 
   private func marketingTrackName(for themeID: DialThemeID) -> String {
@@ -599,6 +732,62 @@ private struct MainHUDSnapshotHarness: View {
     .padding(.bottom, Dial.Layout.Dropdown.outerBottomPadding)
     .frame(width: DropdownLayout.width, height: DropdownLayout.height)
     .dialChassisPlastic(shape: deviceShape)
+  }
+}
+
+private struct PetScreenSnapshotHarness: View {
+  let context: SnapshotContext
+  let memories: [WeeklyMemoryRecord]
+  let artifacts: [Artifact]
+  let petState: PetState
+
+  private var theme: DialTheme { DialTheme.palette(for: .slime) }
+  private var deviceShape: RoundedRectangle {
+    RoundedRectangle(cornerRadius: Dial.Layout.Dropdown.cornerRadius, style: .continuous)
+  }
+
+  var body: some View {
+    PetView(
+      pet: context.pet,
+      aggCache: context.agg,
+      menubar: context.menubar,
+      dbq: context.dbq,
+      livingMemoriesEnabled: true,
+      initialTodayListeningMs: 7_380_000,
+      initialBadgeCounts: [.discovery: 3, .pattern: 2, .milestone: 1],
+      initialUnlockedTricks: [
+        PetTrickUnlock(trick: .beatBounce, unlockedAt: petState.lastPlayAt ?? petState.installedAt, sourceBadge: BadgeMemoryKind.onStreak.rawValue),
+      ],
+      initialArtifacts: artifacts,
+      initialWeeklyMemory: memories.first.map(StatsQueries.WeeklyMemorySnapshot.init(record:)),
+      initialWeeklyMemoryLog: memories,
+      initialPetState: petState,
+      onBack: {}
+    )
+    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    .lcdPanel(fill: theme.subtle.opacity(0.58), strokeOpacity: 0.08)
+    .padding(.horizontal, Dial.Layout.Dropdown.panelHorizontalPadding)
+    .padding(.vertical, Dial.Layout.Dropdown.fullScreenVerticalPadding)
+    .frame(width: DropdownLayout.contentWidth, height: DropdownLayout.contentHeight)
+    .frame(width: DropdownLayout.width, height: DropdownLayout.height)
+    .contentShape(Rectangle())
+    .background {
+      ZStack {
+        DialHardwareImage(name: "shell-slime-chassis")
+        DialHardwareImage(name: "shell-slime-wells-full")
+          .opacity(0.34)
+      }
+      .allowsHitTesting(false)
+    }
+    .clipShape(deviceShape)
+    .overlay {
+      ZStack {
+        DialHardwareImage(name: "shell-slime-apertures-full")
+        DialHardwareImage(name: "shell-slime-reflections")
+      }
+      .allowsHitTesting(false)
+    }
+    .environment(\.dialTheme, theme)
   }
 }
 

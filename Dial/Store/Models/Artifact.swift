@@ -4,6 +4,7 @@ import GRDB
 enum ArtifactSource: String, Codable {
   case badge
   case trick
+  case weeklyMemory = "weekly_memory"
 }
 
 enum ArtifactKind: String, Codable, CaseIterable, Identifiable {
@@ -19,6 +20,14 @@ enum ArtifactKind: String, Codable, CaseIterable, Identifiable {
   case play100Trophy = "play_100_trophy"
   case anniversaryRelic = "anniversary_relic"
   case beatBounceCharm = "beat_bounce_charm"
+  case moonlitTape = "moonlit_tape"
+  case signalCube = "signal_cube"
+  case repeatCharm = "repeat_charm"
+  case freshSticker = "fresh_sticker"
+  case softLamp = "soft_lamp"
+  case blownSpeaker = "blown_speaker"
+  case shelfSticker = "shelf_sticker"
+  case listeningCrate = "listening_crate"
 
   var id: String { rawValue }
 
@@ -36,6 +45,37 @@ enum ArtifactKind: String, Codable, CaseIterable, Identifiable {
     case .play100Trophy: return "100 Play"
     case .anniversaryRelic: return "Anniversary"
     case .beatBounceCharm: return "Beat Charm"
+    case .moonlitTape: return "Moonlit Tape"
+    case .signalCube: return "Signal Cube"
+    case .repeatCharm: return "Repeat Charm"
+    case .freshSticker: return "Fresh Sticker"
+    case .softLamp: return "Soft Lamp"
+    case .blownSpeaker: return "Blown Speaker"
+    case .shelfSticker: return "Shelf Sticker"
+    case .listeningCrate: return "Listening Crate"
+    }
+  }
+
+  var assetName: String {
+    switch self {
+    case .moonlitTape:
+      "rediscovered_cassette"
+    case .signalCube:
+      "deep_cut_gem"
+    case .repeatCharm:
+      "repeat_loop"
+    case .freshSticker:
+      "new_artist_token"
+    case .softLamp:
+      "first_listen_spark"
+    case .blownSpeaker:
+      "album_stack"
+    case .shelfSticker:
+      "new_artist_token"
+    case .listeningCrate:
+      "album_stack"
+    default:
+      rawValue
     }
   }
 
@@ -65,6 +105,29 @@ enum ArtifactKind: String, Codable, CaseIterable, Identifiable {
       self = .rediscoveredCassette
     }
   }
+
+  init?(memento: String) {
+    switch memento {
+    case "Moonlit Tape":
+      self = .moonlitTape
+    case "Signal Cube":
+      self = .signalCube
+    case "Repeat Charm":
+      self = .repeatCharm
+    case "Fresh Sticker":
+      self = .freshSticker
+    case "Soft Lamp":
+      self = .softLamp
+    case "Blown Speaker":
+      self = .blownSpeaker
+    case "Shelf Sticker":
+      self = .shelfSticker
+    case "Listening Crate":
+      self = .listeningCrate
+    default:
+      return nil
+    }
+  }
 }
 
 struct Artifact: Codable, FetchableRecord, PersistableRecord, Equatable, Identifiable {
@@ -75,6 +138,7 @@ struct Artifact: Codable, FetchableRecord, PersistableRecord, Equatable, Identif
   var trackUri: String?
   var artistUri: String?
   var detail: String?
+  var sourceWeekStart: Int64? = nil
 
   var id: ArtifactKind { kind }
 
@@ -86,6 +150,7 @@ struct Artifact: Codable, FetchableRecord, PersistableRecord, Equatable, Identif
     case trackUri = "track_uri"
     case artistUri = "artist_uri"
     case detail
+    case sourceWeekStart = "source_week_start"
   }
 
   enum Columns {
@@ -96,6 +161,7 @@ struct Artifact: Codable, FetchableRecord, PersistableRecord, Equatable, Identif
     static let trackUri = Column("track_uri")
     static let artistUri = Column("artist_uri")
     static let detail = Column("detail")
+    static let sourceWeekStart = Column("source_week_start")
   }
 
   static let databaseTableName = "artifacts"

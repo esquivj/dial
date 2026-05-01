@@ -216,6 +216,31 @@ enum Migrations {
         """)
       }
     }
+
+    m.registerMigration("v9_weekly_memories") { db in
+      try db.create(table: "weekly_memories") { t in
+        t.column("week_start", .integer).primaryKey()
+        t.column("week_end", .integer).notNull()
+        t.column("trait", .text).notNull()
+        t.column("memento", .text).notNull()
+        t.column("recap_line", .text).notNull()
+        t.column("room_object_name", .text).notNull()
+        t.column("dominant_genre", .text)
+        t.column("theme", .text).notNull()
+        t.column("play_count", .integer).notNull()
+        t.column("listening_ms", .integer).notNull()
+        t.column("unique_artists", .integer).notNull()
+        t.column("new_artists", .integer).notNull()
+        t.column("created_at", .integer).notNull()
+        t.column("updated_at", .integer).notNull()
+      }
+      try db.create(index: "weekly_memories_by_week_end", on: "weekly_memories", columns: ["week_end"])
+
+      try db.alter(table: "artifacts") { t in
+        t.add(column: "source_week_start", .integer)
+      }
+      try db.create(index: "artifacts_by_week", on: "artifacts", columns: ["source_week_start"])
+    }
     return m
   }
 }
