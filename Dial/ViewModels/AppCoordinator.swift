@@ -173,17 +173,28 @@ final class AppCoordinator {
       while !Task.isCancelled {
         guard settings.backgroundEnrichmentEnabled, settings.signedIn else { break }
         do {
+          let activeCooldown = await SpotifyRateLimitGate.shared.cooldownRemaining()
+          if activeCooldown > 0 {
+            self?.updateBackgroundEnrichment(
+              .waiting,
+              message: "Spotify cooldown \(Self.shortCooldown(activeCooldown))",
+              error: nil)
+            try await Task.sleep(nanoseconds: Self.nanoseconds(activeCooldown))
+            continue
+          }
+
           let before = try StatsQueries(dbq: dbq).enrichmentProgress()
           var attempted = 0
 
           if before.trackArtistResolved < before.total || before.enriched < before.total {
             let remaining = max(0, before.total - before.trackArtistResolved)
             self?.updateBackgroundEnrichment(.tracks, message: "\(remaining.formatted()) IDs left", error: nil)
-            attempted += try await metadata.enrichMissing(rateLimitPerSec: 0.45, limit: 120)
+            attempted += try await metadata.enrichMissing(rateLimitPerSec: 0.20, limit: 80)
             try Task.checkCancellation()
             if try Self.hasRecentSpotifyRateLimit(dbq) {
               self?.updateBackgroundEnrichment(.waiting, message: "Spotify cooldown", error: nil)
-              try await Task.sleep(nanoseconds: 15 * 60 * 1_000_000_000)
+              let cooldown = await SpotifyRateLimitGate.shared.cooldownRemaining()
+              try await Task.sleep(nanoseconds: Self.nanoseconds(cooldown > 0 ? cooldown : 15 * 60))
               continue
             }
           }
@@ -192,11 +203,12 @@ final class AppCoordinator {
           if afterTracks.artistEnriched < afterTracks.artistTotal {
             let remaining = max(0, afterTracks.artistTotal - afterTracks.artistEnriched)
             self?.updateBackgroundEnrichment(.artists, message: "\(remaining.formatted()) left", error: nil)
-            attempted += try await metadata.enrichMissingArtists(rateLimitPerSec: 0.75, limit: 100)
+            attempted += try await metadata.enrichMissingArtists(rateLimitPerSec: 0.25, limit: 40)
             try Task.checkCancellation()
             if try Self.hasRecentSpotifyRateLimit(dbq) {
               self?.updateBackgroundEnrichment(.waiting, message: "Spotify cooldown", error: nil)
-              try await Task.sleep(nanoseconds: 15 * 60 * 1_000_000_000)
+              let cooldown = await SpotifyRateLimitGate.shared.cooldownRemaining()
+              try await Task.sleep(nanoseconds: Self.nanoseconds(cooldown > 0 ? cooldown : 15 * 60))
               continue
             }
           }
@@ -207,7 +219,7 @@ final class AppCoordinator {
             let remaining = max(0, afterArtists.tagArtistTotal - afterArtists.tagArtistChecked)
             self?.updateBackgroundEnrichment(.tags, message: "\(remaining.formatted()) left", error: nil)
             let tagger = TagEnricher(dbq: dbq, lastFM: LastFMClient(apiKey: key))
-            attempted += try await tagger.enrichMissingArtists(rateLimitPerSec: 1, limit: 100)
+            attempted += try await tagger.enrichMissingArtists(rateLimitPerSec: 0.75, limit: 80)
             try Task.checkCancellation()
           }
 
@@ -215,9 +227,9 @@ final class AppCoordinator {
           if attempted == 0 {
             if Self.enrichmentIsCaughtUp(after, includeTags: settings.lastFMTagEnrichmentEnabled && !key.isEmpty) {
               self?.updateBackgroundEnrichment(.caughtUp, message: "maintenance scan", error: nil)
-              attempted += try await metadata.enrichMissing(rateLimitPerSec: 0.25, limit: 24)
+              attempted += try await metadata.enrichMissing(rateLimitPerSec: 0.20, limit: 24)
               try Task.checkCancellation()
-              attempted += try await metadata.enrichMissingArtists(rateLimitPerSec: 0.5, limit: 24)
+              attempted += try await metadata.enrichMissingArtists(rateLimitPerSec: 0.25, limit: 24)
               try Task.checkCancellation()
               if settings.lastFMTagEnrichmentEnabled, !key.isEmpty {
                 let tagger = TagEnricher(dbq: dbq, lastFM: LastFMClient(apiKey: key))
@@ -284,6 +296,16 @@ final class AppCoordinator {
         LIMIT 1
       """, arguments: [cutoff]) != nil
     }
+  }
+
+  private static func shortCooldown(_ seconds: TimeInterval) -> String {
+    if seconds < 60 { return "\(Int(ceil(seconds)))s" }
+    if seconds < 3600 { return "\(Int(ceil(seconds / 60)))m" }
+    return "\(Int(ceil(seconds / 3600)))h"
+  }
+
+  private static func nanoseconds(_ seconds: TimeInterval) -> UInt64 {
+    UInt64(max(0, seconds) * 1_000_000_000)
   }
 
   private func startDesktopObserver() {
@@ -472,6 +494,7 @@ final class AppCoordinator {
       // BPM lookup is best-effort for the beat-sync animation.
       if trackChanged,
          let trackId = uri.split(separator: ":").last,
+         await SpotifyRateLimitGate.shared.cooldownRemaining() <= 0,
          let features = try? await client.audioFeatures(trackId: String(trackId)) {
         pet.currentBPM = features.tempo
       }
@@ -735,8 +758,15 @@ final class AppCoordinator {
     let useLastFM = settings.lastFMTagEnrichmentEnabled && !key.isEmpty
     currentTagWarmTask = Task { [weak self] in
       do {
-        let metadata = MetadataEnricher(dbq: dbq, client: client)
-        _ = try await metadata.enrichArtists(uris: artistUris, rateLimitPerSec: 2)
+        if await SpotifyRateLimitGate.shared.cooldownRemaining() <= 0 {
+          let metadata = MetadataEnricher(dbq: dbq, client: client)
+          _ = try await metadata.enrichArtists(
+            uris: artistUris,
+            rateLimitPerSec: 2,
+            respectSpotifyCooldown: false)
+        } else {
+          coordLog.debug("skipping Spotify artist warmup during catalog cooldown")
+        }
 
         if useLastFM {
           let tagger = TagEnricher(dbq: dbq, lastFM: LastFMClient(apiKey: key))

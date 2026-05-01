@@ -3,6 +3,7 @@ import Foundation
 
 enum SpotifyAPIError: Error, Equatable {
   case httpStatus(Int)
+  case rateLimited(retryAfter: TimeInterval?)
   case invalidResponse
 }
 
@@ -10,40 +11,48 @@ final class SpotifyClient {
   private let session: URLSession
   private let tokenStore: TokenStore
   private let refresh: () async throws -> SpotifyToken
+  private let rateLimitGate: SpotifyRateLimitGate
 
   init(session: URLSession = .shared,
        tokenStore: TokenStore,
+       rateLimitGate: SpotifyRateLimitGate = .shared,
        refresh: @escaping () async throws -> SpotifyToken) {
     self.session = session
     self.tokenStore = tokenStore
+    self.rateLimitGate = rateLimitGate
     self.refresh = refresh
   }
 
   /// Authed GET with two layers of self-healing:
   ///   * 401 → refresh the token once and retry
-  ///   * 429 → sleep for the value Spotify gave us in `Retry-After`, then
-  ///           retry once. Without this, hitting the rate limit (which can
-  ///           happen during the MetadataEnricher backfill across 49k tracks
-  ///           or if multiple polling clients overlap) would just return a
-  ///           429 to PollingService, which would then back off blindly
-  ///           regardless of how long Spotify actually wanted us to wait —
-  ///           sometimes too short (more 429s) and sometimes too long
-  ///           (wasted polling time).
+  ///   * 429 → record one shared cooldown for background catalog enrichment.
+  ///           Foreground/player calls do not wait on that cooldown; they should
+  ///           fail fast if Spotify itself rejects them, not make the app feel
+  ///           disconnected.
   fileprivate func authedGET(
     _ url: URL,
     retryOn401: Bool = true,
-    retryOn429: Bool = true
+    retryOn429: Bool = true,
+    respectRateLimitGate: Bool = false
   ) async throws -> (Data, HTTPURLResponse) {
     var req = URLRequest(url: url)
     req.httpMethod = "GET"
-    return try await authedRequest(req, retryOn401: retryOn401, retryOn429: retryOn429)
+    return try await authedRequest(
+      req,
+      retryOn401: retryOn401,
+      retryOn429: retryOn429,
+      respectRateLimitGate: respectRateLimitGate)
   }
 
   fileprivate func authedRequest(
     _ request: URLRequest,
     retryOn401: Bool = true,
-    retryOn429: Bool = true
+    retryOn429: Bool = true,
+    respectRateLimitGate: Bool = false
   ) async throws -> (Data, HTTPURLResponse) {
+    if respectRateLimitGate {
+      try await rateLimitGate.waitIfNeeded()
+    }
     let token = try tokenStore.load()
     var req = request
     req.setValue("Bearer \(token?.accessToken ?? "")", forHTTPHeaderField: "Authorization")
@@ -54,17 +63,16 @@ final class SpotifyClient {
 
     if http.statusCode == 401, retryOn401 {
       _ = try await refresh()
-      return try await authedRequest(request, retryOn401: false, retryOn429: retryOn429)
+      return try await authedRequest(
+        request,
+        retryOn401: false,
+        retryOn429: retryOn429,
+        respectRateLimitGate: respectRateLimitGate)
     }
     if http.statusCode == 429, retryOn429 {
-      // Cap at 60s so a misconfigured Retry-After (or the rare HTTP-date
-      // form) doesn't silently freeze the polling loop forever. If Spotify
-      // really needs longer, the next poll cycle will just hit 429 again
-      // and we'll wait again.
-      let waitSec = Self.retryAfterSeconds(from: http) ?? 5
-      let capped = min(max(waitSec, 1), 60)
-      try await Task.sleep(nanoseconds: UInt64(capped * 1_000_000_000))
-      return try await authedRequest(request, retryOn401: retryOn401, retryOn429: false)
+      let waitSec = Self.retryAfterSeconds(from: http)
+      await rateLimitGate.recordRateLimit(retryAfter: waitSec)
+      throw SpotifyAPIError.rateLimited(retryAfter: waitSec)
     }
     return (data, http)
   }
@@ -101,9 +109,9 @@ final class SpotifyClient {
     return try JSONDecoder().decode(CurrentlyPlaying.self, from: data)
   }
 
-  func audioFeatures(trackId: String) async throws -> AudioFeatures {
+  func audioFeatures(trackId: String, respectRateLimitGate: Bool = false) async throws -> AudioFeatures {
     let url = URL(string: "https://api.spotify.com/v1/audio-features/\(trackId)")!
-    let (data, http) = try await authedGET(url)
+    let (data, http) = try await authedGET(url, respectRateLimitGate: respectRateLimitGate)
     try Self.validate(http)
     return try JSONDecoder().decode(AudioFeatures.self, from: data)
   }
@@ -150,22 +158,22 @@ extension SpotifyClient {
   /// `/v1/tracks?ids=...` endpoint returns 403 in development quota mode.
   /// The historical backfill is slower one-by-one, but it gives us real
   /// artist URIs, album names, duration, and art for imported history rows.
-  func track(uri: String) async throws -> TrackMeta {
+  func track(uri: String, respectRateLimitGate: Bool = false) async throws -> TrackMeta {
     guard uri.hasPrefix("spotify:track:") else { throw SpotifyAPIError.httpStatus(400) }
     let id = uri.replacingOccurrences(of: "spotify:track:", with: "")
     let url = URL(string: "https://api.spotify.com/v1/tracks/\(id)")!
-    let (data, http) = try await authedGET(url)
+    let (data, http) = try await authedGET(url, respectRateLimitGate: respectRateLimitGate)
     try Self.validate(http)
     return try JSONDecoder().decode(TrackMeta.self, from: data)
   }
 
   /// Fetches up to 50 tracks per call. Callers should batch > 50 externally.
-  func tracks(uris: [String]) async throws -> [TrackMeta] {
+  func tracks(uris: [String], respectRateLimitGate: Bool = false) async throws -> [TrackMeta] {
     let ids = uris
       .map { $0.replacingOccurrences(of: "spotify:track:", with: "") }
       .joined(separator: ",")
     let url = URL(string: "https://api.spotify.com/v1/tracks?ids=\(ids)")!
-    let (data, http) = try await authedGET(url)
+    let (data, http) = try await authedGET(url, respectRateLimitGate: respectRateLimitGate)
     try Self.validate(http)
     struct R: Decodable { let tracks: [TrackMeta?] }
     return try JSONDecoder().decode(R.self, from: data).tracks.compactMap { $0 }
@@ -174,11 +182,11 @@ extension SpotifyClient {
   /// Single-artist metadata. Spotify genres live on artists, not tracks.
   /// The field is deprecated and may be empty, but it is still the best native
   /// signal available for a personal Wrapped-style genre layer.
-  func artist(uri: String) async throws -> ArtistMeta {
+  func artist(uri: String, respectRateLimitGate: Bool = false) async throws -> ArtistMeta {
     guard uri.hasPrefix("spotify:artist:") else { throw SpotifyAPIError.httpStatus(400) }
     let id = uri.replacingOccurrences(of: "spotify:artist:", with: "")
     let url = URL(string: "https://api.spotify.com/v1/artists/\(id)")!
-    let (data, http) = try await authedGET(url)
+    let (data, http) = try await authedGET(url, respectRateLimitGate: respectRateLimitGate)
     try Self.validate(http)
     return try JSONDecoder().decode(ArtistMeta.self, from: data)
   }
@@ -187,19 +195,27 @@ extension SpotifyClient {
 // MARK: - Library / Liked Songs
 
 extension SpotifyClient {
-  func libraryContains(uri: String) async throws -> Bool {
+  func libraryContains(uri: String, respectRateLimitGate: Bool = false) async throws -> Bool {
     guard uri.hasPrefix("spotify:track:") else { return false }
-    let (data, http) = try await authedGET(Self.libraryURL(path: "/me/library/contains", uri: uri))
+    let (data, http) = try await authedGET(
+      Self.libraryURL(path: "/me/library/contains", uri: uri),
+      respectRateLimitGate: respectRateLimitGate)
     try Self.validate(http)
     return try JSONDecoder().decode([Bool].self, from: data).first ?? false
   }
 
-  func saveToLibrary(uri: String) async throws {
-    try await sendEmpty(method: "PUT", url: Self.libraryURL(path: "/me/library", uri: uri))
+  func saveToLibrary(uri: String, respectRateLimitGate: Bool = false) async throws {
+    try await sendEmpty(
+      method: "PUT",
+      url: Self.libraryURL(path: "/me/library", uri: uri),
+      respectRateLimitGate: respectRateLimitGate)
   }
 
-  func removeFromLibrary(uri: String) async throws {
-    try await sendEmpty(method: "DELETE", url: Self.libraryURL(path: "/me/library", uri: uri))
+  func removeFromLibrary(uri: String, respectRateLimitGate: Bool = false) async throws {
+    try await sendEmpty(
+      method: "DELETE",
+      url: Self.libraryURL(path: "/me/library", uri: uri),
+      respectRateLimitGate: respectRateLimitGate)
   }
 
   fileprivate static func libraryURL(path: String, uri: String) -> URL {
@@ -243,12 +259,13 @@ extension SpotifyClient {
 
 extension SpotifyClient {
   func play() async throws {
-    if let deviceID = try? await preferredPlaybackDeviceID() {
+    if let deviceID = try? await preferredPlaybackDeviceID(respectRateLimitGate: false) {
       do {
         try await sendEmpty(
           method: "PUT",
           path: "/me/player/play",
-          queryItems: [.init(name: "device_id", value: deviceID)])
+          queryItems: [.init(name: "device_id", value: deviceID)],
+          respectRateLimitGate: false)
         return
       } catch {
         // Device lists can be stale right after Spotify starts or changes
@@ -256,32 +273,48 @@ extension SpotifyClient {
         // resume path before surfacing the failure to the UI.
       }
     }
-    try await sendEmpty(method: "PUT", path: "/me/player/play")
+    try await sendEmpty(method: "PUT", path: "/me/player/play", respectRateLimitGate: false)
   }
 
-  func pause() async throws { try await sendEmpty(method: "PUT",  path: "/me/player/pause") }
-  func next()  async throws { try await sendEmpty(method: "POST", path: "/me/player/next") }
-  func prev()  async throws { try await sendEmpty(method: "POST", path: "/me/player/previous") }
+  func pause() async throws {
+    try await sendEmpty(method: "PUT", path: "/me/player/pause", respectRateLimitGate: false)
+  }
+  func next() async throws {
+    try await sendEmpty(method: "POST", path: "/me/player/next", respectRateLimitGate: false)
+  }
+  func prev() async throws {
+    try await sendEmpty(method: "POST", path: "/me/player/previous", respectRateLimitGate: false)
+  }
 
   /// Restart the current track from 0:00.
   func seek(positionMs: Int = 0) async throws {
-    try await sendEmpty(method: "PUT", path: "/me/player/seek?position_ms=\(positionMs)")
+    try await sendEmpty(
+      method: "PUT",
+      path: "/me/player/seek?position_ms=\(positionMs)",
+      respectRateLimitGate: false)
   }
 
   /// Toggle shuffle on or off for the current player.
   func setShuffle(_ on: Bool) async throws {
-    try await sendEmpty(method: "PUT", path: "/me/player/shuffle?state=\(on)")
+    try await sendEmpty(
+      method: "PUT",
+      path: "/me/player/shuffle?state=\(on)",
+      respectRateLimitGate: false)
   }
 
   /// Set repeat mode. Valid values per Spotify: "off" | "context" | "track".
   func setRepeat(_ mode: String) async throws {
-    try await sendEmpty(method: "PUT", path: "/me/player/repeat?state=\(mode)")
+    try await sendEmpty(
+      method: "PUT",
+      path: "/me/player/repeat?state=\(mode)",
+      respectRateLimitGate: false)
   }
 
   fileprivate func sendEmpty(
     method: String,
     path: String,
-    queryItems: [URLQueryItem] = []
+    queryItems: [URLQueryItem] = [],
+    respectRateLimitGate: Bool = false
   ) async throws {
     var comps = URLComponents(string: "https://api.spotify.com/v1\(path)")!
     if !queryItems.isEmpty { comps.queryItems = queryItems }
@@ -290,22 +323,26 @@ extension SpotifyClient {
     req.httpMethod = method
     req.setValue("0", forHTTPHeaderField: "Content-Length")
     req.httpBody = Data()
-    let (_, http) = try await authedRequest(req)
+    let (_, http) = try await authedRequest(req, respectRateLimitGate: respectRateLimitGate)
     try Self.validate(http)
   }
 
-  fileprivate func sendEmpty(method: String, url: URL) async throws {
+  fileprivate func sendEmpty(
+    method: String,
+    url: URL,
+    respectRateLimitGate: Bool = false
+  ) async throws {
     var req = URLRequest(url: url)
     req.httpMethod = method
     req.setValue("0", forHTTPHeaderField: "Content-Length")
     req.httpBody = Data()
-    let (_, http) = try await authedRequest(req)
+    let (_, http) = try await authedRequest(req, respectRateLimitGate: respectRateLimitGate)
     try Self.validate(http)
   }
 
-  private func preferredPlaybackDeviceID() async throws -> String? {
+  private func preferredPlaybackDeviceID(respectRateLimitGate: Bool = false) async throws -> String? {
     let url = URL(string: "https://api.spotify.com/v1/me/player/devices")!
-    let (data, http) = try await authedGET(url)
+    let (data, http) = try await authedGET(url, respectRateLimitGate: respectRateLimitGate)
     try Self.validate(http)
     let response = try JSONDecoder().decode(PlaybackDevicesResponse.self, from: data)
     return response.devices.first(where: { $0.isActive && !$0.isRestricted })?.id

@@ -232,7 +232,7 @@ struct StatsView: View {
   }
 
   private var overviewCaption: String {
-    selectedRange == .all ? "total listening time" : "total listening time · \(selectedRange.context)"
+    "total listening time"
   }
 
   private var overviewDivider: some View {
@@ -633,15 +633,6 @@ private enum StatsRange: String, CaseIterable, Identifiable {
     case .ytd:    return Self.startOfYearEpoch()
     case .thirty: return Int64(Date().timeIntervalSince1970) - 30 * 86_400
     case .seven:  return Int64(Date().timeIntervalSince1970) - 7 * 86_400
-    }
-  }
-
-  var context: String {
-    switch self {
-    case .all:    return ""
-    case .ytd:    return "so far this year"
-    case .thirty: return "in the last 30 days"
-    case .seven:  return "in the last 7 days"
     }
   }
 

@@ -8,6 +8,60 @@ import XCTest
 
 @MainActor
 final class VisualRegressionTests: XCTestCase {
+  func test_exportCurrentHUDThemeScreensForMarketing() async throws {
+    let outputDirectory = URL(fileURLWithPath: #filePath)
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+      .appendingPathComponent("MarketingAssets/XReady/generated", isDirectory: true)
+    let exportFlag = outputDirectory
+      .deletingLastPathComponent()
+      .appendingPathComponent(".export-current-hud")
+    guard FileManager.default.fileExists(atPath: exportFlag.path) else {
+      throw XCTSkip("Create MarketingAssets/XReady/.export-current-hud to export transparent HUD screens.")
+    }
+    try FileManager.default.createDirectory(at: outputDirectory, withIntermediateDirectories: true)
+
+    for themeID in DialThemeID.allCases {
+      let coord = try makeMarketingCoordinator(themeID: themeID)
+      _ = await coord.artworkCache.load(coord.nowPlaying.track?.artUrl)
+      let visibility = DropdownVisibility()
+      visibility.isVisible = true
+      let view = DropdownView(coord: coord, visibility: visibility)
+        .preferredColorScheme(.dark)
+
+      let image = try render(view, size: CGSize(width: DropdownLayout.width, height: DropdownLayout.height))
+      let data = try pngData(for: image)
+      try data.write(
+        to: outputDirectory.appendingPathComponent("dial-hud-\(themeID.rawValue)-transparent.png"),
+        options: .atomic)
+    }
+
+    for config in marketingMenubarConfigs {
+      let coord = try makeMarketingCoordinator(themeID: config.themeID)
+      _ = await coord.artworkCache.load(coord.nowPlaying.track?.artUrl)
+      coord.settings.menuBarDisplayMode = config.mode
+      coord.settings.showProgressInMenuBar = config.showProgress
+      coord.settings.menuBarTitleWidth = config.titleWidth
+      coord.pet.stage = config.petStage
+      coord.menubar.playsYTD = config.plays
+      coord.nowPlaying.playsYTD = config.plays
+      let view = MenubarStripView(
+        vm: coord.menubar,
+        settings: coord.settings,
+        pet: coord.pet,
+        nowPlaying: coord.nowPlaying,
+        artworkCache: coord.artworkCache)
+        .frame(width: 360, height: 44, alignment: .leading)
+        .preferredColorScheme(.dark)
+
+      let image = try render(view, size: CGSize(width: 360, height: 44))
+      let data = try pngData(for: image)
+      try data.write(
+        to: outputDirectory.appendingPathComponent("dial-menubar-\(config.name)-transparent.png"),
+        options: .atomic)
+    }
+  }
+
   func test_mainHUDScreenshotsRenderForThreeThemeCartridges() async throws {
     for themeID in [DialThemeID.slime, .aqua, .ember] {
       let context = try makeSnapshotContext(themeID: themeID)
@@ -132,6 +186,172 @@ final class VisualRegressionTests: XCTestCase {
       settings: settings,
       artworkCache: ArtworkCache(),
       visualizer: visualizer)
+  }
+
+  private func makeMarketingCoordinator(themeID: DialThemeID) throws -> AppCoordinator {
+    let dbq = try InMemoryDatabase.make()
+    let tokenStore = SnapshotTokenStore()
+    let auth = SpotifyAuthService(clientID: "x-export", tokenStore: tokenStore)
+    let client = SpotifyClient(tokenStore: tokenStore, refresh: { try tokenStore.requireToken() })
+    let coord = AppCoordinator(dbq: dbq, client: client, auth: auth, tokenStore: tokenStore)
+
+    let track = NowPlayingViewModel.Track(
+      uri: "spotify:track:x-export-\(themeID.rawValue)",
+      name: marketingTrackName(for: themeID),
+      artistName: marketingArtistName(for: themeID),
+      artistUri: "spotify:artist:x-export",
+      artistUris: ["spotify:artist:x-export"],
+      albumName: marketingAlbumName(for: themeID),
+      artUrl: marketingArtworkURL)
+
+    coord.settings.signedIn = true
+    coord.settings.showReadoutsInHUD = true
+    coord.settings.showBadgesInHUD = true
+    coord.settings.showVisualizerInHUD = true
+    coord.settings.showTransportInHUD = true
+    coord.settings.showPetInHUD = true
+    coord.settings.petEnabled = true
+    coord.settings.animationLevel = .low
+    coord.settings.hudColorMode = HUDColorMode(rawValue: themeID.rawValue) ?? .classic
+    coord.dropdownScreen = .hud
+
+    coord.nowPlaying.track = track
+    coord.nowPlaying.soundTheme = themeID
+    coord.nowPlaying.soundThemeDecision = SoundThemeDecision(
+      theme: themeID,
+      confidence: 0.94,
+      source: .artistTags,
+      reason: "Marketing export")
+    coord.nowPlaying.playsYTD = marketingPlays(for: themeID)
+    coord.aggCache.rank7d = marketingRank(for: themeID)
+    coord.aggCache.lastPlayedAt = marketingLastPlayedAt(for: themeID)
+    coord.aggCache.firstListen = false
+    coord.aggCache.rediscovered = false
+    coord.aggCache.currentBadgeInsight = marketingBadgeInsight(for: themeID)
+    coord.menubar.track = track
+    coord.menubar.state = .playing
+    coord.menubar.durationMs = marketingDurationMs(for: themeID)
+    coord.menubar.progressMs = marketingProgressMs(for: themeID)
+    coord.menubar.lastProgressUpdate = nil
+    coord.menubar.likedTrackState = .notLiked
+    coord.menubar.playsYTD = marketingPlays(for: themeID)
+    coord.pet.stage = marketingPetStage(for: themeID)
+    coord.pet.behavior = .beatSync(bpm: 124)
+    coord.pet.reactionText = "Listening."
+    coord.visualizer.configure(style: .precise, density: .detailed, motion: .balanced, showPeakMarkers: true)
+    coord.visualizer.setPreviewSpectrum(bands: marketingSpectrum(for: themeID))
+
+    return coord
+  }
+
+  private func marketingTrackName(for themeID: DialThemeID) -> String {
+    "Too Many Nights"
+  }
+
+  private func marketingArtistName(for themeID: DialThemeID) -> String {
+    "Metro Boomin & Future"
+  }
+
+  private func marketingAlbumName(for themeID: DialThemeID) -> String {
+    "HEROES & VILLAINS"
+  }
+
+  private func marketingPlays(for themeID: DialThemeID) -> Int {
+    27
+  }
+
+  private func marketingRank(for themeID: DialThemeID) -> Int? {
+    7
+  }
+
+  private func marketingLastPlayedAt(for themeID: DialThemeID) -> Int64? {
+    Int64(Date().timeIntervalSince1970)
+  }
+
+  private func marketingBadgeInsight(for themeID: DialThemeID) -> BadgeInsight {
+    BadgeInsight(kind: .deepCut, detail: "DEEP CUT", explanation: "A rare track in this listener's rotation.")
+  }
+
+  private func marketingDurationMs(for themeID: DialThemeID) -> Int {
+    switch themeID {
+    case .classic: 206_000
+    case .slime:   184_000
+    case .aqua:    212_000
+    case .ember:   239_000
+    }
+  }
+
+  private func marketingProgressMs(for themeID: DialThemeID) -> Int {
+    switch themeID {
+    case .classic: 87_000
+    case .slime:   61_000
+    case .aqua:    91_000
+    case .ember:   146_000
+    }
+  }
+
+  private func marketingPetStage(for themeID: DialThemeID) -> PetStage {
+    .companion
+  }
+
+  private var marketingArtworkURL: String {
+    "https://is1-ssl.mzstatic.com/image/thumb/Music112/v4/82/f7/2b/82f72ba4-524c-fc9d-cb8c-5a96d2ddf536/22UM1IM35267.rgb.jpg/600x600bb.jpg"
+  }
+
+  private func marketingSpectrum(for themeID: DialThemeID) -> [Float] {
+    let base: [Float]
+    switch themeID {
+    case .classic:
+      base = [0.64, 0.58, 0.52, 0.48, 0.55, 0.50, 0.46, 0.42]
+    case .slime:
+      base = [0.78, 0.82, 0.68, 0.71, 0.58, 0.62, 0.53, 0.49]
+    case .aqua:
+      base = [0.82, 0.74, 0.69, 0.78, 0.62, 0.58, 0.66, 0.54]
+    case .ember:
+      base = [0.48, 0.54, 0.76, 0.88, 0.70, 0.62, 0.57, 0.51]
+    }
+    return (0..<48).map { index in
+      let decay = max(0.16, 1.0 - Float(index) * 0.016)
+      let pulse = base[index % base.count]
+      return min(0.92, max(0.10, pulse * decay))
+    }
+  }
+
+  private var marketingMenubarConfigs: [MarketingMenubarConfig] {
+    [
+      .init(
+        name: "track",
+        themeID: .classic,
+        mode: .albumArtTrackArtist,
+        titleWidth: 190,
+        showProgress: false,
+        petStage: .companion,
+        plays: 3),
+      .init(
+        name: "pet",
+        themeID: .slime,
+        mode: .petTitle,
+        titleWidth: 132,
+        showProgress: false,
+        petStage: .juvenile,
+        plays: 12),
+      .init(
+        name: "icon",
+        themeID: .aqua,
+        mode: .iconOnly,
+        titleWidth: 80,
+        showProgress: false,
+        petStage: .hatchling,
+        plays: 8),
+      .init(
+        name: "plays",
+        themeID: .ember,
+        mode: .titlePlayCount,
+        titleWidth: 150,
+        showProgress: false,
+        petStage: .elder,
+        plays: 27),
+    ]
   }
 
   private func render<V: View>(_ view: V, size: CGSize) throws -> CGImage {
@@ -313,6 +533,16 @@ private struct SnapshotContext {
   let settings: SettingsViewModel
   let artworkCache: ArtworkCache
   let visualizer: VisualizerEngine
+}
+
+private struct MarketingMenubarConfig {
+  let name: String
+  let themeID: DialThemeID
+  let mode: MenuBarDisplayMode
+  let titleWidth: Double
+  let showProgress: Bool
+  let petStage: PetStage
+  let plays: Int
 }
 
 private struct MainHUDSnapshotHarness: View {

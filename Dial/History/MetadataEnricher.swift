@@ -44,7 +44,12 @@ final class MetadataEnricher {
   /// enrich recent tracks without turning every app start into a multi-hour
   /// backfill job.
   @discardableResult
-  func enrichMissing(batchSize: Int = 50, rateLimitPerSec: Double = 5, limit: Int? = nil) async throws -> Int {
+  func enrichMissing(
+    batchSize: Int = 50,
+    rateLimitPerSec: Double = 5,
+    limit: Int? = nil,
+    respectSpotifyCooldown: Bool = true
+  ) async throws -> Int {
     enricherLog.notice("enrichMissing started")
     let now = Int64(Date().timeIntervalSince1970)
     let retryFailedBefore = now - QueuePolicy.retryFailedAfter
@@ -117,7 +122,7 @@ final class MetadataEnricher {
     for (idx, uri) in missing.enumerated() {
       do {
         do {
-          let meta = try await client.track(uri: uri)
+          let meta = try await client.track(uri: uri, respectRateLimitGate: respectSpotifyCooldown)
           let track = try Self.track(from: meta)
           try await dbq.write { db in
             try track.mergeUpsert(db)
@@ -181,7 +186,11 @@ final class MetadataEnricher {
   /// `artist:Name` identifiers; those become enrichable after `enrichMissing`
   /// upgrades their track metadata through `GET /v1/tracks/{id}`.
   @discardableResult
-  func enrichMissingArtists(rateLimitPerSec: Double = 5, limit: Int? = nil) async throws -> Int {
+  func enrichMissingArtists(
+    rateLimitPerSec: Double = 5,
+    limit: Int? = nil,
+    respectSpotifyCooldown: Bool = true
+  ) async throws -> Int {
     enricherLog.notice("enrichMissingArtists started")
     let now = Int64(Date().timeIntervalSince1970)
     let retryFailedBefore = now - QueuePolicy.retryFailedAfter
@@ -231,14 +240,21 @@ final class MetadataEnricher {
       return try String.fetchAll(db, sql: sql, arguments: StatementArguments(arguments))
     }
 
-    return try await enrichArtists(uris: candidates, rateLimitPerSec: rateLimitPerSec)
+    return try await enrichArtists(
+      uris: candidates,
+      rateLimitPerSec: rateLimitPerSec,
+      respectSpotifyCooldown: respectSpotifyCooldown)
   }
 
   /// Immediate small-batch artist warmup for the current track. The normal
   /// background queue is play-history driven; the currently playing track may
   /// not have been recorded as a play yet, so warm it directly.
   @discardableResult
-  func enrichArtists(uris: [String], rateLimitPerSec: Double = 5) async throws -> Int {
+  func enrichArtists(
+    uris: [String],
+    rateLimitPerSec: Double = 5,
+    respectSpotifyCooldown: Bool = true
+  ) async throws -> Int {
     let candidates = Array(Set(uris.filter { $0.hasPrefix("spotify:artist:") })).sorted()
     let total = candidates.count
     let effectiveRateLimit = max(0.1, rateLimitPerSec)
@@ -249,7 +265,7 @@ final class MetadataEnricher {
 
     for (idx, uri) in candidates.enumerated() {
       do {
-        let meta = try await client.artist(uri: uri)
+        let meta = try await client.artist(uri: uri, respectRateLimitGate: respectSpotifyCooldown)
         let artist = try Self.artist(from: meta)
         try await dbq.write { db in
           try artist.mergeUpsert(db)
@@ -308,6 +324,7 @@ final class MetadataEnricher {
 
   private static func isRateLimited(_ error: Error) -> Bool {
     if case SpotifyAPIError.httpStatus(429) = error { return true }
+    if case SpotifyAPIError.rateLimited = error { return true }
     return false
   }
 

@@ -123,6 +123,9 @@ final class StatusBarController {
     let iconGap: CGFloat = 5
 
     let width: CGFloat = {
+      if coord.menubar.state == .nothingPlaying {
+        return horizontalPadding + iconSlot + iconGap + MenuBarTextMetrics.brandWidth
+      }
       switch coord.settings.menuBarDisplayMode {
       case .albumArtTitle, .petTitle:
         return horizontalPadding + iconSlot + iconGap + currentTitleTextWidth(max: titleWidth)
@@ -143,11 +146,14 @@ final class StatusBarController {
 
   private func currentTitleTextWidth(max maxWidth: CGFloat) -> CGFloat {
     guard let coord else { return 0 }
+    if coord.menubar.state == .nothingPlaying {
+      return MenuBarTextMetrics.brandWidth
+    }
     let text: String = {
       switch coord.menubar.state {
       case .playing:        return coord.menubar.track?.name ?? ""
-      case .paused:         return "Paused"
-      case .nothingPlaying: return "Dial"
+      case .paused:         return coord.menubar.track?.name ?? "DIAL"
+      case .nothingPlaying: return "DIAL"
       }
     }()
     return clampedMenuBarTextWidth(text, max: maxWidth)
@@ -155,6 +161,9 @@ final class StatusBarController {
 
   private func currentTrackArtistTextWidth(max maxWidth: CGFloat) -> CGFloat {
     guard let coord else { return 0 }
+    if coord.menubar.state == .nothingPlaying {
+      return MenuBarTextMetrics.brandWidth
+    }
     let text: String = {
       switch coord.menubar.state {
       case .playing:
@@ -162,9 +171,12 @@ final class StatusBarController {
         let artist = coord.menubar.track?.artistName ?? ""
         return artist.isEmpty ? title : "\(title) • \(artist)"
       case .paused:
-        return "Paused"
+        let title = coord.menubar.track?.name ?? ""
+        let artist = coord.menubar.track?.artistName ?? ""
+        let trackArtist = artist.isEmpty ? title : "\(title) • \(artist)"
+        return trackArtist.isEmpty ? "DIAL" : trackArtist
       case .nothingPlaying:
-        return "Dial"
+        return "DIAL"
       }
     }()
     return clampedMenuBarTextWidth(text, max: maxWidth)

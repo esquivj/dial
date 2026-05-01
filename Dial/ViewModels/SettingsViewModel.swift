@@ -35,7 +35,7 @@ enum MenuBarDisplayMode: String, CaseIterable, Identifiable {
     case .petOnly, .tinyChaos:
       return .iconOnly
     case .petTitle, .titlePlayCount:
-      return .albumArtTitle
+      return .albumArtTrackArtist
     case .albumArtTitle, .albumArtTrackArtist, .iconOnly:
       return self
     }
@@ -404,7 +404,7 @@ final class SettingsViewModel {
 
     // Read keychain once on launch so the UI reflects sign-in state immediately.
     self.signedIn = ((try? tokenStore.load()) ?? nil) != nil
-    defaults.set(true, forKey: Key.didMigrateSmokeGelDefault)
+    defaults.set(self.menuBarDisplayMode.rawValue, forKey: Key.menuBarDisplayMode)
     defaults.set(self.hudColorMode.rawValue, forKey: Key.hudColorMode)
     defaults.set(self.menuBarTitleWidth, forKey: Key.menuBarTitleWidth)
   }
@@ -434,7 +434,7 @@ final class SettingsViewModel {
     showVisualizerInHUD = true
     showTransportInHUD = true
     animationLevel = .normal
-    hudColorMode = .classic
+    hudColorMode = .followSound
     discoveryBadgesEnabled = true
     patternBadgesEnabled = true
     milestoneBadgesEnabled = true
@@ -577,7 +577,6 @@ final class SettingsViewModel {
     static let showTransportInHUD = "settings.showTransportInHUD"
     static let animationLevel = "settings.animationLevel"
     static let hudColorMode = "settings.hudColorMode"
-    static let didMigrateSmokeGelDefault = "settings.didMigrateSmokeGelDefault"
     static let hudHeroTitleSize = "settings.hudHeroTitleSize"
     static let hudHeroArtistSize = "settings.hudHeroArtistSize"
     static let hudHeroAlbumSize = "settings.hudHeroAlbumSize"
@@ -637,11 +636,6 @@ final class SettingsViewModel {
   }
 
   private static func hudColorModeValue(defaults: UserDefaults) -> HUDColorMode {
-    let stored = defaults.string(forKey: Key.hudColorMode)
-    let migrated = Self.boolValue(Key.didMigrateSmokeGelDefault, default: false, defaults: defaults)
-    if !migrated, stored == HUDColorMode.followSound.rawValue {
-      return .classic
-    }
-    return Self.enumValue(HUDColorMode.self, key: Key.hudColorMode, default: .classic, defaults: defaults)
+    Self.enumValue(HUDColorMode.self, key: Key.hudColorMode, default: .followSound, defaults: defaults)
   }
 }

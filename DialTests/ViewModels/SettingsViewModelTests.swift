@@ -2,35 +2,61 @@ import XCTest
 @testable import Dial
 
 final class SettingsViewModelTests: XCTestCase {
-  func test_hudColorModeDefaultsToSmokeGel() throws {
+  func test_hudColorModeDefaultsToFollowSound() throws {
     let defaults = freshDefaults()
     let vm = try makeSettings(defaults: defaults)
 
-    XCTAssertEqual(vm.hudColorMode, .classic)
-    XCTAssertEqual(defaults.string(forKey: "settings.hudColorMode"), HUDColorMode.classic.rawValue)
-    XCTAssertTrue(defaults.bool(forKey: "settings.didMigrateSmokeGelDefault"))
+    XCTAssertEqual(vm.hudColorMode, .followSound)
+    XCTAssertEqual(defaults.string(forKey: "settings.hudColorMode"), HUDColorMode.followSound.rawValue)
   }
 
-  func test_hudColorModeMigratesOldFollowSoundDefaultToSmokeGelOnce() throws {
+  func test_hudColorModePreservesFollowSoundOnLaunch() throws {
     let defaults = freshDefaults()
-    defaults.set(HUDColorMode.followSound.rawValue, forKey: "settings.hudColorMode")
-
-    let vm = try makeSettings(defaults: defaults)
-
-    XCTAssertEqual(vm.hudColorMode, .classic)
-    XCTAssertEqual(defaults.string(forKey: "settings.hudColorMode"), HUDColorMode.classic.rawValue)
-    XCTAssertTrue(defaults.bool(forKey: "settings.didMigrateSmokeGelDefault"))
-  }
-
-  func test_hudColorModePreservesFollowSoundAfterMigrationRan() throws {
-    let defaults = freshDefaults()
-    defaults.set(true, forKey: "settings.didMigrateSmokeGelDefault")
     defaults.set(HUDColorMode.followSound.rawValue, forKey: "settings.hudColorMode")
 
     let vm = try makeSettings(defaults: defaults)
 
     XCTAssertEqual(vm.hudColorMode, .followSound)
     XCTAssertEqual(defaults.string(forKey: "settings.hudColorMode"), HUDColorMode.followSound.rawValue)
+  }
+
+  func test_hudColorModePreservesExplicitFixedThemeOnLaunch() throws {
+    let defaults = freshDefaults()
+    defaults.set(HUDColorMode.classic.rawValue, forKey: "settings.hudColorMode")
+
+    let vm = try makeSettings(defaults: defaults)
+
+    XCTAssertEqual(vm.hudColorMode, .classic)
+    XCTAssertEqual(defaults.string(forKey: "settings.hudColorMode"), HUDColorMode.classic.rawValue)
+  }
+
+  func test_resetHUDDefaultsRestoresFollowSound() throws {
+    let defaults = freshDefaults()
+    defaults.set(HUDColorMode.classic.rawValue, forKey: "settings.hudColorMode")
+    let vm = try makeSettings(defaults: defaults)
+
+    vm.resetHUDDefaults()
+
+    XCTAssertEqual(vm.hudColorMode, .followSound)
+    XCTAssertEqual(defaults.string(forKey: "settings.hudColorMode"), HUDColorMode.followSound.rawValue)
+  }
+
+  func test_menuBarModeDefaultsToTrackArtist() throws {
+    let defaults = freshDefaults()
+    let vm = try makeSettings(defaults: defaults)
+
+    XCTAssertEqual(vm.menuBarDisplayMode, .albumArtTrackArtist)
+    XCTAssertEqual(defaults.string(forKey: "settings.menuBarDisplayMode"), MenuBarDisplayMode.albumArtTrackArtist.rawValue)
+  }
+
+  func test_menuBarModeMigratesRemovedTitlePlayCountToTrackArtist() throws {
+    let defaults = freshDefaults()
+    defaults.set(MenuBarDisplayMode.titlePlayCount.rawValue, forKey: "settings.menuBarDisplayMode")
+
+    let vm = try makeSettings(defaults: defaults)
+
+    XCTAssertEqual(vm.menuBarDisplayMode, .albumArtTrackArtist)
+    XCTAssertEqual(defaults.string(forKey: "settings.menuBarDisplayMode"), MenuBarDisplayMode.albumArtTrackArtist.rawValue)
   }
 
   private func makeSettings(defaults: UserDefaults) throws -> SettingsViewModel {

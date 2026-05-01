@@ -33,6 +33,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
       return
     }
 
+    if let request = backfillRequestFromArgs() {
+      runHeadlessBackfill(request)
+      return
+    }
+
     if let tagLimit = tagLimitFromArgs() {
       runHeadlessTagEnrichment(limit: tagLimit)
       return
@@ -99,6 +104,49 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
       return Int(arg.dropFirst("--enrich-tags=".count)) ?? 250
     }
     return nil
+  }
+
+  private struct BackfillRequest {
+    let auditOnly: Bool
+    let continuous: Bool
+    let limit: Int?
+  }
+
+  /// `--backfill` runs a durable Spotify/Last.fm enrichment worker.
+  /// `--backfill-once` runs one bounded pass.
+  /// `--backfill-audit` prints current coverage without making network calls.
+  ///
+  /// Optional caps: `--backfill=500`, `--backfill 500`, or
+  /// `--backfill-limit=500`.
+  private func backfillRequestFromArgs() -> BackfillRequest? {
+    let args = CommandLine.arguments
+    if args.contains("--backfill-audit") {
+      return BackfillRequest(auditOnly: true, continuous: false, limit: nil)
+    }
+
+    let continuous = args.contains("--backfill")
+      || args.contains(where: { $0.hasPrefix("--backfill=") })
+    let once = args.contains("--backfill-once")
+      || args.contains(where: { $0.hasPrefix("--backfill-once=") })
+
+    guard continuous || once else { return nil }
+
+    let flag = continuous ? "--backfill" : "--backfill-once"
+    let inlineLimit = args
+      .first(where: { $0.hasPrefix("\(flag)=") })
+      .flatMap { Int($0.dropFirst("\(flag)=".count)) }
+    let nextLimit: Int? = {
+      guard let idx = args.firstIndex(of: flag), idx + 1 < args.count else { return nil }
+      return Int(args[idx + 1])
+    }()
+    let explicitLimit = args
+      .first(where: { $0.hasPrefix("--backfill-limit=") })
+      .flatMap { Int($0.dropFirst("--backfill-limit=".count)) }
+
+    return BackfillRequest(
+      auditOnly: false,
+      continuous: continuous,
+      limit: explicitLimit ?? inlineLimit ?? nextLimit)
   }
 
   /// One-shot import that runs the production Importer against the user's
@@ -211,10 +259,77 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     }
   }
 
+  private func runHeadlessBackfill(_ request: BackfillRequest) {
+    let myPID = ProcessInfo.processInfo.processIdentifier
+    let bundleID = Bundle.main.bundleIdentifier ?? "com.dial.Dial"
+    let others = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID)
+      .filter { $0.processIdentifier != myPID }
+    if !request.auditOnly && !others.isEmpty {
+      let pids = others.map { String($0.processIdentifier) }.joined(separator: ", ")
+      stderr("✗ Dial is already running (PID \(pids)). Quit it first.")
+      stderr("  The backfill worker is a writer; it should not compete with the live menu bar app.")
+      exit(1)
+    }
+
+    Task { @MainActor in
+      do {
+        let dbURL = try DatabaseStack.defaultURL()
+        let dbq = try DatabaseStack(url: dbURL).dbq
+        let clientID = (Bundle.main.object(forInfoDictionaryKey: "SpotifyClientID") as? String) ?? ""
+        #if DEBUG
+        let tokens: TokenStore = FileTokenStore()
+        #else
+        let tokens: TokenStore = KeychainTokenStore()
+        #endif
+        let auth = SpotifyAuthService(clientID: clientID, tokenStore: tokens)
+        let client = SpotifyClient(tokenStore: tokens, refresh: { try await auth.refresh() })
+        let key = UserDefaults.standard.string(forKey: "settings.lastFMAPIKey")?
+          .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let runner = EnrichmentBackfillRunner(
+          dbq: dbq,
+          client: client,
+          lastFMKey: key,
+          logger: { [weak self] in self?.stderr($0) })
+
+        stderr("→ DB: \(dbURL.path)")
+        if request.auditOnly {
+          let audit = try await runner.audit()
+          stderr("→ \(audit.compactSummary)")
+          stderr("→ Spotify states: \(Self.formatCounts(audit.spotifyStateCounts))")
+          stderr("→ Last.fm states: \(Self.formatCounts(audit.lastFMStateCounts))")
+          exit(0)
+        }
+
+        guard try tokens.load() != nil else {
+          stderr("✗ Missing Spotify token. Open Dial Settings and connect Spotify first.")
+          exit(1)
+        }
+
+        let mode = request.continuous ? "continuous" : "one-pass"
+        let cap = request.limit.map { ", capped at \($0) attempts" } ?? ""
+        stderr("→ Backfill mode: \(mode)\(cap)")
+        try await runner.run(continuous: request.continuous, maxAttempts: request.limit)
+        stderr("✓ Backfill worker finished.")
+        exit(0)
+      } catch {
+        stderr("✗ Backfill failed: \(error)")
+        exit(1)
+      }
+    }
+  }
+
   /// stderr-only logging for the headless import path. Keeps stdout clean
   /// so callers can pipe / parse output if they want.
   private nonisolated func stderr(_ s: String) {
     FileHandle.standardError.write(Data((s + "\n").utf8))
+  }
+
+  private static func formatCounts(_ counts: [String: Int]) -> String {
+    guard !counts.isEmpty else { return "none" }
+    return counts
+      .sorted { $0.key < $1.key }
+      .map { "\($0.key)=\($0.value.formatted())" }
+      .joined(separator: ", ")
   }
 
   private static func registerBundledFonts() {

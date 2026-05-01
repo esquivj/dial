@@ -3,10 +3,13 @@ import SwiftUI
 
 enum MenuBarTextMetrics {
   static let fontName = "GeistMono-Medium"
-  static let fontSize: CGFloat = 13
-  static let kerning: CGFloat = 0.25
-  static let lineHeight: CGFloat = 22
+  static let fontSize: CGFloat = 12
+  static let kerning: CGFloat = 0.18
+  static let lineHeight: CGFloat = 20
   static let minimumWidth: CGFloat = 18
+  static let brandFontSize: CGFloat = 13.5
+  static let brandKerning: CGFloat = 1.0
+  static let brandWidth: CGFloat = 43
   static let minimumSettingWidth: Double = 80
   static let maximumSettingWidth: Double = 190
   static let defaultMaxWidth: Double = 160
