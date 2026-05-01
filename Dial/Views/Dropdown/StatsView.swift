@@ -10,17 +10,6 @@ enum StatsViewPlacement {
 /// Inline Stats panel — replaces the dropdown body when the user taps STATS
 /// in the controls bar. Compact editorial layout designed for ~320 wide.
 struct StatsView: View {
-  private enum HardwareLayout {
-    static let railLeadingOffset: CGFloat = 8
-    static let railTrailingOffset: CGFloat = -16
-    static let plateTopNudge: CGFloat = 17
-    static let plateTopPadding = Dial.Layout.Dropdown.hudRailScreenGap + plateTopNudge
-    static let plateHeight = Dial.Layout.Dropdown.hudScreenHeightWithoutTransport - plateTopNudge
-    static let plateHorizontalPadding: CGFloat = 18
-    static let plateFillOpacity: Double = 0.96
-    static let plateStrokeOpacity: Double = 0.12
-  }
-
   let dbq: DatabaseQueue
   @Bindable var artworkCache: ArtworkCache
   let onBack: () -> Void
@@ -78,9 +67,9 @@ struct StatsView: View {
         .frame(height: Dial.Layout.Dropdown.hudTopChromeHeight)
 
       statsPlate
-        .frame(height: HardwareLayout.plateHeight)
-        .padding(.top, HardwareLayout.plateTopPadding)
-        .padding(.horizontal, HardwareLayout.plateHorizontalPadding)
+        .frame(height: Dial.Layout.SecondaryShell.plateHeight)
+        .padding(.top, Dial.Layout.SecondaryShell.plateTopPadding)
+        .padding(.horizontal, Dial.Layout.SecondaryShell.plateHorizontalPadding)
     }
     .padding(.top, Dial.Layout.Dropdown.outerTopPadding)
     .padding(.bottom, Dial.Layout.Dropdown.hudBottomPaddingWithoutTransport)
@@ -92,8 +81,8 @@ struct StatsView: View {
       .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
       .modifier(RecessedScreen(depth: 0.42, height: 18))
       .lcdPanel(
-        fill: theme.ground.opacity(HardwareLayout.plateFillOpacity),
-        strokeOpacity: HardwareLayout.plateStrokeOpacity)
+        fill: theme.ground.opacity(Dial.Layout.SecondaryShell.plateFillOpacity),
+        strokeOpacity: Dial.Layout.SecondaryShell.plateStrokeOpacity)
   }
 
   private var statsScroll: some View {
@@ -136,12 +125,12 @@ struct StatsView: View {
           .tracking(1.6)
           .foregroundStyle(theme.accent)
       }
-      .offset(x: HardwareLayout.railLeadingOffset)
+      .offset(x: Dial.Layout.SecondaryShell.railLeadingOffset)
 
       Spacer(minLength: 8)
 
       rangeControl
-        .offset(x: HardwareLayout.railTrailingOffset)
+        .offset(x: Dial.Layout.SecondaryShell.railTrailingOffset)
     }
     .padding(.horizontal, 2)
   }

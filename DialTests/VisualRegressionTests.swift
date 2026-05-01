@@ -158,11 +158,7 @@ final class VisualRegressionTests: XCTestCase {
       "Pet screen lost its slime memory accent.")
   }
 
-  func test_petScreenLivingMemoryStackStaysInsideFullShellCutout() {
-    let headerHeight = Dial.Layout.Header.topPadding
-      + Dial.Layout.Header.bottomPadding
-      + 16
-      + 1
+  func test_petScreenLivingMemoryStackStaysInsideHardwareShellPlate() {
     let contentPadding = Dial.Layout.PetScreen.contentPadding.top
       + Dial.Layout.PetScreen.contentPadding.bottom
     let visibleRows = Dial.Layout.PetScreen.companionPanelHeight
@@ -170,15 +166,14 @@ final class VisualRegressionTests: XCTestCase {
       + Dial.Layout.PetScreen.memoryShelfHeight
       + Dial.Layout.PetScreen.evolutionHeight
     let visibleGaps = Dial.Layout.PetScreen.contentSpacing * 3
-    let requiredHeight = headerHeight + contentPadding + visibleRows + visibleGaps
-    let availableHeight = Dial.Layout.Dropdown.contentHeight
-      - (Dial.Layout.Dropdown.fullScreenVerticalPadding * 2)
+    let requiredHeight = contentPadding + visibleRows + visibleGaps
+    let availableHeight = Dial.Layout.SecondaryShell.plateHeight
       - Dial.Layout.PetScreen.shellSafetyInset
 
     XCTAssertLessThanOrEqual(
       requiredHeight,
       availableHeight,
-      "Pet screen overfills the full-shell LCD cutout. Merge or remove a row instead of stacking another shelf."
+      "Pet screen overfills the hardware-shell plate. Merge or remove a row instead of stacking another shelf."
     )
   }
 
@@ -786,12 +781,10 @@ private struct PetScreenSnapshotHarness: View {
       initialWeeklyMemory: memories.first.map(StatsQueries.WeeklyMemorySnapshot.init(record:)),
       initialWeeklyMemoryLog: memories,
       initialPetState: petState,
+      placement: .hardwareShell,
       onBack: {}
     )
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-    .lcdPanel(fill: theme.subtle.opacity(0.58), strokeOpacity: 0.08)
-    .padding(.horizontal, Dial.Layout.Dropdown.panelHorizontalPadding)
-    .padding(.vertical, Dial.Layout.Dropdown.fullScreenVerticalPadding)
     .frame(width: DropdownLayout.contentWidth, height: DropdownLayout.contentHeight)
     .frame(width: DropdownLayout.width, height: DropdownLayout.height)
     .contentShape(Rectangle())

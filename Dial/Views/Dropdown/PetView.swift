@@ -2,6 +2,11 @@
 import SwiftUI
 import GRDB
 
+enum PetViewPlacement {
+  case legacyPanel
+  case hardwareShell
+}
+
 /// Dedicated pet screen — a focused view of the bulldog with the stats
 /// and progress info that don't fit on the main HUD's tiny StatusRail
 /// thumbnail. Reachable via:
@@ -18,6 +23,7 @@ struct PetView: View {
   let dbq: DatabaseQueue
   let livingMemoriesEnabled: Bool
   let onBack: () -> Void
+  var placement: PetViewPlacement = .legacyPanel
 
   @State private var todayListeningMs: Int64 = 0
   @State private var recentBadgeCounts: [BadgeCategory: Int] = [:]
@@ -47,6 +53,7 @@ struct PetView: View {
     initialWeeklyMemory: StatsQueries.WeeklyMemorySnapshot? = nil,
     initialWeeklyMemoryLog: [WeeklyMemoryRecord] = [],
     initialPetState: PetState? = nil,
+    placement: PetViewPlacement = .legacyPanel,
     onBack: @escaping () -> Void
   ) {
     self.pet = pet
@@ -55,6 +62,7 @@ struct PetView: View {
     self.dbq = dbq
     self.livingMemoriesEnabled = livingMemoriesEnabled
     self.onBack = onBack
+    self.placement = placement
     _todayListeningMs = State(initialValue: initialTodayListeningMs)
     _recentBadgeCounts = State(initialValue: initialBadgeCounts)
     _unlockedTricks = State(initialValue: initialUnlockedTricks)
@@ -65,10 +73,13 @@ struct PetView: View {
   }
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 0) {
-      header
-      Rectangle().fill(theme.hairline.opacity(0.92)).frame(height: 1)
-      content
+    Group {
+      switch placement {
+      case .legacyPanel:
+        legacyPanelBody
+      case .hardwareShell:
+        hardwareShellBody
+      }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     .task(id: ObjectIdentifier(dbq)) {
@@ -85,6 +96,32 @@ struct PetView: View {
   }
 
   // MARK: - Header
+
+  private var legacyPanelBody: some View {
+    VStack(alignment: .leading, spacing: 0) {
+      header
+      Rectangle().fill(theme.hairline.opacity(0.92)).frame(height: 1)
+      content
+    }
+  }
+
+  private var hardwareShellBody: some View {
+    VStack(spacing: 0) {
+      railHeader
+        .frame(width: Dial.Layout.StatusRail.contentWidth, height: Dial.Layout.StatusRail.railHeight)
+        .offset(y: Dial.Layout.Dropdown.hudRailContentYOffset)
+        .frame(maxWidth: .infinity)
+        .frame(height: Dial.Layout.Dropdown.hudTopChromeHeight)
+
+      petPlate
+        .frame(height: Dial.Layout.SecondaryShell.plateHeight)
+        .padding(.top, Dial.Layout.SecondaryShell.plateTopPadding)
+        .padding(.horizontal, Dial.Layout.SecondaryShell.plateHorizontalPadding)
+    }
+    .padding(.top, Dial.Layout.Dropdown.outerTopPadding)
+    .padding(.bottom, Dial.Layout.Dropdown.hudBottomPaddingWithoutTransport)
+    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+  }
 
   private var header: some View {
     HStack(spacing: Dial.Layout.Header.spacing) {
@@ -105,6 +142,40 @@ struct PetView: View {
       leading: Dial.Layout.Header.leadingPadding,
       bottom: Dial.Layout.Header.bottomPadding,
       trailing: Dial.Layout.Header.trailingPadding))
+  }
+
+  private var railHeader: some View {
+    HStack(spacing: 0) {
+      HStack(spacing: Dial.Layout.Header.spacing) {
+        BackButton(action: onBack)
+        Text("ROOM")
+          .font(Dial.Typography.monoLabel)
+          .tracking(1.6)
+          .foregroundStyle(theme.accent)
+      }
+      .offset(x: Dial.Layout.SecondaryShell.railLeadingOffset)
+
+      Spacer(minLength: 8)
+
+      Text(pet.stage.rawValue.uppercased())
+        .font(Dial.Typography.monoLabel)
+        .tracking(1.4)
+        .foregroundStyle(theme.textMuted.opacity(0.74))
+        .lineLimit(1)
+        .minimumScaleFactor(0.72)
+        .contentTransition(.opacity)
+        .offset(x: Dial.Layout.SecondaryShell.railTrailingOffset)
+    }
+    .padding(.horizontal, 2)
+  }
+
+  private var petPlate: some View {
+    content
+      .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+      .modifier(RecessedScreen(depth: 0.42, height: 18))
+      .lcdPanel(
+        fill: theme.ground.opacity(Dial.Layout.SecondaryShell.plateFillOpacity),
+        strokeOpacity: Dial.Layout.SecondaryShell.plateStrokeOpacity)
   }
 
   // MARK: - Content

@@ -170,6 +170,8 @@ struct DropdownView: View {
       historyChromeLayout
     } else if coord.dropdownScreen == .stats {
       statsChromeLayout
+    } else if coord.dropdownScreen == .pet {
+      petChromeLayout
     } else {
       fullScreenLayout
     }
@@ -216,6 +218,19 @@ struct DropdownView: View {
       artworkCache: coord.artworkCache,
       onBack: { withAnimation(screenTransitionAnimation) { coord.dropdownScreen = .hud } },
       placement: .hardwareShell
+    )
+    .transition(.move(edge: .trailing).combined(with: .opacity))
+  }
+
+  private var petChromeLayout: some View {
+    PetView(
+      pet: coord.pet,
+      aggCache: coord.aggCache,
+      menubar: coord.menubar,
+      dbq: coord.dbq,
+      livingMemoriesEnabled: coord.settings.livingMemoriesEnabled,
+      placement: .hardwareShell,
+      onBack: { withAnimation(screenTransitionAnimation) { coord.dropdownScreen = .hud } }
     )
     .transition(.move(edge: .trailing).combined(with: .opacity))
   }

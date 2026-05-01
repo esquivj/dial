@@ -49,13 +49,24 @@ extension Dial {
 
     enum PetScreen {
       static let contentPadding = EdgeInsets(top: 7, leading: 8, bottom: 7, trailing: 8)
-      static let contentSpacing: CGFloat = 5
-      static let companionPanelHeight: CGFloat = 164
-      static let roomSceneHeight: CGFloat = 104
+      static let contentSpacing: CGFloat = 4
+      static let companionPanelHeight: CGFloat = 156
+      static let roomSceneHeight: CGFloat = 96
       static let weeklyMemoryHeight: CGFloat = 52
       static let memoryShelfHeight: CGFloat = 42
-      static let evolutionHeight: CGFloat = 52
-      static let shellSafetyInset: CGFloat = 10
+      static let evolutionHeight: CGFloat = 50
+      static let shellSafetyInset: CGFloat = 4
+    }
+
+    enum SecondaryShell {
+      static let railLeadingOffset: CGFloat = 8
+      static let railTrailingOffset: CGFloat = -16
+      static let plateTopNudge: CGFloat = 17
+      static let plateTopPadding = Dropdown.hudRailScreenGap + plateTopNudge
+      static let plateHeight = Dropdown.hudScreenHeightWithoutTransport - plateTopNudge
+      static let plateHorizontalPadding: CGFloat = 18
+      static let plateFillOpacity: Double = 0.96
+      static let plateStrokeOpacity: Double = 0.12
     }
 
     enum StatusRail {

@@ -11,17 +11,6 @@ enum HistoryViewPlacement {
 /// HISTORY in the controls bar. Lives in the same NSPopover, sized to the
 /// dropdown's frame.
 struct HistoryView: View {
-  private enum HardwareLayout {
-    static let railLeadingOffset: CGFloat = 8
-    static let railTrailingOffset: CGFloat = -16
-    static let plateTopNudge: CGFloat = 17
-    static let plateTopPadding = Dial.Layout.Dropdown.hudRailScreenGap + plateTopNudge
-    static let plateHeight = Dial.Layout.Dropdown.hudScreenHeightWithoutTransport - plateTopNudge
-    static let plateHorizontalPadding: CGFloat = 18
-    static let plateFillOpacity: Double = 0.96
-    static let plateStrokeOpacity: Double = 0.12
-  }
-
   let dbq: DatabaseQueue
   let onBack: () -> Void
   var placement: HistoryViewPlacement = .legacyPanel
@@ -81,9 +70,9 @@ struct HistoryView: View {
         .frame(height: Dial.Layout.Dropdown.hudTopChromeHeight)
 
       historyPlate
-        .frame(height: HardwareLayout.plateHeight)
-        .padding(.top, HardwareLayout.plateTopPadding)
-        .padding(.horizontal, HardwareLayout.plateHorizontalPadding)
+        .frame(height: Dial.Layout.SecondaryShell.plateHeight)
+        .padding(.top, Dial.Layout.SecondaryShell.plateTopPadding)
+        .padding(.horizontal, Dial.Layout.SecondaryShell.plateHorizontalPadding)
     }
     .padding(.top, Dial.Layout.Dropdown.outerTopPadding)
     .padding(.bottom, Dial.Layout.Dropdown.hudBottomPaddingWithoutTransport)
@@ -124,7 +113,7 @@ struct HistoryView: View {
           .tracking(1.6)
           .foregroundStyle(theme.accent)
       }
-      .offset(x: HardwareLayout.railLeadingOffset)
+      .offset(x: Dial.Layout.SecondaryShell.railLeadingOffset)
 
       Spacer(minLength: 8)
 
@@ -135,7 +124,7 @@ struct HistoryView: View {
         .lineLimit(1)
         .minimumScaleFactor(0.72)
         .contentTransition(.numericText())
-        .offset(x: HardwareLayout.railTrailingOffset)
+        .offset(x: Dial.Layout.SecondaryShell.railTrailingOffset)
     }
     .padding(.horizontal, 2)
   }
@@ -176,8 +165,8 @@ struct HistoryView: View {
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     .modifier(RecessedScreen(depth: 0.42, height: 18))
     .lcdPanel(
-      fill: theme.ground.opacity(HardwareLayout.plateFillOpacity),
-      strokeOpacity: HardwareLayout.plateStrokeOpacity)
+      fill: theme.ground.opacity(Dial.Layout.SecondaryShell.plateFillOpacity),
+      strokeOpacity: Dial.Layout.SecondaryShell.plateStrokeOpacity)
   }
 
   private var list: some View {
