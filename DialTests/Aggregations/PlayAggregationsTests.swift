@@ -881,6 +881,100 @@ final class StatsQueriesTests: XCTestCase {
     XCTAssertNotEqual(memory.roomObjectName, "rug")
   }
 
+  func test_weeklyMemoryBuildsNocturnalTraitFromLateNightListening() throws {
+    let dbq = try InMemoryDatabase.make()
+    let plays = PlaysDAO(dbq: dbq)
+    let tracks = TracksDAO(dbq: dbq)
+    let now = localEpoch(year: 2024, month: 1, day: 17, hour: 12)
+    let lateNight = localEpoch(year: 2024, month: 1, day: 16, hour: 23)
+
+    for idx in 0..<6 {
+      let trackUri = "spotify:track:nocturnal:\(idx)"
+      try tracks.upsert(.init(
+        uri: trackUri,
+        name: "Late Track \(idx)",
+        albumName: nil,
+        albumArtUrl: nil,
+        durationMs: nil,
+        artistsJson: #"[{"name":"Night Artist \#(idx)","uri":"spotify:artist:night:\#(idx)"}]"#))
+      try plays.insert(.init(
+        playedAt: lateNight + Int64(idx * 60),
+        trackUri: trackUri,
+        msPlayed: 180_000,
+        source: "import"))
+    }
+
+    let memory = try XCTUnwrap(StatsQueries(dbq: dbq).weeklyMemory(now: now))
+
+    XCTAssertEqual(memory.trait, "Nocturnal")
+    XCTAssertEqual(memory.memento, "Moonlit Tape")
+    XCTAssertEqual(memory.roomObjectName, "desk_lamp")
+    XCTAssertTrue(memory.recapLine.contains("late-night plays"))
+  }
+
+  func test_weeklyMemoryBuildsLoyalTraitFromRepeatArtist() throws {
+    let dbq = try InMemoryDatabase.make()
+    let plays = PlaysDAO(dbq: dbq)
+    let tracks = TracksDAO(dbq: dbq)
+    let now = localEpoch(year: 2024, month: 1, day: 17, hour: 12)
+    let currentWeek = localEpoch(year: 2024, month: 1, day: 16, hour: 12)
+
+    for idx in 0..<10 {
+      let trackUri = "spotify:track:loyal:\(idx)"
+      try tracks.upsert(.init(
+        uri: trackUri,
+        name: "Loyal Track \(idx)",
+        albumName: nil,
+        albumArtUrl: nil,
+        durationMs: nil,
+        artistsJson: #"[{"name":"Repeat Signal","uri":"spotify:artist:repeat"}]"#))
+      try plays.insert(.init(
+        playedAt: currentWeek + Int64(idx * 90),
+        trackUri: trackUri,
+        msPlayed: 180_000,
+        source: "import"))
+    }
+
+    let memory = try XCTUnwrap(StatsQueries(dbq: dbq).weeklyMemory(now: now))
+
+    XCTAssertEqual(memory.trait, "Loyal")
+    XCTAssertEqual(memory.memento, "Repeat Charm")
+    XCTAssertEqual(memory.roomObjectName, "record_cube")
+    XCTAssertTrue(memory.recapLine.contains("Repeat Signal"))
+  }
+
+  func test_weeklyMemoryBuildsCuriousTraitFromNewArtists() throws {
+    let dbq = try InMemoryDatabase.make()
+    let plays = PlaysDAO(dbq: dbq)
+    let tracks = TracksDAO(dbq: dbq)
+    let now = localEpoch(year: 2024, month: 1, day: 17, hour: 12)
+    let currentWeek = localEpoch(year: 2024, month: 1, day: 16, hour: 12)
+
+    for idx in 0..<12 {
+      let trackUri = "spotify:track:curious:\(idx)"
+      let artistUri = "spotify:artist:curious:\(idx)"
+      try tracks.upsert(.init(
+        uri: trackUri,
+        name: "New Signal \(idx)",
+        albumName: nil,
+        albumArtUrl: nil,
+        durationMs: nil,
+        artistsJson: #"[{"name":"New Artist \#(idx)","uri":"\#(artistUri)"}]"#))
+      try plays.insert(.init(
+        playedAt: currentWeek + Int64(idx * 90),
+        trackUri: trackUri,
+        msPlayed: 180_000,
+        source: "import"))
+    }
+
+    let memory = try XCTUnwrap(StatsQueries(dbq: dbq).weeklyMemory(now: now))
+
+    XCTAssertEqual(memory.trait, "Curious")
+    XCTAssertEqual(memory.memento, "Fresh Sticker")
+    XCTAssertEqual(memory.roomObjectName, "plant")
+    XCTAssertEqual(memory.newArtists, 12)
+  }
+
   func test_enrichmentProgressIncludesArtistProgress() throws {
     let dbq = try InMemoryDatabase.make()
     let plays = PlaysDAO(dbq: dbq)

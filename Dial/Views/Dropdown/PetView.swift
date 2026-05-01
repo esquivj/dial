@@ -79,6 +79,7 @@ struct PetView: View {
   private var content: some View {
     VStack(alignment: .leading, spacing: 5) {
       petCompanionPanel
+      weeklyMemoryCapsule
       memoryObjectsShelf
       xpSection
     }
@@ -121,6 +122,117 @@ struct PetView: View {
     .accessibilityElement(children: .combine)
     .accessibilityLabel("Room")
     .accessibilityValue("\(snapshot.moodLabel). \(snapshot.reason)")
+  }
+
+  private var weeklyMemoryCapsule: some View {
+    let shape = RoundedRectangle(cornerRadius: Dial.Radius.tiny, style: .continuous)
+
+    return Group {
+      if let memory = weeklyMemory {
+        HStack(alignment: .center, spacing: 8) {
+          VStack(alignment: .leading, spacing: 2) {
+            HStack(alignment: .firstTextBaseline, spacing: 5) {
+              Text("THIS WEEK")
+                .font(Dial.Typography.monoTiny)
+                .tracking(0.8)
+                .foregroundStyle(theme.textMuted.opacity(0.70))
+
+              Text(memory.trait.uppercased())
+                .font(Dial.Typography.monoTiny)
+                .tracking(0.8)
+                .foregroundStyle(weeklyMemoryColor(memory))
+                .lineLimit(1)
+                .minimumScaleFactor(0.78)
+            }
+
+            Text(memory.memento.uppercased())
+              .font(Dial.Typography.monoLabel)
+              .tracking(1.0)
+              .foregroundStyle(theme.textPrimary)
+              .lineLimit(1)
+              .minimumScaleFactor(0.80)
+
+            Text(memory.recapLine)
+              .font(Dial.Typography.monoTiny)
+              .foregroundStyle(theme.textMuted.opacity(0.78))
+              .lineLimit(1)
+              .minimumScaleFactor(0.66)
+          }
+          .frame(maxWidth: .infinity, alignment: .leading)
+
+          VStack(alignment: .trailing, spacing: 3) {
+            Text((memory.dominantGenre ?? memory.theme.label).uppercased())
+              .font(Dial.Typography.monoTiny)
+              .tracking(0.8)
+              .foregroundStyle(weeklyMemoryColor(memory).opacity(0.92))
+              .lineLimit(1)
+              .minimumScaleFactor(0.62)
+
+            Text(roomObjectLabel(memory.roomObjectName))
+              .font(Dial.Typography.monoTiny)
+              .tracking(0.8)
+              .foregroundStyle(theme.textPrimary.opacity(0.82))
+              .lineLimit(2)
+              .multilineTextAlignment(.trailing)
+              .minimumScaleFactor(0.68)
+          }
+          .frame(width: 92, alignment: .trailing)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(height: 52)
+        .dialPrintedChip(
+          shape: shape,
+          color: weeklyMemoryColor(memory),
+          fillOpacity: 0.045,
+          edgeOpacity: 0.16)
+        .help(weeklyMemoryHelp(memory))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("This week")
+        .accessibilityValue("\(memory.trait). \(memory.memento). \(memory.recapLine)")
+      } else {
+        HStack(alignment: .center, spacing: 8) {
+          VStack(alignment: .leading, spacing: 2) {
+            Text("THIS WEEK")
+              .font(Dial.Typography.monoTiny)
+              .tracking(0.8)
+              .foregroundStyle(theme.textMuted.opacity(0.70))
+
+            Text("NO ROOM MEMORY YET")
+              .font(Dial.Typography.monoLabel)
+              .tracking(1.0)
+              .foregroundStyle(theme.textPrimary.opacity(0.78))
+
+            Text("Listening writes a trait, memento, and object.")
+              .font(Dial.Typography.monoTiny)
+              .foregroundStyle(theme.textMuted.opacity(0.74))
+              .lineLimit(1)
+              .minimumScaleFactor(0.70)
+          }
+
+          Spacer(minLength: 0)
+
+          Text("WAITING")
+            .font(Dial.Typography.monoTiny)
+            .tracking(0.8)
+            .foregroundStyle(theme.textMuted.opacity(0.70))
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(height: 52)
+        .dialPrintedChip(
+          shape: shape,
+          color: theme.accent,
+          fillOpacity: 0.028,
+          edgeOpacity: 0.10)
+        .help("The weekly room memory appears after Dial sees at least one play this week.")
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("This week")
+        .accessibilityValue("No room memory yet.")
+      }
+    }
   }
 
   private func petStateSummary(_ snapshot: PetBondSnapshot) -> some View {
@@ -447,6 +559,22 @@ struct PetView: View {
     case .trick:
       return theme.memoryAccent
     }
+  }
+
+  private func weeklyMemoryColor(_ memory: StatsQueries.WeeklyMemorySnapshot) -> Color {
+    if memory.theme == theme.id { return theme.accent }
+    return DialTheme.palette(for: memory.theme).accent
+  }
+
+  private func roomObjectLabel(_ name: String) -> String {
+    name
+      .replacingOccurrences(of: "_", with: " ")
+      .uppercased()
+  }
+
+  private func weeklyMemoryHelp(_ memory: StatsQueries.WeeklyMemorySnapshot) -> String {
+    let genre = memory.dominantGenre ?? memory.theme.label
+    return "\(memory.trait): \(memory.recapLine) Memento: \(memory.memento). Room object: \(roomObjectLabel(memory.roomObjectName)). Dominant sound: \(genre)."
   }
 
   private func iconName(for action: PetBondPrimaryAction) -> String {
