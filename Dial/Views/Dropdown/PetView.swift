@@ -110,16 +110,15 @@ struct PetView: View {
   // MARK: - Content
 
   private var content: some View {
-    VStack(alignment: .leading, spacing: 5) {
+    VStack(alignment: .leading, spacing: Dial.Layout.PetScreen.contentSpacing) {
       petCompanionPanel
       if livingMemoriesEnabled {
         weeklyMemoryCapsule
-        memoryLogShelf
       }
-      memoryObjectsShelf
+      memoryShelf
       xpSection
     }
-    .padding(EdgeInsets(top: 7, leading: 8, bottom: 7, trailing: 8))
+    .padding(Dial.Layout.PetScreen.contentPadding)
     .frame(maxWidth: .infinity, alignment: .leading)
   }
 
@@ -151,6 +150,7 @@ struct PetView: View {
     }
     .padding(EdgeInsets(top: 7, leading: 8, bottom: 7, trailing: 8))
     .frame(maxWidth: .infinity)
+    .frame(height: Dial.Layout.PetScreen.companionPanelHeight)
     .dialRecessedPanel(
       shape: panelShape,
       fill: theme.subtle,
@@ -217,7 +217,7 @@ struct PetView: View {
         .padding(.horizontal, 8)
         .padding(.vertical, 5)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .frame(height: 52)
+        .frame(height: Dial.Layout.PetScreen.weeklyMemoryHeight)
         .dialPrintedChip(
           shape: shape,
           color: weeklyMemoryColor(memory),
@@ -257,7 +257,7 @@ struct PetView: View {
         .padding(.horizontal, 8)
         .padding(.vertical, 5)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .frame(height: 52)
+        .frame(height: Dial.Layout.PetScreen.weeklyMemoryHeight)
         .dialPrintedChip(
           shape: shape,
           color: theme.accent,
@@ -269,73 +269,6 @@ struct PetView: View {
         .accessibilityValue("No room memory yet.")
       }
     }
-  }
-
-  private var memoryLogShelf: some View {
-    let visibleMemories = Array(weeklyMemoryLog.prefix(4))
-    let latest = visibleMemories.first
-    let latestLine = latest.map { "\(weekLabel($0.weekStart)) · \($0.trait.uppercased())" } ?? "NO WEEKS SAVED"
-
-    return HStack(alignment: .center, spacing: 8) {
-      VStack(alignment: .leading, spacing: 2) {
-        HStack(spacing: 5) {
-          Text("LOG")
-            .font(Dial.Typography.monoTiny)
-            .tracking(0.8)
-            .foregroundStyle(theme.textMuted.opacity(0.72))
-          Text("\(weeklyMemoryLog.count)W")
-            .font(Dial.Typography.monoTiny)
-            .foregroundStyle(theme.memoryAccent)
-            .monospacedDigit()
-        }
-
-        Text(latestLine)
-          .font(Dial.Typography.monoSmall)
-          .foregroundStyle(latest == nil ? theme.textMuted.opacity(0.72) : theme.textPrimary.opacity(0.86))
-          .lineLimit(1)
-          .minimumScaleFactor(0.72)
-      }
-      .frame(width: 132, alignment: .leading)
-
-      Spacer(minLength: 0)
-
-      HStack(spacing: 5) {
-        if visibleMemories.isEmpty {
-          ForEach(0..<4, id: \.self) { _ in
-            RoundedRectangle(cornerRadius: Dial.Radius.tiny, style: .continuous)
-              .stroke(theme.hairline.opacity(0.42), lineWidth: 1)
-              .frame(width: 28, height: 28)
-          }
-        } else {
-          ForEach(visibleMemories) { memory in
-            let color = weeklyMemoryColor(memory)
-            let kind = ArtifactKind(memento: memory.memento) ?? .listeningCrate
-
-            ArtifactSprite(kind: kind, color: color, size: 21)
-              .frame(width: 28, height: 28)
-              .dialPrintedChip(
-                shape: RoundedRectangle(cornerRadius: Dial.Radius.tiny, style: .continuous),
-                color: color,
-                fillOpacity: 0.055,
-                edgeOpacity: 0.16)
-              .help(weeklyMemoryHelp(memory))
-          }
-        }
-      }
-    }
-    .padding(.horizontal, 8)
-    .padding(.vertical, 4)
-    .frame(maxWidth: .infinity, alignment: .leading)
-    .frame(height: 38)
-    .dialPrintedChip(
-      shape: RoundedRectangle(cornerRadius: Dial.Radius.tiny, style: .continuous),
-      color: theme.memoryAccent,
-      fillOpacity: 0.030,
-      edgeOpacity: 0.12)
-    .help("Saved weekly memories. Hover a memento for week, trait, recap, and dominant sound.")
-    .accessibilityElement(children: .combine)
-    .accessibilityLabel("Memory log")
-    .accessibilityValue(latest.map { weeklyMemoryHelp($0) } ?? "No weeks saved.")
   }
 
   private func petStateSummary(_ snapshot: PetBondSnapshot) -> some View {
@@ -364,18 +297,25 @@ struct PetView: View {
     .frame(maxWidth: .infinity, alignment: .leading)
   }
 
-  private var memoryObjectsShelf: some View {
+  private var memoryShelf: some View {
     let visibleArtifacts = Array(artifacts.prefix(4))
-    let latestLabel = artifacts.first.map { "LATEST \($0.kind.label.uppercased())" } ?? "BADGES + TRICKS"
+    let latestMemory = weeklyMemoryLog.first.map { "\(weekLabel($0.weekStart)) · \($0.trait.uppercased())" }
+    let latestArtifact = artifacts.first.map { "LATEST \($0.kind.label.uppercased())" }
+    let latestLabel = livingMemoriesEnabled
+      ? (latestMemory ?? latestArtifact ?? "BADGES + TRICKS")
+      : (latestArtifact ?? "BADGES + TRICKS")
+    let countLabel = livingMemoriesEnabled
+      ? "\(weeklyMemoryLog.count)W · \(artifacts.count) OBJ"
+      : "\(artifacts.count) OBJ"
 
     return HStack(alignment: .center, spacing: 8) {
       VStack(alignment: .leading, spacing: 2) {
         HStack(spacing: 5) {
-          Text("OBJECTS")
+          Text("MEMORIES")
             .font(Dial.Typography.monoTiny)
             .tracking(0.8)
             .foregroundStyle(theme.textMuted.opacity(0.72))
-          Text("\(artifacts.count)")
+          Text(countLabel)
             .font(Dial.Typography.monoTiny)
             .foregroundStyle(theme.accent)
             .monospacedDigit()
@@ -387,7 +327,7 @@ struct PetView: View {
           .lineLimit(1)
           .minimumScaleFactor(0.74)
       }
-      .frame(width: 126, alignment: .leading)
+      .frame(width: 154, alignment: .leading)
 
       Spacer(minLength: 0)
 
@@ -396,12 +336,12 @@ struct PetView: View {
           ForEach(0..<4, id: \.self) { _ in
             RoundedRectangle(cornerRadius: Dial.Radius.tiny, style: .continuous)
               .stroke(theme.hairline.opacity(0.42), lineWidth: 1)
-              .frame(width: 30, height: 30)
+              .frame(width: 28, height: 28)
           }
         } else {
           ForEach(visibleArtifacts) { artifact in
-            ArtifactSprite(kind: artifact.kind, color: artifactColor(artifact), size: 23)
-              .frame(width: 30, height: 30)
+            ArtifactSprite(kind: artifact.kind, color: artifactColor(artifact), size: 21)
+              .frame(width: 28, height: 28)
               .dialPrintedChip(
                 shape: RoundedRectangle(cornerRadius: Dial.Radius.tiny, style: .continuous),
                 color: artifactColor(artifact),
@@ -415,16 +355,16 @@ struct PetView: View {
     .padding(.horizontal, 8)
     .padding(.vertical, 5)
     .frame(maxWidth: .infinity, alignment: .leading)
-    .frame(height: 42)
+    .frame(height: Dial.Layout.PetScreen.memoryShelfHeight)
     .dialPrintedChip(
       shape: RoundedRectangle(cornerRadius: Dial.Radius.tiny, style: .continuous),
       color: theme.accent,
       fillOpacity: 0.035,
       edgeOpacity: 0.12)
-    .help("Permanent memory objects unlock the first time each badge type or pet trick is earned.")
+    .help("Weekly mementos and permanent objects. Hover an object for its source.")
     .accessibilityElement(children: .combine)
-    .accessibilityLabel("Memory objects")
-    .accessibilityValue(artifacts.isEmpty ? "None yet. Badges and tricks unlock objects." : "\(artifacts.count) unlocked. \(latestLabel).")
+    .accessibilityLabel("Memories")
+    .accessibilityValue(memoryShelfAccessibilityValue(latestLabel: latestLabel))
   }
 
   private func roomAction(_ snapshot: PetBondSnapshot) -> some View {
@@ -512,6 +452,7 @@ struct PetView: View {
     .accessibilityLabel("Evolution progress")
     .accessibilityValue(accessibilityXPValue)
     .frame(maxWidth: .infinity, alignment: .leading)
+    .frame(height: Dial.Layout.PetScreen.evolutionHeight)
     .dialPrintedChip(
       shape: RoundedRectangle(cornerRadius: Dial.Radius.tiny, style: .continuous),
       color: theme.accent,
@@ -716,6 +657,13 @@ struct PetView: View {
   private func weeklyMemoryHelp(_ memory: WeeklyMemoryRecord) -> String {
     let genre = memory.dominantGenre ?? memory.theme.label
     return "\(weekLabel(memory.weekStart)): \(memory.trait). \(memory.recapLine) Memento: \(memory.memento). Room object: \(roomObjectLabel(memory.roomObjectName)). Dominant sound: \(genre)."
+  }
+
+  private func memoryShelfAccessibilityValue(latestLabel: String) -> String {
+    if livingMemoriesEnabled {
+      return "\(weeklyMemoryLog.count) saved weeks. \(artifacts.count) objects. \(latestLabel)."
+    }
+    return artifacts.isEmpty ? "None yet. Badges and tricks unlock objects." : "\(artifacts.count) objects. \(latestLabel)."
   }
 
   private func weekLabel(_ weekStart: Int64) -> String {

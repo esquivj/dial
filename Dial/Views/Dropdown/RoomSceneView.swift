@@ -37,7 +37,7 @@ struct RoomSceneView: View {
       .padding(6)
     }
     .frame(maxWidth: .infinity)
-    .frame(height: 104)
+    .frame(height: Dial.Layout.PetScreen.roomSceneHeight)
     .dialRaisedGel(
       shape: RoundedRectangle(cornerRadius: Dial.Radius.control, style: .continuous),
       fill: theme.lcd,

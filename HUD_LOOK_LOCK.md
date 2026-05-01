@@ -15,6 +15,17 @@ The current HUD is the target:
 - Smoke/classic is black, white, chrome, gray, and clear plastic only. No blue/cyan shell cast in the default material.
 - Track title owns the hierarchy. Hardware should frame the music, not compete with it.
 
+## Shell Fit Rule
+
+Before any UI change inside the dropdown, inspect the active shell aperture first. The SwiftUI content must fit the generated hardware cutouts; it does not get to invent a taller card stack because a new feature wants a row.
+
+For full-shell screens like Pet, Stats, and History:
+
+- Start from `MarketingAssets/frame-system/hardware-blueprint.json` and `Dial.Layout.Dropdown`.
+- Keep the shell lip, side rails, screws, seams, and bottom reflections visible.
+- If a new row is added, merge or remove another row unless the user explicitly asks to reopen shell geometry.
+- A recorded snapshot is not enough if the baseline was recorded after a broken layout. Check the screenshot against the physical cutout before accepting it.
+
 ## Do Not Move
 
 Do not change these unless the user explicitly asks to reopen HUD geometry:

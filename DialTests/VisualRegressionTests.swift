@@ -158,6 +158,30 @@ final class VisualRegressionTests: XCTestCase {
       "Pet screen lost its slime memory accent.")
   }
 
+  func test_petScreenLivingMemoryStackStaysInsideFullShellCutout() {
+    let headerHeight = Dial.Layout.Header.topPadding
+      + Dial.Layout.Header.bottomPadding
+      + 16
+      + 1
+    let contentPadding = Dial.Layout.PetScreen.contentPadding.top
+      + Dial.Layout.PetScreen.contentPadding.bottom
+    let visibleRows = Dial.Layout.PetScreen.companionPanelHeight
+      + Dial.Layout.PetScreen.weeklyMemoryHeight
+      + Dial.Layout.PetScreen.memoryShelfHeight
+      + Dial.Layout.PetScreen.evolutionHeight
+    let visibleGaps = Dial.Layout.PetScreen.contentSpacing * 3
+    let requiredHeight = headerHeight + contentPadding + visibleRows + visibleGaps
+    let availableHeight = Dial.Layout.Dropdown.contentHeight
+      - (Dial.Layout.Dropdown.fullScreenVerticalPadding * 2)
+      - Dial.Layout.PetScreen.shellSafetyInset
+
+    XCTAssertLessThanOrEqual(
+      requiredHeight,
+      availableHeight,
+      "Pet screen overfills the full-shell LCD cutout. Merge or remove a row instead of stacking another shelf."
+    )
+  }
+
   private func makeSnapshotContext(themeID: DialThemeID) throws -> SnapshotContext {
     let dbq = try InMemoryDatabase.make()
     let tokenStore = SnapshotTokenStore()

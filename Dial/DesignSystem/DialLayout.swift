@@ -47,6 +47,17 @@ extension Dial {
       static let trailingPadding: CGFloat = 14
     }
 
+    enum PetScreen {
+      static let contentPadding = EdgeInsets(top: 7, leading: 8, bottom: 7, trailing: 8)
+      static let contentSpacing: CGFloat = 5
+      static let companionPanelHeight: CGFloat = 164
+      static let roomSceneHeight: CGFloat = 104
+      static let weeklyMemoryHeight: CGFloat = 52
+      static let memoryShelfHeight: CGFloat = 42
+      static let evolutionHeight: CGFloat = 52
+      static let shellSafetyInset: CGFloat = 10
+    }
+
     enum StatusRail {
       static let contentWidth: CGFloat = 340
       static let railHeight: CGFloat = 34
