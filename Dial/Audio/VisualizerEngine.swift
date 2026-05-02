@@ -347,7 +347,8 @@ final class VisualizerEngine: @unchecked Sendable {
     defer { perf.end() }
 
     let mags = s.withUnsafeBufferPointer { buf in
-      localFFT.magnitudes(of: buf.baseAddress!, frameCount: buf.count)
+      guard let baseAddress = buf.baseAddress else { return [Float]() }
+      return localFFT.magnitudes(of: baseAddress, frameCount: buf.count)
     }
     guard !mags.isEmpty else { return }
     let raw = localFFT.bands(

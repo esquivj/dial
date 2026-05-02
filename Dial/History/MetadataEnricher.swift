@@ -395,7 +395,7 @@ final class LastFMClient {
       URLQueryItem(name: "format", value: "json"),
       URLQueryItem(name: "autocorrect", value: "1")
     ]
-    let url = comps.url!
+    guard let url = comps.url else { throw LastFMError.invalidResponse }
     let (data, response) = try await session.data(from: url)
     guard let http = response as? HTTPURLResponse else {
       throw LastFMError.invalidResponse

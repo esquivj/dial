@@ -116,7 +116,8 @@ final class SpotifyClient {
       items.append(URLQueryItem(name: "after", value: "\(afterMs)"))
     }
     comps.queryItems = items
-    let (data, http) = try await authedGET(comps.url!)
+    guard let url = comps.url else { throw SpotifyAPIError.invalidResponse }
+    let (data, http) = try await authedGET(url)
     try Self.validate(http)
     return try JSONDecoder().decode(RecentlyPlayedResponse.self, from: data)
   }
@@ -230,14 +231,15 @@ extension SpotifyClient {
       respectRateLimitGate: respectRateLimitGate)
   }
 
-  fileprivate static func libraryURL(path: String, uri: String) -> URL {
+  fileprivate static func libraryURL(path: String, uri: String) throws -> URL {
     var allowed = CharacterSet.urlQueryAllowed
     allowed.remove(charactersIn: ":")
     let encoded = uri.addingPercentEncoding(withAllowedCharacters: allowed) ?? uri
 
     var comps = URLComponents(string: "https://api.spotify.com/v1\(path)")!
     comps.percentEncodedQueryItems = [.init(name: "uris", value: encoded)]
-    return comps.url!
+    guard let url = comps.url else { throw SpotifyAPIError.invalidResponse }
+    return url
   }
 }
 
@@ -330,7 +332,7 @@ extension SpotifyClient {
   ) async throws {
     var comps = URLComponents(string: "https://api.spotify.com/v1\(path)")!
     if !queryItems.isEmpty { comps.queryItems = queryItems }
-    let url = comps.url!
+    guard let url = comps.url else { throw SpotifyAPIError.invalidResponse }
     var req = URLRequest(url: url)
     req.httpMethod = method
     req.setValue("0", forHTTPHeaderField: "Content-Length")

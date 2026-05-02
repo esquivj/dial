@@ -77,9 +77,11 @@ final class FFTProcessor {
 
     realp.withUnsafeMutableBufferPointer { rPtr in
       imagp.withUnsafeMutableBufferPointer { iPtr in
-        var split = DSPSplitComplex(realp: rPtr.baseAddress!, imagp: iPtr.baseAddress!)
+        guard let realBase = rPtr.baseAddress, let imagBase = iPtr.baseAddress else { return }
+        var split = DSPSplitComplex(realp: realBase, imagp: imagBase)
         windowed.withUnsafeBufferPointer { wPtr in
-          wPtr.baseAddress!.withMemoryRebound(to: DSPComplex.self, capacity: halfSize) { cPtr in
+          guard let windowedBase = wPtr.baseAddress else { return }
+          windowedBase.withMemoryRebound(to: DSPComplex.self, capacity: halfSize) { cPtr in
             vDSP_ctoz(cPtr, 2, &split, 1, vDSP_Length(halfSize))
           }
         }
