@@ -88,6 +88,7 @@ final class VisualizerEngine: @unchecked Sendable {
   /// grants permission via System Settings (which deactivates Dial, then
   /// reactivates it on return).
   @ObservationIgnored private var activationObserver: NSObjectProtocol?
+  @ObservationIgnored private var isStarting = false
 
   init() {
     capture.shouldProcessSamples = { [weak self] in
@@ -200,10 +201,13 @@ final class VisualizerEngine: @unchecked Sendable {
 
   @MainActor
   func start() async {
-    // Idempotent — calling start() while already running is a no-op. This is
-    // what makes long-lived capture safe under SwiftUI's `.task` modifier,
-    // which fires on every view appearance.
+    // Idempotent — calling start() while already running or already entering
+    // ScreenCaptureKit is a no-op. This is what makes long-lived capture safe
+    // under SwiftUI's `.task` modifier, which fires on every view appearance.
     guard state != .running else { return }
+    guard !isStarting else { return }
+    isStarting = true
+    defer { isStarting = false }
 
     // No preflight gate. SCShareableContent itself is the source of truth
     // for permission — if it succeeds, we're authed.
