@@ -286,6 +286,7 @@ final class VisualizerEngine: @unchecked Sendable {
       // from a clean state instead of stale residual values from the last
       // visible session.
       Task { @MainActor in
+        guard !self.hasVisibleConsumer() else { return }
         self.resetBands()
       }
     }
@@ -360,7 +361,8 @@ final class VisualizerEngine: @unchecked Sendable {
       ceilingDb: localCeilingDb)
 
     Task { @MainActor [weak self, raw] in
-      self?.applyBands(raw)
+      guard let self, self.hasVisibleConsumer() else { return }
+      self.applyBands(raw)
     }
   }
 
