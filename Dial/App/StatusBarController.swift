@@ -214,6 +214,9 @@ final class StatusBarController {
   /// clamped to screen bounds so it doesn't overflow when the menubar
   /// item is near the right edge of the display.
   private func showPanel(screen: DropdownScreen? = nil) {
+    let perf = DialPerf.begin("dropdown.open")
+    defer { perf.end() }
+
     if let screen {
       coord?.dropdownScreen = screen
     }

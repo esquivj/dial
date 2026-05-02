@@ -293,7 +293,7 @@ struct DropdownView: View {
         .id(showingGlossary ? "transport-glossary" : "transport-hud")
         .background { transportTrayBacking }
         .padding(.horizontal, Dial.Layout.Transport.panelHorizontalPadding)
-        .modifier(StaggeredAppear(delay: 0.20))
+        .modifier(EntranceAppear(enabled: entranceMotionEnabled, delay: 0.20))
         .transition(bottomChromeTransition)
         .zIndex(1)
     }
@@ -393,11 +393,8 @@ struct DropdownView: View {
           onOpenHistory: openHistory,
           onOpenStats: openStats,
           onOpenPet: openPet)
-          .modifier(StaggeredAppear(delay: 0))
+          .modifier(EntranceAppear(enabled: entranceMotionEnabled, delay: 0))
       } else {
-        // Staggered entrance: each section fades + lifts in with a 50ms cascade.
-        // Reads as deliberate composition rather than "everything appears at once,"
-        // and is short enough (~250ms total) not to feel like a loading sequence.
         TrackHero(
           vm: coord.nowPlaying,
           pet: coord.pet,
@@ -412,13 +409,13 @@ struct DropdownView: View {
           onOpenHistory: openHistory,
           onOpenBadge: openStats
         )
-        .modifier(StaggeredAppear(delay: 0.00))
+        .modifier(EntranceAppear(enabled: entranceMotionEnabled, delay: 0))
         if coord.settings.showReadoutsInHUD {
           ReadoutsRow(
             vm: coord.nowPlaying,
             onOpenStats: openStats,
             onOpenHistory: openHistory)
-            .modifier(StaggeredAppear(delay: animationDelay(1)))
+            .modifier(EntranceAppear(enabled: entranceMotionEnabled, delay: entranceAnimationDelay(1)))
         }
         // ArtistContext (artist rank + lifetime plays) used to live here as a
         // 4th data row, but stacking three numeric rows (Readouts + Badge +
@@ -443,7 +440,7 @@ struct DropdownView: View {
         // either way (permission stability > tiny capture cost).
         if coord.settings.showVisualizerInHUD {
           PixelGridVisualizer(engine: coord.visualizer)
-            .modifier(StaggeredAppear(delay: animationDelay(2)))
+            .modifier(EntranceAppear(enabled: entranceMotionEnabled, delay: entranceAnimationDelay(2)))
             .task {
               configureSpectrum()
               await coord.visualizer.start()
@@ -523,12 +520,12 @@ struct DropdownView: View {
     }
   }
 
-  private func animationDelay(_ index: Int) -> Double {
-    switch coord.settings.animationLevel {
-    case .low:    return 0
-    case .normal: return Double(index) * 0.05
-    case .extra:  return Double(index) * 0.08
-    }
+  private var entranceMotionEnabled: Bool {
+    coord.settings.animationLevel == .extra
+  }
+
+  private func entranceAnimationDelay(_ index: Int) -> Double {
+    Double(index) * 0.05
   }
 
   private var spectrumSettingsFingerprint: String {
@@ -548,6 +545,29 @@ struct DropdownView: View {
       showPeakMarkers: coord.settings.spectrumPeakMarkers)
   }
 
+}
+
+/// Keep normal dropdown opens instant. The only HUD entrance cascade left is
+/// behind the explicit "Extra" motion setting; default motion should not hide
+/// first paint behind a decorative fade.
+private struct EntranceAppear: ViewModifier {
+  let enabled: Bool
+  let delay: Double
+  @State private var appeared = false
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+  func body(content: Content) -> some View {
+    if enabled && !reduceMotion {
+      content
+        .opacity(appeared ? 1 : 0)
+        .offset(y: appeared ? 0 : 6)
+        .animation(.easeOut(duration: 0.22).delay(delay), value: appeared)
+        .onAppear { appeared = true }
+    } else {
+      content
+        .onAppear { appeared = true }
+    }
+  }
 }
 
 private struct IdleHUDView: View {
@@ -670,30 +690,5 @@ private struct IdleHUDView: View {
     .buttonStyle(.pressable)
     .help(label.capitalized)
     .accessibilityLabel(label.capitalized)
-  }
-}
-
-/// Subtle entrance animation for stacked HUD sections. Each section fades
-/// from 0→1 opacity and lifts 6pt while it does, with a per-section delay
-/// so the rows cascade rather than appearing simultaneously.
-///
-/// State lives at the modifier level (outside the wrapped view) so internal
-/// id/transition swaps inside a section — e.g. TrackHero's track-change
-/// crossfade — don't reset the cascade.
-///
-/// Respects `accessibilityReduceMotion`: when the user has macOS's "Reduce
-/// motion" enabled (System Settings → Accessibility → Display), the cascade
-/// is skipped — content appears instantly with no opacity/offset tween.
-private struct StaggeredAppear: ViewModifier {
-  let delay: Double
-  @State private var appeared = false
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-  func body(content: Content) -> some View {
-    content
-      .opacity(appeared || reduceMotion ? 1 : 0)
-      .offset(y: appeared || reduceMotion ? 0 : 6)
-      .animation(reduceMotion ? nil : .easeOut(duration: 0.28).delay(delay), value: appeared)
-      .onAppear { appeared = true }
   }
 }
