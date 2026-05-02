@@ -149,12 +149,14 @@ final class VisualizerEngine: @unchecked Sendable {
   ) {
     let profile = analysisProfile(for: style)
 
+    let configuredFFT: FFTProcessor
     lock.lock()
     if fft.fftSize != profile.fftSize || fft.windowKind != profile.windowKind {
       fft = FFTProcessor(fftSize: profile.fftSize, windowKind: profile.windowKind)
       sampleBuffer.removeAll(keepingCapacity: true)
       lastPublishNanos = 0
     }
+    configuredFFT = fft
     analysisBandCount = density.bandCount
     bandScale = profile.bandScale
     bandAggregation = profile.bandAggregation
@@ -173,6 +175,10 @@ final class VisualizerEngine: @unchecked Sendable {
     }
     bandCount = density.bandCount
     self.showPeakMarkers = showPeakMarkers
+
+    if !configuredFFT.isAvailable {
+      markFFTUnavailable(configuredFFT)
+    }
   }
 
   #if DEBUG
@@ -216,6 +222,12 @@ final class VisualizerEngine: @unchecked Sendable {
     // Letting SCShareableContent decide is cleaner: it succeeds when the
     // permission is actually usable and throws otherwise. The activation-
     // observer auto-retry below still handles the post-grant return path.
+
+    let currentFFT = fft
+    guard currentFFT.isAvailable else {
+      markFFTUnavailable(currentFFT)
+      return
+    }
 
     do {
       try await capture.start()
@@ -303,6 +315,12 @@ final class VisualizerEngine: @unchecked Sendable {
     let now = DispatchTime.now().uptimeNanoseconds
     lock.lock()
     localFFT = fft
+    guard localFFT.isAvailable else {
+      sampleBuffer.removeAll(keepingCapacity: true)
+      lastPublishNanos = 0
+      lock.unlock()
+      return
+    }
     localBandCount = analysisBandCount
     localBandScale = bandScale
     localBandAggregation = bandAggregation
@@ -375,6 +393,15 @@ final class VisualizerEngine: @unchecked Sendable {
   private func resetBands() {
     bands = Array(repeating: 0, count: bandCount)
     peaks = Array(repeating: 0, count: bandCount)
+  }
+
+  @MainActor
+  private func markFFTUnavailable(_ fft: FFTProcessor) {
+    visualizerLog.error("FFT setup unavailable for size \(fft.fftSize, privacy: .public)")
+    if state != .denied {
+      state = .error
+    }
+    resetBands()
   }
 
   private func analysisProfile(for style: SpectrumStyle) -> (

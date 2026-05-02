@@ -6,21 +6,22 @@ import XCTest
 final class FFTProcessorTests: XCTestCase {
   func test_magnitudes_outputSizeIsHalfFFTSize() {
     let fft = FFTProcessor(fftSize: 1024)
-    var samples = [Float](repeating: 1, count: 1024)
+    let samples = [Float](repeating: 1, count: 1024)
     let mags = samples.withUnsafeBufferPointer { fft.magnitudes(of: $0.baseAddress!, frameCount: 1024) }
+    XCTAssertTrue(fft.isAvailable)
     XCTAssertEqual(mags.count, 512, "FFT magnitude output should be fftSize/2")
   }
 
   func test_magnitudes_emptyOnInsufficientFrames() {
     let fft = FFTProcessor(fftSize: 1024)
-    var samples = [Float](repeating: 1, count: 512)  // half what FFT needs
+    let samples = [Float](repeating: 1, count: 512)  // half what FFT needs
     let mags = samples.withUnsafeBufferPointer { fft.magnitudes(of: $0.baseAddress!, frameCount: 512) }
     XCTAssertTrue(mags.isEmpty, "FFT should refuse to process when given fewer than fftSize frames")
   }
 
   func test_bands_silenceProducesZeroBands() {
     let fft = FFTProcessor(fftSize: 1024)
-    var silence = [Float](repeating: 0, count: 1024)
+    let silence = [Float](repeating: 0, count: 1024)
     let mags = silence.withUnsafeBufferPointer { fft.magnitudes(of: $0.baseAddress!, frameCount: 1024) }
     let bands = fft.bands(from: mags, count: 32)
     XCTAssertEqual(bands.count, 32)
@@ -32,6 +33,17 @@ final class FFTProcessorTests: XCTestCase {
   func test_bands_emptyMagnitudesProducesZeroBands() {
     let fft = FFTProcessor(fftSize: 1024)
     let bands = fft.bands(from: [], count: 32)
+    XCTAssertEqual(bands.count, 32)
+    XCTAssertTrue(bands.allSatisfy { $0 == 0 })
+  }
+
+  func test_unavailableSetupReturnsEmptyMagnitudesAndZeroBands() {
+    let fft = FFTProcessor(fftSize: 1024, setupFactory: { _, _ in nil })
+    let samples = [Float](repeating: 1, count: 1024)
+    let mags = samples.withUnsafeBufferPointer { fft.magnitudes(of: $0.baseAddress!, frameCount: 1024) }
+    let bands = fft.bands(from: mags, count: 32)
+    XCTAssertFalse(fft.isAvailable)
+    XCTAssertTrue(mags.isEmpty)
     XCTAssertEqual(bands.count, 32)
     XCTAssertTrue(bands.allSatisfy { $0 == 0 })
   }

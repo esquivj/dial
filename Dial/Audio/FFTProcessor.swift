@@ -29,19 +29,24 @@ final class FFTProcessor {
   let fftSize: Int
   let windowKind: WindowKind
   private let log2N: vDSP_Length
-  private let setup: FFTSetup
+  private let setup: FFTSetup?
   private let window: [Float]
   private let coherentGain: Float
 
-  init(fftSize: Int = 1024, windowKind: WindowKind = .hann) {
+  var isAvailable: Bool {
+    setup != nil
+  }
+
+  init(
+    fftSize: Int = 1024,
+    windowKind: WindowKind = .hann,
+    setupFactory: (vDSP_Length, FFTRadix) -> FFTSetup? = { vDSP_create_fftsetup($0, $1) }
+  ) {
     precondition(fftSize > 0 && (fftSize & (fftSize - 1)) == 0, "FFT size must be a positive power of two")
     self.fftSize = fftSize
     self.windowKind = windowKind
     self.log2N = vDSP_Length(Int(log2(Float(fftSize))))
-    guard let s = vDSP_create_fftsetup(log2N, FFTRadix(kFFTRadix2)) else {
-      fatalError("Failed to create vDSP FFT setup for size \(fftSize)")
-    }
-    self.setup = s
+    self.setup = setupFactory(log2N, FFTRadix(kFFTRadix2))
 
     let w = Self.window(kind: windowKind, count: fftSize)
     self.window = w
@@ -49,13 +54,15 @@ final class FFTProcessor {
   }
 
   deinit {
-    vDSP_destroy_fftsetup(setup)
+    if let setup = setup {
+      vDSP_destroy_fftsetup(setup)
+    }
   }
 
   /// Returns the magnitude spectrum (size `fftSize/2`) for the given samples.
   /// Caller must supply at least `fftSize` frames.
   func magnitudes(of samples: UnsafePointer<Float>, frameCount: Int) -> [Float] {
-    guard frameCount >= fftSize else { return [] }
+    guard frameCount >= fftSize, let setup = setup else { return [] }
     let halfSize = fftSize / 2
 
     // 1. Apply the configured analysis window.
