@@ -102,7 +102,9 @@ final class SpotifyClient {
     // endpoint omits shuffle/repeat, which the dropdown's transport row
     // needs to render the toggle states. Both return 204 when nothing's
     // playing, so the caller-side semantics are unchanged.
-    let url = URL(string: "https://api.spotify.com/v1/me/player")!
+    guard let url = URL(string: "https://api.spotify.com/v1/me/player") else {
+      throw SpotifyAPIError.invalidResponse
+    }
     let (data, http) = try await authedGET(url)
     if http.statusCode == 204 { return nil }
     try Self.validate(http)
@@ -110,7 +112,9 @@ final class SpotifyClient {
   }
 
   func recentlyPlayed(afterMs: Int64?, limit: Int = 50) async throws -> RecentlyPlayedResponse {
-    var comps = URLComponents(string: "https://api.spotify.com/v1/me/player/recently-played")!
+    guard var comps = URLComponents(string: "https://api.spotify.com/v1/me/player/recently-played") else {
+      throw SpotifyAPIError.invalidResponse
+    }
     var items = [URLQueryItem(name: "limit", value: "\(min(max(limit, 1), 50))")]
     if let afterMs {
       items.append(URLQueryItem(name: "after", value: "\(afterMs)"))
@@ -123,7 +127,9 @@ final class SpotifyClient {
   }
 
   func audioFeatures(trackId: String, respectRateLimitGate: Bool = false) async throws -> AudioFeatures {
-    let url = URL(string: "https://api.spotify.com/v1/audio-features/\(trackId)")!
+    guard let url = URL(string: "https://api.spotify.com/v1/audio-features/\(trackId)") else {
+      throw SpotifyAPIError.invalidResponse
+    }
     let (data, http) = try await authedGET(url, respectRateLimitGate: respectRateLimitGate)
     try Self.validate(http)
     return try JSONDecoder().decode(AudioFeatures.self, from: data)
@@ -174,7 +180,9 @@ extension SpotifyClient {
   func track(uri: String, respectRateLimitGate: Bool = false) async throws -> TrackMeta {
     guard uri.hasPrefix("spotify:track:") else { throw SpotifyAPIError.httpStatus(400) }
     let id = uri.replacingOccurrences(of: "spotify:track:", with: "")
-    let url = URL(string: "https://api.spotify.com/v1/tracks/\(id)")!
+    guard let url = URL(string: "https://api.spotify.com/v1/tracks/\(id)") else {
+      throw SpotifyAPIError.invalidResponse
+    }
     let (data, http) = try await authedGET(url, respectRateLimitGate: respectRateLimitGate)
     try Self.validate(http)
     return try JSONDecoder().decode(TrackMeta.self, from: data)
@@ -185,7 +193,9 @@ extension SpotifyClient {
     let ids = uris
       .map { $0.replacingOccurrences(of: "spotify:track:", with: "") }
       .joined(separator: ",")
-    let url = URL(string: "https://api.spotify.com/v1/tracks?ids=\(ids)")!
+    guard let url = URL(string: "https://api.spotify.com/v1/tracks?ids=\(ids)") else {
+      throw SpotifyAPIError.invalidResponse
+    }
     let (data, http) = try await authedGET(url, respectRateLimitGate: respectRateLimitGate)
     try Self.validate(http)
     struct R: Decodable { let tracks: [TrackMeta?] }
@@ -198,7 +208,9 @@ extension SpotifyClient {
   func artist(uri: String, respectRateLimitGate: Bool = false) async throws -> ArtistMeta {
     guard uri.hasPrefix("spotify:artist:") else { throw SpotifyAPIError.httpStatus(400) }
     let id = uri.replacingOccurrences(of: "spotify:artist:", with: "")
-    let url = URL(string: "https://api.spotify.com/v1/artists/\(id)")!
+    guard let url = URL(string: "https://api.spotify.com/v1/artists/\(id)") else {
+      throw SpotifyAPIError.invalidResponse
+    }
     let (data, http) = try await authedGET(url, respectRateLimitGate: respectRateLimitGate)
     try Self.validate(http)
     return try JSONDecoder().decode(ArtistMeta.self, from: data)
@@ -236,7 +248,9 @@ extension SpotifyClient {
     allowed.remove(charactersIn: ":")
     let encoded = uri.addingPercentEncoding(withAllowedCharacters: allowed) ?? uri
 
-    var comps = URLComponents(string: "https://api.spotify.com/v1\(path)")!
+    guard var comps = URLComponents(string: "https://api.spotify.com/v1\(path)") else {
+      throw SpotifyAPIError.invalidResponse
+    }
     comps.percentEncodedQueryItems = [.init(name: "uris", value: encoded)]
     guard let url = comps.url else { throw SpotifyAPIError.invalidResponse }
     return url
@@ -263,7 +277,9 @@ extension SpotifyClient {
     // The oEmbed endpoint accepts a Spotify URI in the `url` parameter,
     // URL-encoded. `spotify:track:<id>` works as-is when colon-encoded.
     let encoded = uri.replacingOccurrences(of: ":", with: "%3A")
-    let url = URL(string: "https://open.spotify.com/oembed?url=\(encoded)&format=json")!
+    guard let url = URL(string: "https://open.spotify.com/oembed?url=\(encoded)&format=json") else {
+      throw SpotifyAPIError.invalidResponse
+    }
     let (data, _) = try await session.data(for: URLRequest(url: url))
     return try JSONDecoder().decode(OEmbedTrack.self, from: data)
   }
@@ -330,7 +346,9 @@ extension SpotifyClient {
     queryItems: [URLQueryItem] = [],
     respectRateLimitGate: Bool = false
   ) async throws {
-    var comps = URLComponents(string: "https://api.spotify.com/v1\(path)")!
+    guard var comps = URLComponents(string: "https://api.spotify.com/v1\(path)") else {
+      throw SpotifyAPIError.invalidResponse
+    }
     if !queryItems.isEmpty { comps.queryItems = queryItems }
     guard let url = comps.url else { throw SpotifyAPIError.invalidResponse }
     var req = URLRequest(url: url)
@@ -355,7 +373,9 @@ extension SpotifyClient {
   }
 
   private func preferredPlaybackDeviceID(respectRateLimitGate: Bool = false) async throws -> String? {
-    let url = URL(string: "https://api.spotify.com/v1/me/player/devices")!
+    guard let url = URL(string: "https://api.spotify.com/v1/me/player/devices") else {
+      throw SpotifyAPIError.invalidResponse
+    }
     let (data, http) = try await authedGET(url, respectRateLimitGate: respectRateLimitGate)
     try Self.validate(http)
     let response = try JSONDecoder().decode(PlaybackDevicesResponse.self, from: data)

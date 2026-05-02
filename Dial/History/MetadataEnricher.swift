@@ -387,7 +387,9 @@ final class LastFMClient {
   }
 
   func artistTopTags(name: String) async throws -> [LastFMTag] {
-    var comps = URLComponents(string: "https://ws.audioscrobbler.com/2.0/")!
+    guard var comps = URLComponents(string: "https://ws.audioscrobbler.com/2.0/") else {
+      throw LastFMError.invalidResponse
+    }
     comps.queryItems = [
       URLQueryItem(name: "method", value: "artist.getTopTags"),
       URLQueryItem(name: "artist", value: name),

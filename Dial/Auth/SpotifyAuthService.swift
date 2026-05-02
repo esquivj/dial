@@ -40,7 +40,9 @@ final class SpotifyAuthService: NSObject {
     let verifier = PKCE.makeCodeVerifier()
     let challenge = PKCE.makeCodeChallenge(for: verifier)
 
-    var auth = URLComponents(string: "https://accounts.spotify.com/authorize")!
+    guard var auth = URLComponents(string: "https://accounts.spotify.com/authorize") else {
+      throw SpotifyAuthError.invalidResponse
+    }
     auth.queryItems = [
       .init(name: "client_id", value: clientID),
       .init(name: "response_type", value: "code"),
@@ -50,8 +52,10 @@ final class SpotifyAuthService: NSObject {
       .init(name: "scope", value: scopes.joined(separator: " "))
     ]
 
+    guard let authURL = auth.url else { throw SpotifyAuthError.invalidResponse }
+
     let code: String = try await withCheckedThrowingContinuation { cont in
-      let session = ASWebAuthenticationSession(url: auth.url!, callbackURLScheme: "dial") { callback, error in
+      let session = ASWebAuthenticationSession(url: authURL, callbackURLScheme: "dial") { callback, error in
         if let error { cont.resume(throwing: error); return }
         guard let cb = callback,
               let c = URLComponents(url: cb, resolvingAgainstBaseURL: false)?
@@ -74,7 +78,10 @@ final class SpotifyAuthService: NSObject {
   }
 
   private func exchange(code: String, verifier: String) async throws -> SpotifyToken {
-    var req = URLRequest(url: URL(string: "https://accounts.spotify.com/api/token")!)
+    guard let url = URL(string: "https://accounts.spotify.com/api/token") else {
+      throw SpotifyAuthError.invalidResponse
+    }
+    var req = URLRequest(url: url)
     req.httpMethod = "POST"
     req.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
     req.httpBody = Self.formEncode([
@@ -110,7 +117,10 @@ final class SpotifyAuthService: NSObject {
       authLog.error("refresh: no token in store")
       throw SpotifyAuthError.refreshFailed
     }
-    var req = URLRequest(url: URL(string: "https://accounts.spotify.com/api/token")!)
+    guard let url = URL(string: "https://accounts.spotify.com/api/token") else {
+      throw SpotifyAuthError.invalidResponse
+    }
+    var req = URLRequest(url: url)
     req.httpMethod = "POST"
     req.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
     req.httpBody = Self.formEncode([
