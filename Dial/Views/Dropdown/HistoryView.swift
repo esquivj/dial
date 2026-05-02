@@ -12,6 +12,7 @@ enum HistoryViewPlacement {
 /// dropdown's frame.
 struct HistoryView: View {
   let dbq: DatabaseQueue
+  @Bindable var artworkCache: ArtworkCache
   let onBack: () -> Void
   var placement: HistoryViewPlacement = .legacyPanel
   @State private var rows: [StatsQueries.HistoryRow] = []
@@ -173,7 +174,7 @@ struct HistoryView: View {
     ScrollView(.vertical, showsIndicators: true) {
       LazyVStack(spacing: 0) {
         ForEach(rows) { row in
-          HistoryRowView(row: row)
+          HistoryRowView(row: row, artworkCache: artworkCache)
           Rectangle().fill(theme.hairline.opacity(0.54)).frame(height: 1)
         }
       }
@@ -211,14 +212,24 @@ private struct HistoryViewSnapshot {
 
 private struct HistoryRowView: View {
   let row: StatsQueries.HistoryRow
+  @Bindable var artworkCache: ArtworkCache
   @Environment(\.dialTheme) private var theme
 
   var body: some View {
     HStack(spacing: 10) {
-      AsyncImage(url: row.albumArtUrl.flatMap(URL.init(string:))) { img in
-        img.resizable()
-      } placeholder: {
-        Rectangle().fill(theme.surface)
+      Group {
+        if let urlString = row.albumArtUrl, let image = artworkCache.image(for: urlString) {
+          Image(nsImage: image)
+            .resizable()
+            .aspectRatio(contentMode: .fill)
+        } else {
+          Rectangle()
+            .fill(theme.surface)
+            .task(id: row.albumArtUrl) {
+              guard let albumArtUrl = row.albumArtUrl else { return }
+              await artworkCache.load(albumArtUrl)
+            }
+        }
       }
       .frame(width: 28, height: 28)
       .clipShape(RoundedRectangle(cornerRadius: Dial.Radius.printed))

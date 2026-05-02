@@ -206,6 +206,7 @@ struct DropdownView: View {
   private var historyChromeLayout: some View {
     HistoryView(
       dbq: coord.dbq,
+      artworkCache: coord.artworkCache,
       onBack: { withAnimation(screenTransitionAnimation) { coord.dropdownScreen = .hud } },
       placement: .hardwareShell
     )
@@ -353,7 +354,10 @@ struct DropdownView: View {
         hudBody
           .transition(.opacity)
       case .history:
-        HistoryView(dbq: coord.dbq, onBack: { withAnimation(screenTransitionAnimation) { coord.dropdownScreen = .hud } })
+        HistoryView(
+          dbq: coord.dbq,
+          artworkCache: coord.artworkCache,
+          onBack: { withAnimation(screenTransitionAnimation) { coord.dropdownScreen = .hud } })
           .transition(.move(edge: .trailing).combined(with: .opacity))
       case .stats:
         StatsView(
