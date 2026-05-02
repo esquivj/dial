@@ -22,4 +22,31 @@ final class PetStateDAOTests: XCTestCase {
     XCTAssertEqual(s.xp, 750)
     XCTAssertEqual(s.stage, .hatching)
   }
+
+  func test_get_recreatesMissingSingleton() throws {
+    let dbq = try InMemoryDatabase.make()
+    try dbq.write { db in
+      try db.execute(sql: "DELETE FROM pet_state")
+    }
+
+    let state = try PetStateDAO(dbq: dbq).get()
+
+    XCTAssertEqual(state.id, 1)
+    XCTAssertEqual(state.xp, 0)
+    XCTAssertEqual(state.stage, .egg)
+  }
+
+  func test_update_recreatesMissingSingletonBeforeMutating() throws {
+    let dbq = try InMemoryDatabase.make()
+    try dbq.write { db in
+      try db.execute(sql: "DELETE FROM pet_state")
+    }
+    let dao = PetStateDAO(dbq: dbq)
+
+    try dao.update { state in
+      state.xp = 42
+    }
+
+    XCTAssertEqual(try dao.get().xp, 42)
+  }
 }

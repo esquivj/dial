@@ -75,7 +75,7 @@ final class Importer {
   /// variety / streak multipliers (those reflect *live* listening behavior).
   /// Total imported XP is capped at the companion threshold.
   private func applyXPInTxn(for play: Play, in db: Database) throws {
-    var state = try PetState.fetchOne(db, key: 1)!
+    var state = try PetStateDAO.singleton(in: db)
     let xpDelta = XPFormula.compute(
       msPlayed: play.msPlayed,
       variety: .none,

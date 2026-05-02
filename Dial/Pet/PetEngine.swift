@@ -61,7 +61,7 @@ final class PetEngine {
         mode: isImport ? .imported : .live,
         in: db)
 
-      var state = try PetState.fetchOne(db, key: 1)!
+      var state = try PetStateDAO.singleton(in: db)
 
       let variety = isImport ? VarietyBonus.none : try Self.variety(for: p, in: db)
       let streak: StreakCalendar.Result?
