@@ -109,6 +109,18 @@ final class SpotifyClient {
     return try JSONDecoder().decode(CurrentlyPlaying.self, from: data)
   }
 
+  func recentlyPlayed(afterMs: Int64?, limit: Int = 50) async throws -> RecentlyPlayedResponse {
+    var comps = URLComponents(string: "https://api.spotify.com/v1/me/player/recently-played")!
+    var items = [URLQueryItem(name: "limit", value: "\(min(max(limit, 1), 50))")]
+    if let afterMs {
+      items.append(URLQueryItem(name: "after", value: "\(afterMs)"))
+    }
+    comps.queryItems = items
+    let (data, http) = try await authedGET(comps.url!)
+    try Self.validate(http)
+    return try JSONDecoder().decode(RecentlyPlayedResponse.self, from: data)
+  }
+
   func audioFeatures(trackId: String, respectRateLimitGate: Bool = false) async throws -> AudioFeatures {
     let url = URL(string: "https://api.spotify.com/v1/audio-features/\(trackId)")!
     let (data, http) = try await authedGET(url, respectRateLimitGate: respectRateLimitGate)

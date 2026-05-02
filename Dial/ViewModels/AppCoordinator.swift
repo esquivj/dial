@@ -1,7 +1,9 @@
 // Dial/ViewModels/AppCoordinator.swift
 import Observation
+import AppKit
 import Foundation
 import GRDB
+import Network
 import os.log
 
 private let coordLog = Logger(subsystem: "com.dial.Dial", category: "AppCoordinator")
@@ -38,6 +40,12 @@ final class AppCoordinator {
   private var desktopObserverStarted = false
   private var currentTagWarmTask: Task<Void, Never>?
   private var ambientTrickTask: Task<Void, Never>?
+  private var recentRepairTask: Task<Void, Never>?
+  private var recentPeriodicTask: Task<Void, Never>?
+  private var wakeObserver: NSObjectProtocol?
+  private var networkMonitor: NWPathMonitor?
+  private let networkMonitorQueue = DispatchQueue(label: "com.dial.Dial.recent-play-network-monitor")
+  private var networkWasSatisfied = false
   private var currentTrackCountedAt: Int64?
   private var playbackReducer = PlaybackStateReducer()
 
@@ -76,8 +84,11 @@ final class AppCoordinator {
   func start() {
     coordLog.notice("start() called, pollingStarted=\(self.pollingStarted)")
     startDesktopObserver()
+    startRecentPlayObservers()
     guard !pollingStarted else { return }
     pollingStarted = true
+    startRecentPlayRepair(reason: "launch")
+    startPeriodicRecentPlaySync()
     Task { [weak self] in
       guard let self else { return }
       do {
@@ -104,6 +115,122 @@ final class AppCoordinator {
     }
     syncBackgroundEnrichment()
     refreshWeeklyMemoriesIfNeeded()
+  }
+
+  private func startRecentPlayRepair(reason: String) {
+    recentRepairTask?.cancel()
+    recentRepairTask = Task { [weak self] in
+      await self?.runRecentPlayRepair(reason: reason, aggressive: true)
+    }
+  }
+
+  private func startPeriodicRecentPlaySync() {
+    guard recentPeriodicTask == nil else { return }
+    recentPeriodicTask = Task { [weak self] in
+      while !Task.isCancelled {
+        try? await Task.sleep(nanoseconds: 10 * 60 * 1_000_000_000)
+        guard !Task.isCancelled else { return }
+        await self?.runRecentPlayRepair(reason: "periodic", aggressive: false)
+      }
+    }
+  }
+
+  private func startRecentPlayObservers() {
+    if wakeObserver == nil {
+      wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
+        forName: NSWorkspace.didWakeNotification,
+        object: nil,
+        queue: .main
+      ) { [weak self] _ in
+        self?.startRecentPlayRepair(reason: "wake")
+      }
+    }
+
+    guard networkMonitor == nil else { return }
+    let monitor = NWPathMonitor()
+    monitor.pathUpdateHandler = { [weak self] path in
+      guard let self else { return }
+      let satisfied = path.status == .satisfied
+      if satisfied && !self.networkWasSatisfied {
+        DispatchQueue.main.async { [weak self] in
+          self?.startRecentPlayRepair(reason: "network")
+        }
+      }
+      self.networkWasSatisfied = satisfied
+    }
+    monitor.start(queue: networkMonitorQueue)
+    networkMonitor = monitor
+  }
+
+  private func runRecentPlayRepair(reason: String, aggressive: Bool) async {
+    let maxAttempts = aggressive ? 8 : 1
+    var stableNoInsertChecks = 0
+    var saturatedChecks = 0
+
+    for attempt in 1...maxAttempts {
+      guard !Task.isCancelled else { return }
+      let result = await reconcileRecentPlays(reason: reason, attempt: attempt)
+
+      switch result {
+      case .success(let sync):
+        if sync.possiblyTruncated {
+          saturatedChecks += 1
+          stableNoInsertChecks = 0
+        } else if sync.inserted == 0 {
+          stableNoInsertChecks += 1
+        } else {
+          stableNoInsertChecks = 0
+        }
+
+        if !aggressive || stableNoInsertChecks >= 2 { return }
+      case .failure:
+        return
+      }
+
+      guard aggressive else { return }
+      try? await Task.sleep(nanoseconds: 18 * 1_000_000_000)
+    }
+
+    if saturatedChecks > 0 {
+      coordLog.warning("recent-play repair ended with \(saturatedChecks, privacy: .public) saturated 50-row checks; gap may be incomplete")
+    }
+  }
+
+  private func reconcileRecentPlays(
+    reason: String,
+    attempt: Int
+  ) async -> Result<RecentPlaySyncResult, Error> {
+    do {
+      let result = try await RecentPlaysReconciler(
+        dbq: dbq,
+        client: client,
+        engine: engine
+      ).sync()
+      guard result.inserted > 0 else { return .success(result) }
+
+      await MainActor.run {
+        pet.syncFromStore(dbq: dbq)
+        aggCache.refresh(
+          trackUri: nowPlaying.track?.uri,
+          artistUri: nowPlaying.track?.artistUri,
+          currentPlayAt: currentTrackCountedAt)
+        refreshCurrentSoundTheme(allowFallback: false)
+        nowPlaying.playsYTD = aggCache.playsYTD
+        menubar.playsYTD = aggCache.playsYTD
+        updatePetMemoryText()
+        resolvePetBehavior()
+      }
+      refreshWeeklyMemoriesIfNeeded()
+      restartBackgroundEnrichmentNow()
+      coordLog.notice("recent-play sync repaired \(result.inserted) missed plays reason=\(reason, privacy: .public) attempt=\(attempt, privacy: .public)")
+      return .success(result)
+    } catch SpotifyAPIError.rateLimited(let retryAfter) {
+      coordLog.warning("recent-play sync rate limited, retryAfter=\(retryAfter ?? 0, privacy: .public)")
+      return .failure(SpotifyAPIError.rateLimited(retryAfter: retryAfter))
+    } catch {
+      coordLog.warning("recent-play sync failed: \(String(describing: error), privacy: .public)")
+      return .failure(error)
+    }
   }
 
   func syncBackgroundEnrichment() {

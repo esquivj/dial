@@ -32,15 +32,25 @@ final class PetEngine {
   /// Replays after the track has finished correctly fall outside the
   /// window (diff ≥ trackDuration) and count normally.
   ///
-  /// Imports (`source: "import"`) bypass this check — duplicates there
-  /// are already deduped by the unique `(played_at, track_uri, ms_played)`
-  /// index on the plays table.
+  /// Recently-played gap sync (`source: "recent"`) uses a similar but
+  /// cross-source check: if Dial already saw a live/imported play for the
+  /// same track inside the track-duration window, the API row is just repair
+  /// noise and should not double-count.
+  ///
+  /// Imports (`source: "import"`) bypass this check — duplicates there are
+  /// already deduped by the unique `(played_at, track_uri, ms_played)` index
+  /// on the plays table.
   @discardableResult
   func recordPlay(_ play: Play) throws -> Bool {
     try dbq.write { db in
       if play.source == "live",
          try Self.duplicateLivePlayExists(of: play, in: db) {
         petLog.notice("dedup: skipping duplicate live play for \(play.trackUri, privacy: .public) (mid-track restart)")
+        return false
+      }
+      if play.source == RecentPlaysReconciler.source,
+         try Self.duplicateRecentSyncPlayExists(of: play, in: db) {
+        petLog.notice("dedup: skipping duplicate recent-play sync row for \(play.trackUri, privacy: .public)")
         return false
       }
       var p = play
@@ -198,6 +208,28 @@ final class PetEngine {
         LIMIT 1
         """,
       arguments: [play.trackUri, cutoff])
+    return row != nil
+  }
+
+  private static func duplicateRecentSyncPlayExists(of play: Play, in db: Database) throws -> Bool {
+    let durationMs = try Int64.fetchOne(
+      db,
+      sql: "SELECT duration_ms FROM tracks WHERE uri = ?",
+      arguments: [play.trackUri]) ?? 0
+    let thresholdSec: Int64 = durationMs > 0 ? max(30, durationMs / 1000) : 600
+    let lower = play.playedAt - thresholdSec
+    let upper = play.playedAt + thresholdSec
+    let row = try Int.fetchOne(
+      db,
+      sql: """
+        SELECT 1 FROM plays
+        WHERE track_uri = ?
+          AND source != ?
+          AND played_at > ?
+          AND played_at < ?
+        LIMIT 1
+        """,
+      arguments: [play.trackUri, RecentPlaysReconciler.source, lower, upper])
     return row != nil
   }
 }

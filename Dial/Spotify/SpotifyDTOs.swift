@@ -49,3 +49,35 @@ struct CurrentlyPlaying: Decodable {
 struct AudioFeatures: Decodable {
   let tempo: Double      // BPM
 }
+
+struct RecentlyPlayedResponse: Decodable {
+  let items: [RecentlyPlayedItem]
+}
+
+struct RecentlyPlayedItem: Decodable {
+  let track: TrackMeta
+  let played_at: String
+
+  var playedAtMs: Int64? {
+    SpotifyTimestamp.milliseconds(from: played_at)
+  }
+}
+
+enum SpotifyTimestamp {
+  private static let fractional: ISO8601DateFormatter = {
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    return formatter
+  }()
+
+  private static let wholeSecond: ISO8601DateFormatter = {
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime]
+    return formatter
+  }()
+
+  static func milliseconds(from value: String) -> Int64? {
+    let date = fractional.date(from: value) ?? wholeSecond.date(from: value)
+    return date.map { Int64(($0.timeIntervalSince1970 * 1000).rounded()) }
+  }
+}

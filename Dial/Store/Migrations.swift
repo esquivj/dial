@@ -241,6 +241,23 @@ enum Migrations {
       }
       try db.create(index: "artifacts_by_week", on: "artifacts", columns: ["source_week_start"])
     }
+
+    m.registerMigration("v10_recent_play_sync_state") { db in
+      try db.create(table: "recent_play_sync_state") { t in
+        t.column("id", .integer).primaryKey().check { $0 == 1 }
+        t.column("last_played_at_ms", .integer).notNull().defaults(to: 0)
+        t.column("last_synced_at", .integer).notNull()
+      }
+    }
+
+    m.registerMigration("v11_recent_play_sync_health") { db in
+      try db.alter(table: "recent_play_sync_state") { t in
+        t.add(column: "last_response_count", .integer).notNull().defaults(to: 0)
+        t.add(column: "last_response_saturated", .integer).notNull().defaults(to: 0)
+        t.add(column: "consecutive_saturated", .integer).notNull().defaults(to: 0)
+        t.add(column: "last_inserted_count", .integer).notNull().defaults(to: 0)
+      }
+    }
     return m
   }
 }
