@@ -11,9 +11,27 @@ enum ArtworkCacheState: Equatable {
 
 @Observable
 final class ArtworkCache {
+  typealias ImageLoader = @Sendable (URL) async -> NSImage?
+
+  @ObservationIgnored private let maxImages: Int
+  @ObservationIgnored private let maxFailedKeys: Int
+  @ObservationIgnored private let imageLoader: ImageLoader
+  @ObservationIgnored private var imageOrder: [String] = []
+  @ObservationIgnored private var failedOrder: [String] = []
+
   private var images: [String: NSImage] = [:]
   private var tasks: [String: Task<NSImage?, Never>] = [:]
   private var failedKeys: Set<String> = []
+
+  init(
+    maxImages: Int = 128,
+    maxFailedKeys: Int = 128,
+    imageLoader: @escaping ImageLoader = ArtworkCache.defaultImageLoader
+  ) {
+    self.maxImages = max(1, maxImages)
+    self.maxFailedKeys = max(1, maxFailedKeys)
+    self.imageLoader = imageLoader
+  }
 
   @MainActor
   func image(for urlString: String?) -> NSImage? {
@@ -36,6 +54,7 @@ final class ArtworkCache {
     guard let key = normalizedKey(urlString), let url = URL(string: key) else { return nil }
     if let image = images[key] {
       DialPerf.event("artwork.cache_hit")
+      markImageUsed(key)
       return image
     }
     if let task = tasks[key] {
@@ -45,14 +64,10 @@ final class ArtworkCache {
       return image
     }
 
-    failedKeys.remove(key)
-    let task = Task { () -> NSImage? in
-      do {
-        let (data, _) = try await URLSession.shared.data(from: url)
-        return NSImage(data: data)
-      } catch {
-        return nil
-      }
+    clearFailure(key)
+    let imageLoader = imageLoader
+    let task = Task.detached(priority: .utility) { () -> NSImage? in
+      await imageLoader(url)
     }
     tasks[key] = task
 
@@ -61,10 +76,10 @@ final class ArtworkCache {
     perf.end()
     tasks[key] = nil
     if let image {
-      images[key] = image
-      failedKeys.remove(key)
+      cache(image, for: key)
+      clearFailure(key)
     } else {
-      failedKeys.insert(key)
+      markFailed(key)
     }
     return image
   }
@@ -82,5 +97,48 @@ final class ArtworkCache {
       return nil
     }
     return trimmed
+  }
+
+  private static let defaultImageLoader: ImageLoader = { url in
+    do {
+      let (data, _) = try await URLSession.shared.data(from: url)
+      guard !Task.isCancelled else { return nil }
+      return NSImage(data: data)
+    } catch {
+      return nil
+    }
+  }
+
+  @MainActor
+  private func cache(_ image: NSImage, for key: String) {
+    images[key] = image
+    markImageUsed(key)
+    while images.count > maxImages, let oldest = imageOrder.first {
+      imageOrder.removeFirst()
+      images.removeValue(forKey: oldest)
+    }
+  }
+
+  @MainActor
+  private func markImageUsed(_ key: String) {
+    imageOrder.removeAll { $0 == key }
+    imageOrder.append(key)
+  }
+
+  @MainActor
+  private func markFailed(_ key: String) {
+    failedKeys.insert(key)
+    failedOrder.removeAll { $0 == key }
+    failedOrder.append(key)
+    while failedKeys.count > maxFailedKeys, let oldest = failedOrder.first {
+      failedOrder.removeFirst()
+      failedKeys.remove(oldest)
+    }
+  }
+
+  @MainActor
+  private func clearFailure(_ key: String) {
+    failedKeys.remove(key)
+    failedOrder.removeAll { $0 == key }
   }
 }
