@@ -344,43 +344,95 @@ final class AppCoordinator {
     let event = reduction.event
     switch event {
     case let .started(uri, name, artistName, artistUri, artists, albumName, artUrl, durationMs, _):
-      let existingTrack = nowPlaying.track
-      let trackChanged = reduction.trackChanged || existingTrack?.uri != uri
-      let storedTrack = trackChanged ? (try? TracksDAO(dbq: dbq).fetch(uri: uri)) : nil
-      let storedArtists = Self.playbackArtists(from: storedTrack?.artistsJson)
-      if trackChanged {
-        currentTrackCountedAt = nil
-        menubar.setOptimisticProgress(0)
-        clearAmbientTrick()
+      let visibleState = await MainActor.run {
+        (
+          existingTrack: nowPlaying.track,
+          durationMs: menubar.durationMs
+        )
       }
+      let existingTrack = visibleState.existingTrack
+      let trackChanged = reduction.trackChanged || existingTrack?.uri != uri
 
       let canReuseExistingMetadata = !trackChanged
-      let resolvedName = name.isEmpty
-        ? (canReuseExistingMetadata ? (existingTrack?.name ?? "") : (storedTrack?.name ?? ""))
+      let initialResolvedName = name.isEmpty
+        ? (canReuseExistingMetadata ? (existingTrack?.name ?? "") : "")
         : name
-      let resolvedArtistName = artistName.isEmpty
-        ? (canReuseExistingMetadata ? (existingTrack?.artistName ?? "") : (storedArtists.first?.name ?? ""))
+      let initialResolvedArtistName = artistName.isEmpty
+        ? (canReuseExistingMetadata ? (existingTrack?.artistName ?? "") : "")
         : artistName
-      let resolvedArtistUri = artistUri
-        ?? (canReuseExistingMetadata ? existingTrack?.artistUri : storedArtists.first?.uri)
-      let resolvedArtists: [PlaybackArtist] = {
+      let initialResolvedArtistUri = artistUri
+        ?? (canReuseExistingMetadata ? existingTrack?.artistUri : nil)
+      let initialResolvedArtists: [PlaybackArtist] = {
         if !artists.isEmpty { return artists }
-        if !storedArtists.isEmpty { return storedArtists }
-        guard let resolvedArtistUri else { return [] }
-        return [PlaybackArtist(name: resolvedArtistName, uri: resolvedArtistUri)]
+        guard let initialResolvedArtistUri else { return [] }
+        return [PlaybackArtist(name: initialResolvedArtistName, uri: initialResolvedArtistUri)]
       }()
-      let resolvedAlbumName = albumName.isEmpty
-        ? (canReuseExistingMetadata ? (existingTrack?.albumName ?? "") : (storedTrack?.albumName ?? ""))
+      let initialResolvedAlbumName = albumName.isEmpty
+        ? (canReuseExistingMetadata ? (existingTrack?.albumName ?? "") : "")
         : albumName
-      let resolvedArtUrl = artUrl ?? (canReuseExistingMetadata ? existingTrack?.artUrl : storedTrack?.albumArtUrl)
-      let resolvedDurationMs = durationMs > 0
+      let initialResolvedArtUrl = artUrl ?? (canReuseExistingMetadata ? existingTrack?.artUrl : nil)
+      let initialResolvedDurationMs = durationMs > 0
         ? durationMs
-        : (canReuseExistingMetadata ? menubar.durationMs : Int(storedTrack?.durationMs ?? 0))
+        : (canReuseExistingMetadata ? visibleState.durationMs : 0)
 
       // Publish the visible player state before cache warming and metadata
       // persistence. Those side effects matter, but they should not sit in
       // front of the "new track appeared" path.
-      let track = NowPlayingViewModel.Track(
+      let initialTrack = NowPlayingViewModel.Track(
+        uri: uri,
+        name: initialResolvedName,
+        artistName: initialResolvedArtistName,
+        artistUri: initialResolvedArtistUri,
+        artistUris: initialResolvedArtists.map(\.uri).filter { $0.hasPrefix("spotify:artist:") },
+        albumName: initialResolvedAlbumName,
+        artUrl: initialResolvedArtUrl)
+      await MainActor.run {
+        if trackChanged {
+          currentTrackCountedAt = nil
+          menubar.setOptimisticProgress(0)
+          clearAmbientTrick()
+        }
+        nowPlaying.track = initialTrack
+        menubar.track = initialTrack
+        menubar.state = .playing
+        menubar.durationMs = initialResolvedDurationMs
+        if trackChanged || menubar.likedTrackState == .unknown {
+          refreshLikedState(for: uri)
+        }
+        resolvePetBehavior()
+      }
+      endPerf()
+
+      let needsStoredMetadata = trackChanged && (
+        initialResolvedName.isEmpty ||
+        initialResolvedArtistName.isEmpty ||
+        initialResolvedArtistUri == nil ||
+        initialResolvedArtists.isEmpty ||
+        initialResolvedAlbumName.isEmpty ||
+        initialResolvedArtUrl == nil ||
+        initialResolvedDurationMs <= 0
+      )
+      let storedTrack = needsStoredMetadata ? (try? TracksDAO(dbq: dbq).fetch(uri: uri)) : nil
+      let storedArtists = Self.playbackArtists(from: storedTrack?.artistsJson)
+      let resolvedName = initialResolvedName.isEmpty ? (storedTrack?.name ?? "") : initialResolvedName
+      let resolvedArtistName = initialResolvedArtistName.isEmpty
+        ? (storedArtists.first?.name ?? "")
+        : initialResolvedArtistName
+      let resolvedArtistUri = initialResolvedArtistUri ?? storedArtists.first?.uri
+      let resolvedArtists: [PlaybackArtist] = {
+        if !initialResolvedArtists.isEmpty { return initialResolvedArtists }
+        if !storedArtists.isEmpty { return storedArtists }
+        guard let resolvedArtistUri else { return [] }
+        return [PlaybackArtist(name: resolvedArtistName, uri: resolvedArtistUri)]
+      }()
+      let resolvedAlbumName = initialResolvedAlbumName.isEmpty
+        ? (storedTrack?.albumName ?? "")
+        : initialResolvedAlbumName
+      let resolvedArtUrl = initialResolvedArtUrl ?? storedTrack?.albumArtUrl
+      let resolvedDurationMs = initialResolvedDurationMs > 0
+        ? initialResolvedDurationMs
+        : Int(storedTrack?.durationMs ?? 0)
+      let resolvedTrack = NowPlayingViewModel.Track(
         uri: uri,
         name: resolvedName,
         artistName: resolvedArtistName,
@@ -388,15 +440,15 @@ final class AppCoordinator {
         artistUris: resolvedArtists.map(\.uri).filter { $0.hasPrefix("spotify:artist:") },
         albumName: resolvedAlbumName,
         artUrl: resolvedArtUrl)
-      nowPlaying.track = track
-      menubar.track = track
-      menubar.state = .playing
-      menubar.durationMs = resolvedDurationMs
-      if trackChanged || menubar.likedTrackState == .unknown {
-        refreshLikedState(for: uri)
+
+      if resolvedTrack != initialTrack || resolvedDurationMs != initialResolvedDurationMs {
+        await MainActor.run {
+          guard nowPlaying.track?.uri == uri else { return }
+          nowPlaying.track = resolvedTrack
+          menubar.track = resolvedTrack
+          menubar.durationMs = resolvedDurationMs
+        }
       }
-      resolvePetBehavior()
-      endPerf()
 
       await artworkCache.prefetch(resolvedArtUrl)
 
@@ -423,66 +475,85 @@ final class AppCoordinator {
 
       persistLiveArtists(resolvedArtists)
 
-      aggCache.refresh(trackUri: uri, artistUri: resolvedArtistUri, currentPlayAt: nil)
-      updateSoundTheme(
-        for: resolvedArtists.map(\.uri),
-        allowFallback: !trackChanged,
-        trackName: resolvedName,
-        artistName: resolvedArtistName,
-        albumName: resolvedAlbumName)
-      warmCurrentSoundTags(for: resolvedArtists)
-      nowPlaying.playsYTD = aggCache.playsYTD
-      menubar.playsYTD = aggCache.playsYTD
-      updatePetMemoryText()
+      let stillCurrent = await MainActor.run { nowPlaying.track?.uri == uri }
+      guard stillCurrent else { return }
+
+      await MainActor.run {
+        aggCache.refresh(trackUri: uri, artistUri: resolvedArtistUri, currentPlayAt: nil)
+        updateSoundTheme(
+          for: resolvedArtists.map(\.uri),
+          allowFallback: !trackChanged,
+          trackName: resolvedName,
+          artistName: resolvedArtistName,
+          albumName: resolvedAlbumName)
+        warmCurrentSoundTags(for: resolvedArtists)
+        nowPlaying.playsYTD = aggCache.playsYTD
+        menubar.playsYTD = aggCache.playsYTD
+        updatePetMemoryText()
+        resolvePetBehavior()
+      }
       // BPM lookup is best-effort for the beat-sync animation.
       if trackChanged,
          let trackId = uri.split(separator: ":").last,
          await SpotifyRateLimitGate.shared.cooldownRemaining() <= 0,
          let features = try? await client.audioFeatures(trackId: String(trackId)) {
-        pet.currentBPM = features.tempo
+        await MainActor.run {
+          guard nowPlaying.track?.uri == uri else { return }
+          pet.currentBPM = features.tempo
+          resolvePetBehavior()
+        }
       }
-      resolvePetBehavior()
 
     case .paused:
-      menubar.state = .paused
+      await MainActor.run {
+        menubar.state = .paused
+        resolvePetBehavior()
+      }
       endPerf()
-      resolvePetBehavior()
 
     case .resumed:
-      menubar.state = .playing
+      await MainActor.run {
+        menubar.state = .playing
+        resolvePetBehavior()
+      }
       endPerf()
-      resolvePetBehavior()
 
     case .noPlayback:
-      currentTrackCountedAt = nil
-      clearAmbientTrick()
-      nowPlaying.track = nil
-      nowPlaying.playsYTD = 0
-      nowPlaying.soundTheme = .classic
-      nowPlaying.soundThemeDecision = nil
-      menubar.track = nil
-      menubar.state = .nothingPlaying
-      menubar.likedTrackState = .unknown
-      menubar.progressMs = 0
-      menubar.durationMs = 0
-      menubar.lastProgressUpdate = nil
-      menubar.playsYTD = 0
-      pet.currentBPM = nil
-      aggCache.refresh(trackUri: nil, artistUri: nil, currentPlayAt: nil)
+      await MainActor.run {
+        currentTrackCountedAt = nil
+        clearAmbientTrick()
+        nowPlaying.track = nil
+        nowPlaying.playsYTD = 0
+        nowPlaying.soundTheme = .classic
+        nowPlaying.soundThemeDecision = nil
+        menubar.track = nil
+        menubar.state = .nothingPlaying
+        menubar.likedTrackState = .unknown
+        menubar.progressMs = 0
+        menubar.durationMs = 0
+        menubar.lastProgressUpdate = nil
+        menubar.playsYTD = 0
+        pet.currentBPM = nil
+        aggCache.refresh(trackUri: nil, artistUri: nil, currentPlayAt: nil)
+        resolvePetBehavior()
+      }
       endPerf()
-      resolvePetBehavior()
 
     case let .progress(ms):
-      menubar.progressMs = ms
-      menubar.lastProgressUpdate = Date()
+      await MainActor.run {
+        menubar.progressMs = ms
+        menubar.lastProgressUpdate = Date()
+      }
       endPerf()
 
     case let .modesChanged(shuffle, repeatMode):
-      menubar.applyRemoteModes(shuffle: shuffle, repeatMode: repeatMode)
+      await MainActor.run {
+        menubar.applyRemoteModes(shuffle: shuffle, repeatMode: repeatMode)
+      }
       endPerf()
 
     case let .countedPlay(uri, ms, at):
-      let xpBefore = pet.xp
+      let xpBefore = await MainActor.run { pet.xp }
       // Don't swallow this one with `try?`. If the play failed to record
       // (DB locked, XP overflow, FK violation), we should NOT then refresh
       // aggregations against a write that didn't land, sync the pet from
@@ -500,39 +571,43 @@ final class AppCoordinator {
       }
       guard didRecord else {
         coordLog.notice("ignored duplicate live play: \(uri, privacy: .public) (\(ms)ms)")
-        currentTrackCountedAt = nil
-        aggCache.refresh(trackUri: uri, artistUri: nowPlaying.track?.artistUri, currentPlayAt: nil)
-        nowPlaying.playsYTD = aggCache.playsYTD
-        menubar.playsYTD = aggCache.playsYTD
-        updatePetMemoryText()
+        await MainActor.run {
+          currentTrackCountedAt = nil
+          aggCache.refresh(trackUri: uri, artistUri: nowPlaying.track?.artistUri, currentPlayAt: nil)
+          nowPlaying.playsYTD = aggCache.playsYTD
+          menubar.playsYTD = aggCache.playsYTD
+          updatePetMemoryText()
+          resolvePetBehavior()
+        }
         endPerf()
-        resolvePetBehavior()
         return
       }
       coordLog.notice("recorded live play: \(uri, privacy: .public) (\(ms)ms)")
-      currentTrackCountedAt = at
-      aggCache.refresh(trackUri: uri, artistUri: nowPlaying.track?.artistUri, currentPlayAt: at)
-      nowPlaying.playsYTD = aggCache.playsYTD
-      menubar.playsYTD = aggCache.playsYTD
-      pet.syncFromStore(dbq: dbq)
-      let xpDelta = max(0, pet.xp - xpBefore)
-      let trackName = nowPlaying.track?.name ?? "this play"
-      pet.lastFeedingText = xpDelta > 0
-        ? "+\(xpDelta.formatted()) XP · \(trackName)"
-        : "Memory added · \(trackName)"
-      updatePetMemoryText()
+      await MainActor.run {
+        currentTrackCountedAt = at
+        aggCache.refresh(trackUri: uri, artistUri: nowPlaying.track?.artistUri, currentPlayAt: at)
+        nowPlaying.playsYTD = aggCache.playsYTD
+        menubar.playsYTD = aggCache.playsYTD
+        pet.syncFromStore(dbq: dbq)
+        let xpDelta = max(0, pet.xp - xpBefore)
+        let trackName = nowPlaying.track?.name ?? "this play"
+        pet.lastFeedingText = xpDelta > 0
+          ? "+\(xpDelta.formatted()) XP · \(trackName)"
+          : "Memory added · \(trackName)"
+        updatePetMemoryText()
+        pet.isEating = true
+        resolvePetBehavior()
+        scheduleAmbientTrickIfNeeded()
+      }
       refreshWeeklyMemoriesIfNeeded()
       endPerf()
       // A counted play gets a tiny creature pulse, then settles back into the
       // current listening motion. The UI copy stays about memory/XP, not chores.
-      pet.isEating = true
       Task { @MainActor in
         try? await Task.sleep(nanoseconds: 600_000_000)
         pet.isEating = false
         resolvePetBehavior()
       }
-      resolvePetBehavior()
-      scheduleAmbientTrickIfNeeded()
     }
   }
 
