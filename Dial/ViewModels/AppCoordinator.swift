@@ -376,6 +376,28 @@ final class AppCoordinator {
       let resolvedDurationMs = durationMs > 0
         ? durationMs
         : (canReuseExistingMetadata ? menubar.durationMs : Int(storedTrack?.durationMs ?? 0))
+
+      // Publish the visible player state before cache warming and metadata
+      // persistence. Those side effects matter, but they should not sit in
+      // front of the "new track appeared" path.
+      let track = NowPlayingViewModel.Track(
+        uri: uri,
+        name: resolvedName,
+        artistName: resolvedArtistName,
+        artistUri: resolvedArtistUri,
+        artistUris: resolvedArtists.map(\.uri).filter { $0.hasPrefix("spotify:artist:") },
+        albumName: resolvedAlbumName,
+        artUrl: resolvedArtUrl)
+      nowPlaying.track = track
+      menubar.track = track
+      menubar.state = .playing
+      menubar.durationMs = resolvedDurationMs
+      if trackChanged || menubar.likedTrackState == .unknown {
+        refreshLikedState(for: uri)
+      }
+      resolvePetBehavior()
+      endPerf()
+
       await artworkCache.prefetch(resolvedArtUrl)
 
       // Persist track metadata so the SQL joins in `artistRank7d`,
@@ -401,21 +423,6 @@ final class AppCoordinator {
 
       persistLiveArtists(resolvedArtists)
 
-      let track = NowPlayingViewModel.Track(
-        uri: uri,
-        name: resolvedName,
-        artistName: resolvedArtistName,
-        artistUri: resolvedArtistUri,
-        artistUris: resolvedArtists.map(\.uri).filter { $0.hasPrefix("spotify:artist:") },
-        albumName: resolvedAlbumName,
-        artUrl: resolvedArtUrl)
-      nowPlaying.track = track
-      menubar.track = track
-      menubar.state = .playing
-      menubar.durationMs = resolvedDurationMs
-      if trackChanged || menubar.likedTrackState == .unknown {
-        refreshLikedState(for: uri)
-      }
       aggCache.refresh(trackUri: uri, artistUri: resolvedArtistUri, currentPlayAt: nil)
       updateSoundTheme(
         for: resolvedArtists.map(\.uri),
@@ -427,7 +434,6 @@ final class AppCoordinator {
       nowPlaying.playsYTD = aggCache.playsYTD
       menubar.playsYTD = aggCache.playsYTD
       updatePetMemoryText()
-      endPerf()
       // BPM lookup is best-effort for the beat-sync animation.
       if trackChanged,
          let trackId = uri.split(separator: ":").last,
