@@ -26,6 +26,10 @@ final class PetViewModel {
   /// use this flag to play the level-up animation, then it auto-clears.
   func syncFromStore(dbq: DatabaseQueue) {
     guard let s = try? PetStateDAO(dbq: dbq).get() else { return }
+    apply(s)
+  }
+
+  func apply(_ s: PetState) {
     let wasStage = stage
     stage = s.stage
     xp = s.xp

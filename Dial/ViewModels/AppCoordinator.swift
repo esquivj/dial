@@ -42,6 +42,7 @@ final class AppCoordinator {
   private var ambientTrickTask: Task<Void, Never>?
   private var recentRepairTask: Task<Void, Never>?
   private var recentPeriodicTask: Task<Void, Never>?
+  private var countedPlaySideEffectsTask: Task<Void, Never>?
   private var wakeObserver: NSObjectProtocol?
   private var networkMonitor: NWPathMonitor?
   private let networkMonitorQueue = DispatchQueue(label: "com.dial.Dial.recent-play-network-monitor")
@@ -553,60 +554,106 @@ final class AppCoordinator {
       endPerf()
 
     case let .countedPlay(uri, ms, at):
-      let xpBefore = await MainActor.run { pet.xp }
-      // Don't swallow this one with `try?`. If the play failed to record
-      // (DB locked, XP overflow, FK violation), we should NOT then refresh
-      // aggregations against a write that didn't land, sync the pet from
-      // a state that didn't change, and — most misleadingly — fire the
-      // "eating" celebration animation. That'd lie to the user about what
-      // happened. Skip the entire downstream celebration on error.
-      let didRecord: Bool
-      do {
-        didRecord = try engine.recordPlay(
-          .init(playedAt: at, trackUri: uri, msPlayed: ms, source: "live"))
-      } catch {
-        coordLog.error("recordPlay failed for \(uri, privacy: .public): \(String(describing: error), privacy: .public)")
-        endPerf()
-        return
+      let countedContext = await MainActor.run {
+        (
+          xpBefore: pet.xp,
+          artistUri: nowPlaying.track?.artistUri,
+          trackName: nowPlaying.track?.name ?? "this play"
+        )
       }
-      guard didRecord else {
+      endPerf()
+      let previousSideEffects = countedPlaySideEffectsTask
+      let nextSideEffects = Task(priority: .utility) { [weak self] in
+        await previousSideEffects?.value
+        guard !Task.isCancelled else { return }
+        await self?.finishCountedPlay(
+          uri: uri,
+          ms: ms,
+          at: at,
+          xpBefore: countedContext.xpBefore,
+          artistUri: countedContext.artistUri,
+          trackName: countedContext.trackName)
+      }
+      countedPlaySideEffectsTask = nextSideEffects
+    }
+  }
+
+  private func finishCountedPlay(
+    uri: String,
+    ms: Int64,
+    at: Int64,
+    xpBefore: Int64,
+    artistUri: String?,
+    trackName: String
+  ) async {
+    let perf = DialPerf.begin("playback.counted_play_side_effects")
+    defer { perf.end() }
+
+    // Don't swallow this one with `try?`. If the play failed to record
+    // (DB locked, XP overflow, FK violation), we should NOT then refresh
+    // aggregations against a write that didn't land, sync the pet from
+    // a state that didn't change, and — most misleadingly — fire the
+    // "eating" celebration animation. That'd lie to the user about what
+    // happened. Skip the entire downstream celebration on error.
+    let didRecord: Bool
+    do {
+      didRecord = try engine.recordPlay(
+        .init(playedAt: at, trackUri: uri, msPlayed: ms, source: "live"))
+    } catch {
+      coordLog.error("recordPlay failed for \(uri, privacy: .public): \(String(describing: error), privacy: .public)")
+      return
+    }
+
+    let currentPlayAt: Int64? = didRecord ? at : nil
+    let aggregationSnapshot = aggCache.snapshot(
+      trackUri: uri,
+      artistUri: artistUri,
+      currentPlayAt: currentPlayAt)
+    let petState = try? PetStateDAO(dbq: dbq).get()
+
+    await MainActor.run {
+      let stillCurrent = nowPlaying.track?.uri == uri
+      if stillCurrent {
+        currentTrackCountedAt = currentPlayAt
+        aggCache.apply(aggregationSnapshot)
+        nowPlaying.playsYTD = aggCache.playsYTD
+        menubar.playsYTD = aggCache.playsYTD
+      }
+
+      if let petState {
+        pet.apply(petState)
+      }
+
+      if didRecord {
+        coordLog.notice("recorded live play: \(uri, privacy: .public) (\(ms)ms)")
+        if stillCurrent {
+          let xpDelta = max(0, pet.xp - xpBefore)
+          pet.lastFeedingText = xpDelta > 0
+            ? "+\(xpDelta.formatted()) XP · \(trackName)"
+            : "Memory added · \(trackName)"
+          updatePetMemoryText()
+          pet.isEating = true
+          resolvePetBehavior()
+          scheduleAmbientTrickIfNeeded()
+        }
+      } else {
         coordLog.notice("ignored duplicate live play: \(uri, privacy: .public) (\(ms)ms)")
-        await MainActor.run {
-          currentTrackCountedAt = nil
-          aggCache.refresh(trackUri: uri, artistUri: nowPlaying.track?.artistUri, currentPlayAt: nil)
-          nowPlaying.playsYTD = aggCache.playsYTD
-          menubar.playsYTD = aggCache.playsYTD
+        if stillCurrent {
           updatePetMemoryText()
           resolvePetBehavior()
         }
-        endPerf()
-        return
       }
-      coordLog.notice("recorded live play: \(uri, privacy: .public) (\(ms)ms)")
-      await MainActor.run {
-        currentTrackCountedAt = at
-        aggCache.refresh(trackUri: uri, artistUri: nowPlaying.track?.artistUri, currentPlayAt: at)
-        nowPlaying.playsYTD = aggCache.playsYTD
-        menubar.playsYTD = aggCache.playsYTD
-        pet.syncFromStore(dbq: dbq)
-        let xpDelta = max(0, pet.xp - xpBefore)
-        let trackName = nowPlaying.track?.name ?? "this play"
-        pet.lastFeedingText = xpDelta > 0
-          ? "+\(xpDelta.formatted()) XP · \(trackName)"
-          : "Memory added · \(trackName)"
-        updatePetMemoryText()
-        pet.isEating = true
-        resolvePetBehavior()
-        scheduleAmbientTrickIfNeeded()
-      }
+    }
+
+    if didRecord {
       refreshWeeklyMemoriesIfNeeded()
-      endPerf()
       // A counted play gets a tiny creature pulse, then settles back into the
       // current listening motion. The UI copy stays about memory/XP, not chores.
-      Task { @MainActor in
+      Task { @MainActor [weak self] in
         try? await Task.sleep(nanoseconds: 600_000_000)
-        pet.isEating = false
-        resolvePetBehavior()
+        guard let self else { return }
+        self.pet.isEating = false
+        self.resolvePetBehavior()
       }
     }
   }
