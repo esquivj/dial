@@ -172,6 +172,7 @@ struct PixelGridVisualizer: View {
     if let url = URL(
       string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")
     {
+      engine.armActivationRetry()
       NSWorkspace.shared.open(url)
     }
   }

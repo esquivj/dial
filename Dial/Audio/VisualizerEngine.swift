@@ -89,6 +89,7 @@ final class VisualizerEngine: @unchecked Sendable {
   /// reactivates it on return).
   @ObservationIgnored private var activationObserver: NSObjectProtocol?
   @ObservationIgnored private var isStarting = false
+  @ObservationIgnored private var retryStartOnNextActivation = false
 
   init() {
     capture.shouldProcessSamples = { [weak self] in
@@ -114,10 +115,10 @@ final class VisualizerEngine: @unchecked Sendable {
 
     // Auto-retry start when the app becomes active again. Common path: user
     // saw the .denied or .error overlay, tapped → System Settings opened →
-    // granted → came back. We retry from any non-running state (idle/denied/
-    // error) since SCShareableContent is now the source of truth — if the
-    // permission really is granted now, start() will succeed; if not, it'll
-    // re-set to .denied and we're no worse off.
+    // granted → came back. Only retry while a visualizer view is attached,
+    // or after the overlay explicitly arms one retry; otherwise a generic app
+    // activation could eagerly start ScreenCaptureKit before the user has
+    // opened the HUD.
     activationObserver = NotificationCenter.default.addObserver(
       forName: NSApplication.didBecomeActiveNotification,
       object: nil,
@@ -125,7 +126,9 @@ final class VisualizerEngine: @unchecked Sendable {
     ) { [weak self] _ in
       Task { @MainActor [weak self] in
         guard let self else { return }
-        if self.state != .running {
+        let shouldRetry = self.hasVisibleConsumer() || self.retryStartOnNextActivation
+        if self.state != .running, shouldRetry {
+          self.retryStartOnNextActivation = false
           self.state = .idle
           await self.start()
         }
@@ -198,6 +201,11 @@ final class VisualizerEngine: @unchecked Sendable {
     state = .running
   }
   #endif
+
+  @MainActor
+  func armActivationRetry() {
+    retryStartOnNextActivation = true
+  }
 
   @MainActor
   func start() async {
