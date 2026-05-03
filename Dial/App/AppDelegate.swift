@@ -11,6 +11,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
   @Published var coordinator: AppCoordinator?
   private var statusBar: StatusBarController?
   private var dockIcon: DockIconController?
+  private var perfAutomationTask: Task<Void, Never>?
 
   func applicationDidFinishLaunching(_ notification: Notification) {
     Self.registerBundledFonts()
@@ -70,6 +71,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
       } else {
         openSettings()
       }
+      runPerfAutomationIfRequested(coord: coord)
     } catch {
       NSLog("[Dial] bootstrap failed: \(error)")
     }
@@ -347,6 +349,55 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     return env["XCTestConfigurationFilePath"] != nil
       || NSClassFromString("XCTestCase") != nil
       || NSClassFromString("XCTest.XCTestCase") != nil
+  }
+
+  // MARK: - Perf automation
+
+  private struct PerfAutomationRequest {
+    let quitWhenDone: Bool
+  }
+
+  private func perfAutomationRequestFromArgs() -> PerfAutomationRequest? {
+    let args = CommandLine.arguments
+    let env = ProcessInfo.processInfo.environment
+    let requested = args.contains("--perf-automation")
+      || args.contains(where: { $0.hasPrefix("--perf-automation=") })
+      || env["DIAL_PERF_AUTOMATION"] != nil
+    guard requested else { return nil }
+
+    let keepRunning = args.contains("--perf-automation-no-quit")
+      || env["DIAL_PERF_AUTOMATION_NO_QUIT"] == "1"
+    return PerfAutomationRequest(quitWhenDone: !keepRunning)
+  }
+
+  private func runPerfAutomationIfRequested(coord: AppCoordinator) {
+    guard let request = perfAutomationRequestFromArgs(), let statusBar else { return }
+    perfAutomationTask?.cancel()
+    perfAutomationTask = Task { @MainActor [weak statusBar] in
+      guard let statusBar else { return }
+      DialPerf.event("perf_automation.started")
+      try? await Task.sleep(nanoseconds: 800_000_000)
+
+      for screen in [DropdownScreen.hud, .history, .stats, .pet, .hud] {
+        statusBar.showPanelForAutomation(screen: screen)
+        try? await Task.sleep(nanoseconds: 280_000_000)
+        statusBar.hidePanelForAutomation()
+        try? await Task.sleep(nanoseconds: 120_000_000)
+      }
+
+      SettingsWindowPresenter.shared.show(coord: coord)
+      try? await Task.sleep(nanoseconds: 350_000_000)
+      for tab in [SettingsTab.menuBar, .hud, .pet, .general, .hud, .menuBar] {
+        NotificationCenter.default.post(name: .dialSelectSettingsTab, object: tab.rawValue)
+        try? await Task.sleep(nanoseconds: 250_000_000)
+      }
+
+      DialPerf.event("perf_automation.finished")
+      if request.quitWhenDone {
+        try? await Task.sleep(nanoseconds: 350_000_000)
+        NSApp.terminate(nil)
+      }
+    }
   }
 
   // MARK: - Settings

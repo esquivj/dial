@@ -252,6 +252,14 @@ final class StatusBarController {
     stopDismissMonitors()
   }
 
+  func showPanelForAutomation(screen: DropdownScreen = .hud) {
+    showPanel(screen: screen)
+  }
+
+  func hidePanelForAutomation() {
+    hidePanel()
+  }
+
   // MARK: - Dismiss monitors
 
   private func startDismissMonitors() {

@@ -1,5 +1,9 @@
 import SwiftUI
 
+extension Notification.Name {
+  static let dialSelectSettingsTab = Notification.Name("DialSelectSettingsTab")
+}
+
 /// Hosted by the SwiftUI `Settings` scene in `DialApp`.
 /// Settings should feel like a control panel: fast, stable, and low-drama.
 struct SettingsView: View {
@@ -61,6 +65,13 @@ struct SettingsView: View {
     .onDisappear {
       finishPendingTabSwitch()
     }
+    .onReceive(NotificationCenter.default.publisher(for: .dialSelectSettingsTab)) { notification in
+      guard
+        let rawValue = notification.object as? String,
+        let tab = SettingsTab(rawValue: rawValue)
+      else { return }
+      selectTab(tab)
+    }
   }
 
   @ViewBuilder
@@ -92,6 +103,12 @@ struct SettingsView: View {
     finishPendingTabSwitch()
     pendingTabSwitch = tab
     tabSwitchPerf = DialPerf.begin("settings.tab_switch")
+  }
+
+  private func selectTab(_ tab: SettingsTab) {
+    guard selectedTab != tab else { return }
+    beginTabSwitch(to: tab)
+    selectedTab = tab
   }
 
   private func finishTabSwitch(for tab: SettingsTab) {
