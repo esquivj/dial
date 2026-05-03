@@ -38,7 +38,7 @@ struct PetViewSnapshot {
       acc[summary.category] = summary.count
     }
     let weeklyLog = livingMemoriesEnabled
-      ? ((try? WeeklyMemoriesDAO(dbq: dbq).ensureRecentWeeks(limit: 12)) ?? [])
+      ? ((try? WeeklyMemoriesDAO(dbq: dbq).recent(limit: 12)) ?? [])
       : []
     let liveWeeklyMemory = livingMemoriesEnabled
       ? (weeklyLog.first.map(StatsQueries.WeeklyMemorySnapshot.init(record:)) ?? (try? queries.weeklyMemory()))
@@ -48,7 +48,7 @@ struct PetViewSnapshot {
       todayListeningMs: (try? queries.totals(since: startOfToday).listeningMs) ?? 0,
       recentBadgeCounts: badgeCounts,
       unlockedTricks: (try? PetTrickUnlocksDAO(dbq: dbq).all()) ?? [],
-      artifacts: (try? ArtifactsDAO(dbq: dbq).syncFromMemoriesAndTricks()) ?? [],
+      artifacts: (try? ArtifactsDAO(dbq: dbq).all()) ?? [],
       weeklyMemory: liveWeeklyMemory,
       weeklyMemoryLog: weeklyLog,
       petState: try? PetStateDAO(dbq: dbq).get())

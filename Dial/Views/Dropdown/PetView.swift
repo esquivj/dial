@@ -721,7 +721,11 @@ struct PetView: View {
     case .teachTrick(let trick):
       let didUnlock = (try? PetTrickUnlocksDAO(dbq: dbq)
         .unlock(trick, sourceBadge: aggCache.currentBadgeInsight?.kind)) ?? false
-      reload()
+      if didUnlock {
+        syncArtifactsThenReload()
+      } else {
+        reload()
+      }
       reaction = (
         didUnlock ? "\(trick.label) unlocked." : "\(trick.label) already unlocked.",
         behavior(for: trick)
@@ -753,6 +757,16 @@ struct PetView: View {
       actionFeedback = nil
       interactionBehavior = nil
       feedbackTask = nil
+    }
+  }
+
+  private func syncArtifactsThenReload() {
+    let dbq = dbq
+    Task {
+      _ = try? ArtifactsDAO(dbq: dbq).syncFromMemoriesAndTricks()
+      await MainActor.run {
+        reload()
+      }
     }
   }
 

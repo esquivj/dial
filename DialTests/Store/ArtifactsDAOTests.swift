@@ -47,4 +47,20 @@ final class ArtifactsDAOTests: XCTestCase {
     XCTAssertEqual(artifacts.map(\.kind), [.beatBounceCharm])
     XCTAssertEqual(artifacts.first?.source, .trick)
   }
+
+  func test_petSnapshotLoadDoesNotSyncArtifactsOnRead() async throws {
+    let dbq = try InMemoryDatabase.make()
+    XCTAssertTrue(try PetTrickUnlocksDAO(dbq: dbq, now: { 1_700_000_000 }).unlock(.beatBounce))
+    XCTAssertTrue(try ArtifactsDAO(dbq: dbq).all().isEmpty)
+
+    let snapshot = await PetViewSnapshot.load(
+      dbq: dbq,
+      startOfToday: 0,
+      livingMemoriesEnabled: true)
+
+    XCTAssertEqual(snapshot.unlockedTricks.map(\.trick), [.beatBounce])
+    XCTAssertTrue(snapshot.artifacts.isEmpty)
+    XCTAssertTrue(try ArtifactsDAO(dbq: dbq).all().isEmpty)
+    XCTAssertTrue(try WeeklyMemoriesDAO(dbq: dbq).recent().isEmpty)
+  }
 }
