@@ -139,11 +139,17 @@ final class AudioCaptureEngine: NSObject, SCStreamOutput, SCStreamDelegate, @unc
     else { return nil }
     let frameCount = CMSampleBufferGetNumSamples(sampleBuffer)
     guard frameCount > 0 else { return nil }
+    let channels = max(1, Int(asbd.mChannelsPerFrame))
+    let flags = asbd.mFormatFlags
+    let isFloatPCM = asbd.mFormatID == kAudioFormatLinearPCM
+      && (flags & kAudioFormatFlagIsFloat) != 0
+    let isUsableLayout = channels == 1
+      || (flags & kAudioFormatFlagIsNonInterleaved) != 0
+    guard isFloatPCM, isUsableLayout else { return nil }
 
     // AudioBufferList is a flexible struct — a stereo non-interleaved frame
     // wants two AudioBuffer entries past the nominal one. Allocate raw
     // storage of the right size and bind once.
-    let channels = max(1, Int(asbd.mChannelsPerFrame))
     let listSize =
       MemoryLayout<AudioBufferList>.size + max(0, channels - 1) * MemoryLayout<AudioBuffer>.size
     let raw = UnsafeMutableRawPointer.allocate(
@@ -165,8 +171,12 @@ final class AudioCaptureEngine: NSObject, SCStreamOutput, SCStreamDelegate, @unc
     guard status == noErr else { return nil }
 
     let buffers = UnsafeMutableAudioBufferListPointer(listPtr)
-    guard let leftBuf = buffers.first?.mData else { return nil }
-    let floatPtr = leftBuf.bindMemory(to: Float.self, capacity: frameCount)
-    return Array(UnsafeBufferPointer(start: floatPtr, count: frameCount))
+    guard let leftBuffer = buffers.first, let leftData = leftBuffer.mData else { return nil }
+    let sampleCount = min(
+      frameCount,
+      Int(leftBuffer.mDataByteSize) / MemoryLayout<Float>.stride)
+    guard sampleCount > 0 else { return nil }
+    let floatPtr = leftData.bindMemory(to: Float.self, capacity: sampleCount)
+    return Array(UnsafeBufferPointer(start: floatPtr, count: sampleCount))
   }
 }
