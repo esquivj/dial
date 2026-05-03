@@ -14,12 +14,31 @@ struct HistoryView: View {
   let dbq: DatabaseQueue
   @Bindable var artworkCache: ArtworkCache
   let onBack: () -> Void
+  let onSnapshot: (HistoryViewSnapshot) -> Void
   var placement: HistoryViewPlacement = .legacyPanel
   @State private var rows: [StatsQueries.HistoryRow] = []
   @State private var totalPlays: Int = 0
   @State private var loaded = false
   @State private var reloadLoader = CoalescedSnapshotLoader<HistoryViewSnapshot>("history.snapshot.load")
   @Environment(\.dialTheme) private var theme
+
+  init(
+    dbq: DatabaseQueue,
+    artworkCache: ArtworkCache,
+    initialSnapshot: HistoryViewSnapshot? = nil,
+    onBack: @escaping () -> Void,
+    onSnapshot: @escaping (HistoryViewSnapshot) -> Void = { _ in },
+    placement: HistoryViewPlacement = .legacyPanel
+  ) {
+    self.dbq = dbq
+    self.artworkCache = artworkCache
+    self.onBack = onBack
+    self.onSnapshot = onSnapshot
+    self.placement = placement
+    _rows = State(initialValue: initialSnapshot?.rows ?? [])
+    _totalPlays = State(initialValue: initialSnapshot?.totalPlays ?? 0)
+    _loaded = State(initialValue: initialSnapshot != nil)
+  }
 
   var body: some View {
     Group {
@@ -190,11 +209,12 @@ struct HistoryView: View {
       rows = snapshot.rows
       self.totalPlays = snapshot.totalPlays
       loaded = true
+      onSnapshot(snapshot)
     }
   }
 }
 
-private struct HistoryViewSnapshot {
+struct HistoryViewSnapshot {
   let rows: [StatsQueries.HistoryRow]
   let totalPlays: Int
 

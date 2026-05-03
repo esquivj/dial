@@ -23,6 +23,7 @@ struct PetView: View {
   let dbq: DatabaseQueue
   let livingMemoriesEnabled: Bool
   let onBack: () -> Void
+  let onSnapshot: (PetViewSnapshot) -> Void
   var placement: PetViewPlacement = .legacyPanel
 
   @State private var todayListeningMs: Int64 = 0
@@ -53,6 +54,8 @@ struct PetView: View {
     initialWeeklyMemory: StatsQueries.WeeklyMemorySnapshot? = nil,
     initialWeeklyMemoryLog: [WeeklyMemoryRecord] = [],
     initialPetState: PetState? = nil,
+    initialSnapshot: PetViewSnapshot? = nil,
+    onSnapshot: @escaping (PetViewSnapshot) -> Void = { _ in },
     placement: PetViewPlacement = .legacyPanel,
     onBack: @escaping () -> Void
   ) {
@@ -62,14 +65,15 @@ struct PetView: View {
     self.dbq = dbq
     self.livingMemoriesEnabled = livingMemoriesEnabled
     self.onBack = onBack
+    self.onSnapshot = onSnapshot
     self.placement = placement
-    _todayListeningMs = State(initialValue: initialTodayListeningMs)
-    _recentBadgeCounts = State(initialValue: initialBadgeCounts)
-    _unlockedTricks = State(initialValue: initialUnlockedTricks)
-    _artifacts = State(initialValue: initialArtifacts)
-    _weeklyMemory = State(initialValue: initialWeeklyMemory)
-    _weeklyMemoryLog = State(initialValue: initialWeeklyMemoryLog)
-    _petState = State(initialValue: initialPetState)
+    _todayListeningMs = State(initialValue: initialSnapshot?.todayListeningMs ?? initialTodayListeningMs)
+    _recentBadgeCounts = State(initialValue: initialSnapshot?.recentBadgeCounts ?? initialBadgeCounts)
+    _unlockedTricks = State(initialValue: initialSnapshot?.unlockedTricks ?? initialUnlockedTricks)
+    _artifacts = State(initialValue: initialSnapshot?.artifacts ?? initialArtifacts)
+    _weeklyMemory = State(initialValue: initialSnapshot?.weeklyMemory ?? initialWeeklyMemory)
+    _weeklyMemoryLog = State(initialValue: initialSnapshot?.weeklyMemoryLog ?? initialWeeklyMemoryLog)
+    _petState = State(initialValue: initialSnapshot?.petState ?? initialPetState)
   }
 
   var body: some View {
@@ -606,6 +610,7 @@ struct PetView: View {
     artifacts = snapshot.artifacts
     weeklyMemory = snapshot.weeklyMemory
     weeklyMemoryLog = snapshot.weeklyMemoryLog
+    onSnapshot(snapshot)
   }
 
   // MARK: - Computed

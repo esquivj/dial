@@ -55,6 +55,16 @@ final class AppCoordinator {
   var backgroundEnrichmentLastError: String? { backgroundEnrichment.lastError }
   var backgroundEnrichmentUpdatedAt: Date? { backgroundEnrichment.updatedAt }
   var backgroundEnrichmentLabel: String { backgroundEnrichment.label }
+  var cachedHistorySnapshot: HistoryViewSnapshot?
+  var cachedStatsSnapshotYTD: StatsViewSnapshot?
+  var cachedPetSnapshot: PetViewSnapshot?
+
+  @MainActor
+  func invalidateDropdownSnapshots() {
+    cachedHistorySnapshot = nil
+    cachedStatsSnapshotYTD = nil
+    cachedPetSnapshot = nil
+  }
 
   /// Timestamp of the last poll cycle that successfully returned events
   /// (any non-error response from the Spotify API). Surfaced in the
@@ -210,6 +220,7 @@ final class AppCoordinator {
       guard result.inserted > 0 else { return .success(result) }
 
       await MainActor.run {
+        invalidateDropdownSnapshots()
         pet.syncFromStore(dbq: dbq)
         aggCache.refresh(
           trackUri: nowPlaying.track?.uri,
@@ -264,6 +275,9 @@ final class AppCoordinator {
     guard !key.isEmpty else { return }
     let tagger = TagEnricher(dbq: dbq, lastFM: LastFMClient(apiKey: key))
     try await tagger.enrichMissingArtists(rateLimitPerSec: 1, limit: limit)
+    await MainActor.run {
+      invalidateDropdownSnapshots()
+    }
     refreshCurrentSoundTheme(allowFallback: false)
   }
 
@@ -307,6 +321,7 @@ final class AppCoordinator {
 
     let last = (try? ImportsLogDAO(dbq: dbq).last()) ?? nil
     await MainActor.run {
+      invalidateDropdownSnapshots()
       settings.lastImport = last
       settings.importProgress = 0
       pet.syncFromStore(dbq: dbq)
@@ -613,6 +628,10 @@ final class AppCoordinator {
 
     await MainActor.run {
       let stillCurrent = nowPlaying.track?.uri == uri
+      if didRecord {
+        invalidateDropdownSnapshots()
+      }
+
       if stillCurrent {
         currentTrackCountedAt = currentPlayAt
         aggCache.apply(aggregationSnapshot)

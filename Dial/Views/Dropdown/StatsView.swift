@@ -13,6 +13,7 @@ struct StatsView: View {
   let dbq: DatabaseQueue
   @Bindable var artworkCache: ArtworkCache
   let onBack: () -> Void
+  let onSnapshot: (StatsViewSnapshot) -> Void
   var placement: StatsViewPlacement = .legacyPanel
   @State private var totals = StatsQueries.Totals(plays: 0, listeningMs: 0, uniqueTracks: 0, uniqueArtists: 0)
   @State private var topTracks: [StatsQueries.TopRow] = []
@@ -25,6 +26,32 @@ struct StatsView: View {
   @State private var reloadLoader = CoalescedSnapshotLoader<StatsViewSnapshot>("stats.snapshot.load")
   @Environment(\.dialTheme) private var theme
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+  init(
+    dbq: DatabaseQueue,
+    artworkCache: ArtworkCache,
+    initialSnapshot: StatsViewSnapshot? = nil,
+    onBack: @escaping () -> Void,
+    onSnapshot: @escaping (StatsViewSnapshot) -> Void = { _ in },
+    placement: StatsViewPlacement = .legacyPanel
+  ) {
+    self.dbq = dbq
+    self.artworkCache = artworkCache
+    self.onBack = onBack
+    self.onSnapshot = onSnapshot
+    self.placement = placement
+    _totals = State(initialValue: initialSnapshot?.totals ?? StatsQueries.Totals(
+      plays: 0,
+      listeningMs: 0,
+      uniqueTracks: 0,
+      uniqueArtists: 0))
+    _topTracks = State(initialValue: initialSnapshot?.topTracks ?? [])
+    _topArtists = State(initialValue: initialSnapshot?.topArtists ?? [])
+    _topGenres = State(initialValue: initialSnapshot?.topGenres ?? [])
+    _rhythmBuckets = State(initialValue: initialSnapshot?.rhythmBuckets ?? [])
+    _badgeSummaries = State(initialValue: initialSnapshot?.badgeSummaries ?? [])
+    _recentBadges = State(initialValue: initialSnapshot?.recentBadges ?? [])
+  }
 
   var body: some View {
     Group {
@@ -506,11 +533,11 @@ struct StatsView: View {
     reloadLoader.schedule {
       await StatsViewSnapshot.load(dbq: dbq, range: range)
     } apply: { snapshot in
-      apply(snapshot)
+      apply(snapshot, range: range)
     }
   }
 
-  private func apply(_ snapshot: StatsViewSnapshot) {
+  private func apply(_ snapshot: StatsViewSnapshot, range: StatsRange) {
     totals = snapshot.totals
     topTracks = snapshot.topTracks
     topArtists = snapshot.topArtists
@@ -518,6 +545,9 @@ struct StatsView: View {
     rhythmBuckets = snapshot.rhythmBuckets
     badgeSummaries = snapshot.badgeSummaries
     recentBadges = snapshot.recentBadges
+    if range == .ytd {
+      onSnapshot(snapshot)
+    }
   }
 }
 

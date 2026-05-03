@@ -12,6 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
   private var statusBar: StatusBarController?
   private var dockIcon: DockIconController?
   private var perfAutomationTask: Task<Void, Never>?
+  private static let perfAutomationFlagURL = URL(fileURLWithPath: "/tmp/dial-perf-automation")
 
   func applicationDidFinishLaunching(_ notification: Notification) {
     Self.registerBundledFonts()
@@ -360,14 +361,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
   private func perfAutomationRequestFromArgs() -> PerfAutomationRequest? {
     let args = CommandLine.arguments
     let env = ProcessInfo.processInfo.environment
+    let fileRequested = Self.consumePerfAutomationFlag()
     let requested = args.contains("--perf-automation")
       || args.contains(where: { $0.hasPrefix("--perf-automation=") })
       || env["DIAL_PERF_AUTOMATION"] != nil
+      || fileRequested
     guard requested else { return nil }
 
     let keepRunning = args.contains("--perf-automation-no-quit")
       || env["DIAL_PERF_AUTOMATION_NO_QUIT"] == "1"
     return PerfAutomationRequest(quitWhenDone: !keepRunning)
+  }
+
+  private static func consumePerfAutomationFlag() -> Bool {
+    let url = perfAutomationFlagURL
+    guard FileManager.default.fileExists(atPath: url.path) else { return false }
+    try? FileManager.default.removeItem(at: url)
+    return true
   }
 
   private func runPerfAutomationIfRequested(coord: AppCoordinator) {

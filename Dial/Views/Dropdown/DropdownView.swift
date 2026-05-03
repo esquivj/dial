@@ -207,7 +207,9 @@ struct DropdownView: View {
     HistoryView(
       dbq: coord.dbq,
       artworkCache: coord.artworkCache,
+      initialSnapshot: coord.cachedHistorySnapshot,
       onBack: { withAnimation(screenTransitionAnimation) { coord.dropdownScreen = .hud } },
+      onSnapshot: { coord.cachedHistorySnapshot = $0 },
       placement: .hardwareShell
     )
     .transition(.move(edge: .trailing).combined(with: .opacity))
@@ -217,7 +219,9 @@ struct DropdownView: View {
     StatsView(
       dbq: coord.dbq,
       artworkCache: coord.artworkCache,
+      initialSnapshot: coord.cachedStatsSnapshotYTD,
       onBack: { withAnimation(screenTransitionAnimation) { coord.dropdownScreen = .hud } },
+      onSnapshot: { coord.cachedStatsSnapshotYTD = $0 },
       placement: .hardwareShell
     )
     .transition(.move(edge: .trailing).combined(with: .opacity))
@@ -230,6 +234,8 @@ struct DropdownView: View {
       menubar: coord.menubar,
       dbq: coord.dbq,
       livingMemoriesEnabled: coord.settings.livingMemoriesEnabled,
+      initialSnapshot: coord.cachedPetSnapshot,
+      onSnapshot: { coord.cachedPetSnapshot = $0 },
       placement: .hardwareShell,
       onBack: { withAnimation(screenTransitionAnimation) { coord.dropdownScreen = .hud } }
     )
@@ -357,13 +363,17 @@ struct DropdownView: View {
         HistoryView(
           dbq: coord.dbq,
           artworkCache: coord.artworkCache,
-          onBack: { withAnimation(screenTransitionAnimation) { coord.dropdownScreen = .hud } })
+          initialSnapshot: coord.cachedHistorySnapshot,
+          onBack: { withAnimation(screenTransitionAnimation) { coord.dropdownScreen = .hud } },
+          onSnapshot: { coord.cachedHistorySnapshot = $0 })
           .transition(.move(edge: .trailing).combined(with: .opacity))
       case .stats:
         StatsView(
           dbq: coord.dbq,
           artworkCache: coord.artworkCache,
-          onBack: { withAnimation(screenTransitionAnimation) { coord.dropdownScreen = .hud } })
+          initialSnapshot: coord.cachedStatsSnapshotYTD,
+          onBack: { withAnimation(screenTransitionAnimation) { coord.dropdownScreen = .hud } },
+          onSnapshot: { coord.cachedStatsSnapshotYTD = $0 })
           .transition(.move(edge: .trailing).combined(with: .opacity))
       case .pet:
         PetView(
@@ -372,6 +382,8 @@ struct DropdownView: View {
           menubar: coord.menubar,
           dbq: coord.dbq,
           livingMemoriesEnabled: coord.settings.livingMemoriesEnabled,
+          initialSnapshot: coord.cachedPetSnapshot,
+          onSnapshot: { coord.cachedPetSnapshot = $0 },
           onBack: { withAnimation(screenTransitionAnimation) { coord.dropdownScreen = .hud } }
         )
         .transition(.move(edge: .trailing).combined(with: .opacity))
