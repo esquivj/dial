@@ -464,54 +464,39 @@ struct StatsQueries {
       }
       arguments.append(Int64(limit))
       return try Row.fetchAll(db, sql: """
-        WITH artist_plays AS (
+        WITH normalized AS (
           SELECT
             NULLIF(TRIM(json_extract(t.artists_json, '$[0].uri')), '') AS artist_uri,
             NULLIF(TRIM(json_extract(t.artists_json, '$[0].name')), '') AS artist_name,
+            COALESCE(
+              NULLIF(LOWER(TRIM(json_extract(t.artists_json, '$[0].name'))), ''),
+              NULLIF(LOWER(TRIM(json_extract(t.artists_json, '$[0].uri'))), ''),
+              'unknown'
+            ) AS artist_key,
             p.played_at
           FROM plays p
           JOIN tracks t ON t.uri = p.track_uri
           WHERE t.artists_json IS NOT NULL
             AND json_valid(t.artists_json) = 1
             \(rangeFilters.joined(separator: "\n            "))
-        ),
-        normalized AS (
-          SELECT
-            artist_uri,
-            COALESCE(artist_name, artist_uri, 'Unknown') AS display_name,
-            COALESCE(
-              NULLIF(LOWER(TRIM(artist_name)), ''),
-              NULLIF(LOWER(TRIM(artist_uri)), ''),
-              'unknown'
-            ) AS artist_key,
-            played_at
-          FROM artist_plays
-          WHERE artist_name IS NOT NULL OR artist_uri IS NOT NULL
-        ),
-        canonical AS (
-          SELECT
-            artist_key,
-            COALESCE(
-              MIN(CASE WHEN artist_uri LIKE 'spotify:artist:%' THEN artist_uri END),
-              MIN(NULLIF(artist_uri, '')),
-              'artist-name:' || artist_key
-            ) AS canonical_uri,
-            COALESCE(
-              MIN(CASE WHEN artist_uri LIKE 'spotify:artist:%' THEN display_name END),
-              MIN(display_name),
-              'Unknown'
-            ) AS canonical_name
-          FROM normalized
-          GROUP BY artist_key
         )
         SELECT
-          canon.canonical_uri AS artist_uri,
-          canon.canonical_name AS name,
+          COALESCE(
+            MIN(CASE WHEN artist_uri LIKE 'spotify:artist:%' THEN artist_uri END),
+            MIN(NULLIF(artist_uri, '')),
+            'artist-name:' || artist_key
+          ) AS artist_uri,
+          COALESCE(
+            MIN(CASE WHEN artist_uri LIKE 'spotify:artist:%' THEN artist_name END),
+            MIN(artist_name),
+            MIN(NULLIF(artist_uri, '')),
+            'Unknown'
+          ) AS name,
           COUNT(*) AS play_count
-        FROM normalized n
-        JOIN canonical canon ON canon.artist_key = n.artist_key
-        GROUP BY n.artist_key, canon.canonical_uri, canon.canonical_name
-        ORDER BY play_count DESC, MAX(n.played_at) DESC, canon.canonical_name ASC
+        FROM normalized
+        WHERE artist_name IS NOT NULL OR artist_uri IS NOT NULL
+        GROUP BY artist_key
+        ORDER BY play_count DESC, MAX(played_at) DESC, name ASC
         LIMIT ?
       """, arguments: StatementArguments(arguments)).map { row in
         TopRow(uri: row["artist_uri"] ?? "", name: row["name"] ?? "Unknown", count: row["play_count"],
