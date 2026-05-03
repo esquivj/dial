@@ -13,10 +13,14 @@ struct SettingsView: View {
   @State private var showAdvancedMenuBarControls = false
   @State private var showAdvancedHUDControls = false
   @State private var showAdvancedPetControls = false
+  @State private var pendingTabSwitch: SettingsTab?
+  @State private var tabSwitchPerf: DialPerfInterval?
 
   var body: some View {
     HStack(spacing: 0) {
-      SettingsSidebar(selection: $selectedTab)
+      SettingsSidebar(selection: $selectedTab) { tab in
+        beginTabSwitch(to: tab)
+      }
 
       Rectangle()
         .fill(SettingsPalette.rule)
@@ -28,8 +32,13 @@ struct SettingsView: View {
             .frame(height: 0)
             .id(SettingsLayout.scrollTopID)
 
-          LazyVStack(alignment: .leading, spacing: SettingsLayout.sectionGap) {
+          VStack(alignment: .leading, spacing: SettingsLayout.sectionGap) {
             currentTab
+              .background {
+                SettingsTabSwitchProbe(tab: selectedTab) { tab in
+                  finishTabSwitch(for: tab)
+                }
+              }
           }
           .padding(EdgeInsets(
             top: SettingsLayout.contentTop,
@@ -49,6 +58,9 @@ struct SettingsView: View {
     .tint(SettingsPalette.accent)
     .background(SettingsPalette.canvas)
     .frame(width: SettingsLayout.windowWidth, height: SettingsLayout.windowHeight)
+    .onDisappear {
+      finishPendingTabSwitch()
+    }
   }
 
   @ViewBuilder
@@ -74,5 +86,38 @@ struct SettingsView: View {
         vm: vm,
         showAdvancedControls: $showAdvancedPetControls)
     }
+  }
+
+  private func beginTabSwitch(to tab: SettingsTab) {
+    finishPendingTabSwitch()
+    pendingTabSwitch = tab
+    tabSwitchPerf = DialPerf.begin("settings.tab_switch")
+  }
+
+  private func finishTabSwitch(for tab: SettingsTab) {
+    guard pendingTabSwitch == tab else { return }
+    finishPendingTabSwitch()
+  }
+
+  private func finishPendingTabSwitch() {
+    tabSwitchPerf?.end()
+    tabSwitchPerf = nil
+    pendingTabSwitch = nil
+  }
+}
+
+private struct SettingsTabSwitchProbe: View {
+  let tab: SettingsTab
+  let onReady: (SettingsTab) -> Void
+
+  var body: some View {
+    Color.clear
+      .frame(width: 0, height: 0)
+      .task(id: tab) {
+        await Task.yield()
+        await MainActor.run {
+          onReady(tab)
+        }
+      }
   }
 }

@@ -75,6 +75,12 @@ enum SettingsType {
 
 struct SettingsSidebar: View {
   @Binding var selection: SettingsTab
+  let onSelect: (SettingsTab) -> Void
+
+  init(selection: Binding<SettingsTab>, onSelect: @escaping (SettingsTab) -> Void = { _ in }) {
+    self._selection = selection
+    self.onSelect = onSelect
+  }
 
   var body: some View {
     VStack(alignment: .leading, spacing: 18) {
@@ -89,11 +95,8 @@ struct SettingsSidebar: View {
         ForEach(SettingsTab.allCases) { tab in
           Button {
             if selection != tab {
-              let perf = DialPerf.begin("settings.tab_switch")
+              onSelect(tab)
               selection = tab
-              DispatchQueue.main.async {
-                perf.end()
-              }
             }
           } label: {
             HStack(spacing: 9) {
