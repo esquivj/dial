@@ -281,6 +281,37 @@ final class StatsQueriesTests: XCTestCase {
     XCTAssertEqual(theme, .aqua)
   }
 
+  func test_soundTheme_treatsTheBraveryStyleTagsAsAqua() throws {
+    let dbq = try InMemoryDatabase.make()
+    try dbq.write { db in
+      try db.execute(sql: """
+        INSERT INTO normalized_tags (entity_uri, entity_type, provider, family, raw_tag, score, updated_at)
+        VALUES
+          ('spotify:artist:bravery', 'artist', 'lastfm', 'indie', 'indie rock', 100, 10),
+          ('spotify:artist:bravery', 'artist', 'lastfm', 'indie', 'indie', 99, 10),
+          ('spotify:artist:bravery', 'artist', 'lastfm', 'rock', 'rock', 45, 10),
+          ('spotify:artist:bravery', 'artist', 'lastfm', 'indie', 'alternative rock', 19, 10),
+          ('spotify:artist:bravery', 'artist', 'lastfm', 'electronic', 'electronic', 4, 10),
+          ('spotify:artist:bravery', 'artist', 'lastfm', 'punk/emo', 'post-punk revival', 1, 10)
+      """)
+    }
+
+    let theme = try StatsQueries(dbq: dbq).soundTheme(forArtistUri: "spotify:artist:bravery")
+
+    XCTAssertEqual(theme, .aqua)
+  }
+
+  func test_tagNormalizerKeepsGarageRockAndDancePunkOutOfElectronicFamily() {
+    XCTAssertEqual(DialTagNormalizer.normalize("garage rock")?.family, "rock")
+    XCTAssertEqual(DialTagNormalizer.normalize("garage rock revival")?.family, "rock")
+    XCTAssertEqual(DialTagNormalizer.normalize("dance-punk")?.family, "punk/emo")
+    XCTAssertEqual(DialTagNormalizer.normalize("dance rock")?.family, "rock")
+    XCTAssertEqual(DialTagNormalizer.normalize("uk garage")?.family, "electronic")
+    XCTAssertEqual(DialTagNormalizer.normalize("post brexit new wave")?.family, "rock")
+    XCTAssertEqual(DialTagNormalizer.normalize("new wave of british heavy metal")?.family, "metal")
+    XCTAssertNil(DialTagNormalizer.normalize("post"))
+  }
+
   func test_soundTheme_defaultsLatinSpanishFamiliesToSmokeGel() throws {
     let dbq = try InMemoryDatabase.make()
     try dbq.write { db in
@@ -618,6 +649,15 @@ final class StatsQueriesTests: XCTestCase {
     XCTAssertEqual(theme, .slime)
   }
 
+  func test_soundThemeHintDoesNotTreatGarageRockAsElectronic() throws {
+    let theme = StatsQueries.soundThemeHint(
+      trackName: "Garage Rock Revival",
+      artistName: "The Bravery",
+      albumName: "Indie Rock Classics")
+
+    XCTAssertNil(theme)
+  }
+
   func test_soundThemeHintDefaultsLatinMetadataToSmokeGel() throws {
     let theme = StatsQueries.soundThemeHint(
       trackName: "NO TENGA$ MIEDO",
@@ -687,6 +727,11 @@ final class StatsQueriesTests: XCTestCase {
     XCTAssertEqual(memory.theme, .slime)
     XCTAssertEqual(memory.playCount, 10)
     XCTAssertEqual(memory.newArtists, 0)
+
+    try WeeklyMemoriesDAO(dbq: dbq, now: { now }).upsert(memory, now: now)
+    let artifacts = try ArtifactsDAO(dbq: dbq).syncFromMemoriesAndTricks()
+    let signalCube = try XCTUnwrap(artifacts.first { $0.kind == .signalCube })
+    XCTAssertEqual(signalCube.detail, "Signal Cube · Pulsebound · electronic")
   }
 
   func test_weeklyMemoryDoesNotUseStaticRoomArchitectureAsFeaturedObject() throws {
@@ -947,6 +992,60 @@ final class StatsQueriesTests: XCTestCase {
     XCTAssertEqual(progress.tagArtistTotal, 2)
     XCTAssertEqual(progress.tagArtistChecked, 1)
     XCTAssertEqual(progress.tagArtistTagged, 1)
+  }
+
+  func test_recentPlaySyncHealthSurfacesCatchUpState() throws {
+    let dbq = try InMemoryDatabase.make()
+    try dbq.write { db in
+      try db.execute(sql: """
+        INSERT INTO recent_play_sync_state (
+          id,
+          last_played_at_ms,
+          last_synced_at,
+          last_response_count,
+          last_response_saturated,
+          consecutive_saturated,
+          last_inserted_count
+        )
+        VALUES (1, 1700000100123, 1700000200, 50, 1, 2, 17)
+        """)
+    }
+
+    let health = try StatsQueries(dbq: dbq).recentPlaySyncHealth()
+
+    XCTAssertEqual(health?.lastPlayedAtMs, 1_700_000_100_123)
+    XCTAssertEqual(health?.lastSyncedAt, 1_700_000_200)
+    XCTAssertEqual(health?.lastResponseCount, 50)
+    XCTAssertEqual(health?.lastResponseSaturated, true)
+    XCTAssertEqual(health?.consecutiveSaturated, 2)
+    XCTAssertEqual(health?.lastInsertedCount, 17)
+  }
+
+  func test_statsSnapshotCarriesCurrentWeeklyMemoryForStatsSurface() async throws {
+    let dbq = try InMemoryDatabase.make()
+    let now = Int64(Date().timeIntervalSince1970)
+    let bounds = StatsQueries.weekBounds(containing: now)
+    let memory = StatsQueries.WeeklyMemorySnapshot(
+      weekStart: bounds.start,
+      weekEnd: bounds.end,
+      trait: "Pulsebound",
+      memento: "Signal Cube",
+      recapLine: "The week leaned into electronic pressure.",
+      roomObjectName: "stereo",
+      dominantGenre: "electronic",
+      theme: .slime,
+      playCount: 12,
+      listeningMs: 2_160_000,
+      uniqueArtists: 4,
+      newArtists: 1)
+    try WeeklyMemoriesDAO(dbq: dbq, now: { now }).upsert(memory, now: now)
+
+    let snapshot = await StatsViewSnapshot.load(dbq: dbq, range: .ytd)
+
+    XCTAssertEqual(snapshot.weeklyMemory?.trait, "Pulsebound")
+    XCTAssertEqual(snapshot.weeklyMemory?.memento, "Signal Cube")
+    XCTAssertEqual(snapshot.weeklyMemory?.dominantGenre, "electronic")
+    XCTAssertEqual(snapshot.weeklyMemory?.roomObjectName, "stereo")
   }
 
   private func insertPlays(

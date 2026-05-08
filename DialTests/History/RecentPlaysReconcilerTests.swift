@@ -155,6 +155,72 @@ final class RecentPlaysReconcilerTests: XCTestCase {
     XCTAssertEqual(insertedCount, 50)
   }
 
+  func test_syncPagesBackwardWhenMoreThanFiftyRecentPlaysAreAvailable() async throws {
+    let dbq = try InMemoryDatabase.make()
+    let savedCursorMs: Int64 = 1_700_000_000_000
+    try await dbq.write { db in
+      try db.execute(sql: """
+        INSERT INTO recent_play_sync_state (
+          id,
+          last_played_at_ms,
+          last_synced_at,
+          last_response_count,
+          last_response_saturated,
+          consecutive_saturated,
+          last_inserted_count
+        )
+        VALUES (1, ?, 0, 0, 0, 0, 0)
+        """, arguments: [savedCursorMs])
+    }
+
+    func page(_ range: ClosedRange<Int>) -> RecentlyPlayedResponse {
+      response(items: range.reversed().map { idx in
+        itemJSON(
+          playedAt: playedAt(savedCursorMs + Int64(idx) * 1_000),
+          trackUri: "spotify:track:flight-\(idx)",
+          trackName: "Flight \(idx)",
+          artistName: "Plane Mode",
+          artistUri: "spotify:artist:plane",
+          albumName: "Offline")
+      })
+    }
+
+    let client = FakeRecentlyPlayedClient(responses: [
+      page(61...110),
+      page(11...60),
+      page(1...10),
+    ])
+    let syncer = RecentPlaysReconciler(
+      dbq: dbq,
+      client: client,
+      engine: PetEngine(dbq: dbq),
+      clock: { 1_700_001_000 })
+
+    let result = try await syncer.sync()
+
+    XCTAssertEqual(result.scanned, 110)
+    XCTAssertEqual(result.inserted, 110)
+    XCTAssertFalse(result.possiblyTruncated)
+    XCTAssertEqual(client.callCount, 3)
+
+    let state = try await dbq.read { db in
+      try Row.fetchOne(db, sql: """
+        SELECT last_played_at_ms,
+               last_response_count,
+               last_response_saturated,
+               consecutive_saturated,
+               last_inserted_count
+        FROM recent_play_sync_state
+        WHERE id = 1
+        """)
+    }
+    XCTAssertEqual(state?["last_played_at_ms"] as Int64?, savedCursorMs + 110_000)
+    XCTAssertEqual(state?["last_response_count"] as Int?, 10)
+    XCTAssertEqual(state?["last_response_saturated"] as Int?, 0)
+    XCTAssertEqual(state?["consecutive_saturated"] as Int?, 0)
+    XCTAssertEqual(state?["last_inserted_count"] as Int?, 110)
+  }
+
   func test_syncSkipsRecentPlayAlreadyCountedLive() async throws {
     let dbq = try InMemoryDatabase.make()
     try await dbq.write { db in
@@ -233,20 +299,39 @@ final class RecentPlaysReconcilerTests: XCTestCase {
     }
     """
   }
+
+  private func playedAt(_ epochMs: Int64) -> String {
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    return formatter.string(from: Date(timeIntervalSince1970: TimeInterval(epochMs) / 1000))
+  }
 }
 
 private final class FakeRecentlyPlayedClient: RecentlyPlayedClient {
-  let response: RecentlyPlayedResponse
+  private var responses: [RecentlyPlayedResponse]
   private(set) var afterMs: Int64?
+  private(set) var beforeMs: Int64?
   private(set) var limit: Int?
+  private(set) var callCount = 0
 
   init(response: RecentlyPlayedResponse) {
-    self.response = response
+    self.responses = [response]
   }
 
-  func recentlyPlayed(afterMs: Int64?, limit: Int) async throws -> RecentlyPlayedResponse {
-    self.afterMs = afterMs
+  init(responses: [RecentlyPlayedResponse]) {
+    self.responses = responses
+  }
+
+  func recentlyPlayed(afterMs: Int64?, beforeMs: Int64?, limit: Int) async throws -> RecentlyPlayedResponse {
+    if beforeMs == nil {
+      self.afterMs = afterMs
+    }
+    self.beforeMs = beforeMs
     self.limit = limit
-    return response
+    callCount += 1
+    if responses.count > 1 {
+      return responses.removeFirst()
+    }
+    return responses.first ?? RecentlyPlayedResponse(items: [])
   }
 }

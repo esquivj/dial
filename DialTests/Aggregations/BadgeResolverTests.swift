@@ -38,6 +38,72 @@ final class BadgeResolverTests: XCTestCase {
     XCTAssertFalse(kinds.contains(.newArtist))
   }
 
+  func test_livePlay_doesNotRecordFirstListenWhenImportedTitleArtistAlreadyExists() throws {
+    let dbq = try InMemoryDatabase.make()
+    let anchor: Int64 = 1_700_000_000
+    let engine = PetEngine(dbq: dbq, clock: { anchor })
+    try seedTrack(
+      dbq,
+      uri: "spotify:track:old-juicebox",
+      trackName: "Juicebox",
+      artistUri: "artist:The_Strokes",
+      artistName: "The Strokes")
+    try seedTrack(
+      dbq,
+      uri: "spotify:track:live-juicebox",
+      trackName: "Juicebox",
+      artistUri: "spotify:artist:strokes",
+      artistName: "The Strokes")
+
+    try engine.recordPlay(.init(
+      playedAt: anchor - 120 * 86_400,
+      trackUri: "spotify:track:old-juicebox",
+      msPlayed: 60_000,
+      source: "import"))
+    try engine.recordPlay(.init(
+      playedAt: anchor,
+      trackUri: "spotify:track:live-juicebox",
+      msPlayed: 60_000,
+      source: "live"))
+
+    let kinds = try BadgeEventsDAO(dbq: dbq).recent().map(\.kind)
+    XCTAssertFalse(kinds.contains(.firstListen))
+    XCTAssertTrue(kinds.contains(.rediscovered))
+  }
+
+  func test_livePlay_doesNotRecordFirstListenForRemasterCleanExplicitVariant() throws {
+    let dbq = try InMemoryDatabase.make()
+    let anchor: Int64 = 1_700_000_000
+    let engine = PetEngine(dbq: dbq, clock: { anchor })
+    try seedTrack(
+      dbq,
+      uri: "spotify:track:old-red-socks",
+      trackName: "Red Socks Pugie - 2008 Remaster",
+      artistUri: "artist:Foals",
+      artistName: "Foals")
+    try seedTrack(
+      dbq,
+      uri: "spotify:track:live-red-socks",
+      trackName: "RED SOCKS PUGIE (Clean)",
+      artistUri: "spotify:artist:foals",
+      artistName: "FOALS")
+
+    try engine.recordPlay(.init(
+      playedAt: anchor - 120 * 86_400,
+      trackUri: "spotify:track:old-red-socks",
+      msPlayed: 60_000,
+      source: "import"))
+    try engine.recordPlay(.init(
+      playedAt: anchor,
+      trackUri: "spotify:track:live-red-socks",
+      msPlayed: 60_000,
+      source: "live"))
+
+    let kinds = try BadgeEventsDAO(dbq: dbq).recent().map(\.kind)
+    XCTAssertFalse(kinds.contains(.firstListen))
+    XCTAssertTrue(kinds.contains(.rediscovered))
+  }
+
   func test_currentInsight_beforeCountedPlay_usesImportedArtistNameAsKnownArtist() throws {
     let dbq = try InMemoryDatabase.make()
     let engine = PetEngine(dbq: dbq, clock: { 1_700_000_000 })
@@ -55,6 +121,69 @@ final class BadgeResolverTests: XCTestCase {
 
     XCTAssertEqual(insight?.kind, .firstListen)
     XCTAssertEqual(insight?.detail, "No plays in your history")
+  }
+
+  func test_currentInsight_beforeCountedPlay_usesImportedTitleArtistAsKnownTrack() throws {
+    let dbq = try InMemoryDatabase.make()
+    let anchor: Int64 = 1_700_000_000
+    let engine = PetEngine(dbq: dbq, clock: { anchor })
+    try seedTrack(
+      dbq,
+      uri: "spotify:track:old-juicebox",
+      trackName: "Juicebox",
+      artistUri: "artist:The_Strokes",
+      artistName: "The Strokes")
+    try seedTrack(
+      dbq,
+      uri: "spotify:track:live-juicebox",
+      trackName: "Juicebox",
+      artistUri: "spotify:artist:strokes",
+      artistName: "The Strokes")
+
+    try engine.recordPlay(.init(
+      playedAt: anchor - 120 * 86_400,
+      trackUri: "spotify:track:old-juicebox",
+      msPlayed: 60_000,
+      source: "import"))
+
+    let insight = try PlayAggregations(dbq: dbq, now: { anchor })
+      .currentBadgeInsight(trackUri: "spotify:track:live-juicebox", currentPlayAt: nil)
+
+    XCTAssertEqual(insight?.kind, .rediscovered)
+    XCTAssertEqual(insight?.detail, "Last played 120 days ago")
+  }
+
+  func test_currentInsight_beforeCountedPlay_explainsRemasterVariantAsKnownTrack() throws {
+    let dbq = try InMemoryDatabase.make()
+    let anchor: Int64 = 1_700_000_000
+    let engine = PetEngine(dbq: dbq, clock: { anchor })
+    try seedTrack(
+      dbq,
+      uri: "spotify:track:old-red-socks",
+      trackName: "Red Socks Pugie - 2008 Remaster",
+      artistUri: "artist:Foals",
+      artistName: "Foals")
+    try seedTrack(
+      dbq,
+      uri: "spotify:track:live-red-socks",
+      trackName: "Red Socks Pugie",
+      artistUri: "spotify:artist:foals",
+      artistName: "FOALS")
+
+    try engine.recordPlay(.init(
+      playedAt: anchor - 120 * 86_400,
+      trackUri: "spotify:track:old-red-socks",
+      msPlayed: 60_000,
+      source: "import"))
+
+    let insight = try PlayAggregations(dbq: dbq, now: { anchor })
+      .currentBadgeInsight(trackUri: "spotify:track:live-red-socks", currentPlayAt: nil)
+
+    XCTAssertEqual(insight?.kind, .rediscovered)
+    XCTAssertEqual(insight?.detail, "Last played 120 days ago")
+    XCTAssertEqual(
+      insight?.explanation,
+      "Shown because the previous play was 120 days ago. Rediscovered triggers after a 90+ day gap.")
   }
 
   func test_importedHistory_skipsDiscoverySpam_butRecordsMilestones() throws {
@@ -105,6 +234,30 @@ final class BadgeResolverTests: XCTestCase {
 
     let kinds = try Set(BadgeEventsDAO(dbq: dbq).recent().map(\.kind))
     XCTAssertTrue(kinds.contains(.deepCut))
+    XCTAssertFalse(kinds.contains(.firstListen))
+  }
+
+  func test_currentInsight_beforeCountedPlay_prefersDeepCutForFamiliarCatalog() throws {
+    let dbq = try InMemoryDatabase.make()
+    let anchor: Int64 = 1_700_000_000
+    let plays = PlaysDAO(dbq: dbq)
+
+    for i in 0..<20 {
+      let uri = "ARTIST_MAIN_\(i)"
+      try seedTrack(dbq, uri: uri, artistUri: "art:frequent", artistName: "Frequent Artist", albumName: "Known Album")
+      try plays.insert(.init(
+        playedAt: anchor - 120 * 86_400 + Int64(i),
+        trackUri: uri,
+        msPlayed: 60_000,
+        source: "import"))
+    }
+    try seedTrack(dbq, uri: "RARE", artistUri: "spotify:artist:frequent", artistName: "Frequent Artist", albumName: "Known Album")
+
+    let insight = try PlayAggregations(dbq: dbq, now: { anchor })
+      .currentBadgeInsight(trackUri: "RARE", currentPlayAt: nil)
+
+    XCTAssertEqual(insight?.kind, .deepCut)
+    XCTAssertEqual(insight?.detail, "Rare track from a familiar artist")
   }
 
   func test_currentInsight_beforeCountedPlay_surfacesNewArtistContext() throws {
@@ -388,13 +541,14 @@ final class BadgeResolverTests: XCTestCase {
   private func seedTrack(
     _ dbq: DatabaseQueue,
     uri: String,
+    trackName: String? = nil,
     artistUri: String,
     artistName: String,
     albumName: String = "Album"
   ) throws {
     try TracksDAO(dbq: dbq).upsert(.init(
       uri: uri,
-      name: uri,
+      name: trackName ?? uri,
       albumName: albumName,
       albumArtUrl: nil,
       durationMs: 1_000,

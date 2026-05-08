@@ -627,12 +627,37 @@ enum DialTagNormalizer {
       .replacingOccurrences(of: "_", with: " ")
       .replacingOccurrences(of: "-", with: " ")
       .replacingOccurrences(of: "  ", with: " ")
-    guard !tag.isEmpty, !ignoredTags.contains(where: tag.contains) else { return nil }
+    guard !tag.isEmpty, !ignoredTags.contains(where: { containsTerm($0, in: tag) }) else { return nil }
 
-    for rule in rules where rule.matches.contains(where: tag.contains) {
+    for rule in rules where rule.matches.contains(where: { containsTerm($0, in: tag) }) {
       return NormalizedTag(family: rule.family, rawTag: tag)
     }
     return nil
+  }
+
+  private static func containsTerm(_ term: String, in tag: String) -> Bool {
+    let tagWords = words(in: tag)
+    let termWords = words(in: term
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .lowercased()
+      .replacingOccurrences(of: "_", with: " ")
+      .replacingOccurrences(of: "-", with: " "))
+    guard !tagWords.isEmpty, !termWords.isEmpty, tagWords.count >= termWords.count else {
+      return false
+    }
+
+    for start in 0...(tagWords.count - termWords.count) {
+      if Array(tagWords[start..<(start + termWords.count)]) == termWords {
+        return true
+      }
+    }
+    return false
+  }
+
+  private static func words(in value: String) -> [String] {
+    value
+      .split { !$0.isLetter && !$0.isNumber }
+      .map(String.init)
   }
 
   private static let ignoredTags = [
@@ -645,13 +670,13 @@ enum DialTagNormalizer {
     .init("reggaeton", ["reggaeton", "reggaetón", "urbano latino", "latin urban", "dembow"]),
     .init("latin", ["latin", "latino", "mexican", "spanish", "salsa", "bachata", "cumbia", "merengue", "bolero", "bossa nova"]),
     .init("ambient", ["ambient", "drone", "new age", "soundscape", "downtempo", "chillout", "chillwave"]),
-    .init("electronic", ["electronic", "electronica", "electro", "electroclash", "edm", "techno", "hard techno", "industrial techno", "house", "dance", "hard dance", "hardstyle", "rawstyle", "gabber", "hardcore techno", "trance", "garage", "breakbeat", "breaks", "drum and bass", "dnb", "dubstep", "future bass", "bass music", "synthpop", "synth pop", "idm"]),
     .init("r&b", ["r&b", "rnb", "soul", "neo soul", "funk"]),
     .init("rap", ["hip hop", "hip-hop", "rap", "trap", "drill", "cloud rap", "boom bap"]),
     .init("indie", ["indie", "bedroom pop", "dream pop", "shoegaze", "alternative", "lo fi", "lo-fi", "slacker rock"]),
-    .init("punk/emo", ["punk", "emo", "pop punk", "hardcore punk", "post hardcore", "post-hardcore", "screamo"]),
+    .init("punk/emo", ["dance punk", "dance-punk", "punk", "emo", "pop punk", "hardcore punk", "post hardcore", "post-hardcore", "screamo"]),
     .init("metal", ["metal", "black metal", "death metal", "doom metal", "metalcore"]),
-    .init("rock", ["rock", "grunge", "psychedelic", "post rock", "classic rock", "garage rock"]),
+    .init("rock", ["rock", "grunge", "psychedelic", "post rock", "classic rock", "garage rock", "dance rock", "new wave"]),
+    .init("electronic", ["electronic", "electronica", "electro", "electroclash", "edm", "techno", "hard techno", "industrial techno", "house", "dance", "hard dance", "hardstyle", "rawstyle", "gabber", "hardcore techno", "trance", "uk garage", "speed garage", "future garage", "2-step garage", "2 step garage", "breakbeat", "breaks", "drum and bass", "dnb", "dubstep", "future bass", "bass music", "synthpop", "synth pop", "idm"]),
     .init("acoustic", ["folk", "acoustic", "singer songwriter", "singer-songwriter", "americana", "country", "bluegrass"]),
     .init("jazz", ["jazz", "bebop", "fusion"]),
     .init("experimental", ["experimental", "avant garde", "avant-garde", "noise", "industrial"]),

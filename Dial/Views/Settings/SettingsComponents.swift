@@ -118,6 +118,17 @@ struct SettingsSidebar: View {
                   .overlay(
                     RoundedRectangle(cornerRadius: Dial.Radius.control, style: .continuous)
                       .stroke(SettingsPalette.rule, lineWidth: 1))
+                  .overlay(alignment: .leading) {
+                    Capsule()
+                      .fill(SettingsPalette.accent)
+                      .frame(width: 2, height: 16)
+                      .padding(.leading, 5)
+                  }
+                  .overlay(alignment: .top) {
+                    RoundedRectangle(cornerRadius: Dial.Radius.control, style: .continuous)
+                      .fill(SettingsPalette.highlight)
+                      .frame(height: 1)
+                  }
               }
             }
           }

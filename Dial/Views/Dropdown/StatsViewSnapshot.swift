@@ -7,6 +7,7 @@ struct StatsViewSnapshot {
   let topTracks: [StatsQueries.TopRow]
   let topArtists: [StatsQueries.TopRow]
   let topGenres: [StatsQueries.GenreRow]
+  let weeklyMemory: StatsQueries.WeeklyMemorySnapshot?
   let rhythmBuckets: [StatsQueries.RhythmBucket]
   let badgeSummaries: [StatsQueries.BadgeSummary]
   let recentBadges: [StatsQueries.BadgeMemoryRow]
@@ -22,6 +23,9 @@ struct StatsViewSnapshot {
   private static func make(dbq: DatabaseQueue, range: StatsRange) -> StatsViewSnapshot {
     let q = StatsQueries(dbq: dbq)
     let since = range.since
+    let weeklyLog = (try? WeeklyMemoriesDAO(dbq: dbq).recent(limit: 1)) ?? []
+    let weeklyMemory = weeklyLog.first.map(StatsQueries.WeeklyMemorySnapshot.init(record:))
+      ?? (try? q.weeklyMemory())
     let rhythm: [StatsQueries.RhythmBucket]
     if range == .seven {
       rhythm = (try? q.recentDailyRhythm(days: 7)) ?? []
@@ -38,6 +42,7 @@ struct StatsViewSnapshot {
       topTracks: (try? q.topTracks(since: since)) ?? [],
       topArtists: (try? q.topArtists(since: since)) ?? [],
       topGenres: (try? q.topGenres(since: since)) ?? [],
+      weeklyMemory: weeklyMemory,
       rhythmBuckets: rhythm,
       badgeSummaries: (try? q.badgeSummaries()) ?? [],
       recentBadges: (try? q.recentBadgeMemories(limit: 5)) ?? [])

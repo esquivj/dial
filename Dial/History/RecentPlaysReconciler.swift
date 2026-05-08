@@ -5,7 +5,19 @@ import os.log
 private let recentPlayLog = Logger(subsystem: "com.dial.Dial", category: "RecentPlaysReconciler")
 
 protocol RecentlyPlayedClient {
+  func recentlyPlayed(afterMs: Int64?, beforeMs: Int64?, limit: Int) async throws -> RecentlyPlayedResponse
+}
+
+extension RecentlyPlayedClient {
   func recentlyPlayed(afterMs: Int64?, limit: Int) async throws -> RecentlyPlayedResponse
+  {
+    try await recentlyPlayed(afterMs: afterMs, beforeMs: nil, limit: limit)
+  }
+
+  func recentlyPlayed(beforeMs: Int64?, limit: Int) async throws -> RecentlyPlayedResponse
+  {
+    try await recentlyPlayed(afterMs: nil, beforeMs: beforeMs, limit: limit)
+  }
 }
 
 extension SpotifyClient: RecentlyPlayedClient {}
@@ -22,6 +34,7 @@ final class RecentPlaysReconciler {
   static let source = "recent"
   static let initialImportLookbackMs: Int64 = 24 * 60 * 60 * 1000
   static let savedCursorOverlapMs: Int64 = 5 * 60 * 1000
+  static let maxCatchUpPages = 4
 
   private let dbq: DatabaseQueue
   private let client: RecentlyPlayedClient
@@ -44,15 +57,8 @@ final class RecentPlaysReconciler {
   func sync(limit: Int = 50) async throws -> RecentPlaySyncResult {
     let afterMs = try syncCursorMs()
     let requestLimit = min(max(limit, 1), 50)
-    let page = try await client.recentlyPlayed(afterMs: afterMs, limit: requestLimit)
-    let possiblyTruncated = page.items.count >= requestLimit
-    let candidates = page.items
-      .compactMap(RecentPlayCandidate.init(item:))
-      .filter { candidate in
-        guard let afterMs else { return true }
-        return candidate.playedAtMs > afterMs
-      }
-      .sorted { $0.playedAtMs < $1.playedAtMs }
+    let page = try await catchUpCandidates(afterMs: afterMs, requestLimit: requestLimit)
+    let candidates = page.candidates.sorted { $0.playedAtMs < $1.playedAtMs }
 
     var inserted = 0
     var skipped = 0
@@ -75,18 +81,82 @@ final class RecentPlaysReconciler {
     try saveState(
       cursorMs: cursorMs,
       responseCount: page.items.count,
-      possiblyTruncated: possiblyTruncated,
+      possiblyTruncated: page.possiblyTruncated,
       inserted: inserted)
 
     if inserted > 0 || skipped > 0 {
-      recentPlayLog.notice("recent sync scanned=\(candidates.count) inserted=\(inserted) skipped=\(skipped) truncated=\(possiblyTruncated)")
+      recentPlayLog.notice("recent sync scanned=\(candidates.count) inserted=\(inserted) skipped=\(skipped) truncated=\(page.possiblyTruncated)")
     }
     return RecentPlaySyncResult(
       scanned: candidates.count,
       inserted: inserted,
       skipped: skipped,
       cursorMs: cursorMs > 0 ? cursorMs : nil,
-      possiblyTruncated: possiblyTruncated)
+      possiblyTruncated: page.possiblyTruncated)
+  }
+
+  private func catchUpCandidates(
+    afterMs: Int64?,
+    requestLimit: Int
+  ) async throws -> (candidates: [RecentPlayCandidate], items: [RecentlyPlayedItem], possiblyTruncated: Bool) {
+    var allCandidates: [RecentPlayCandidate] = []
+    var allItems: [RecentlyPlayedItem] = []
+    var seen = Set<String>()
+
+    var page = try await client.recentlyPlayed(afterMs: afterMs, beforeMs: nil, limit: requestLimit)
+    var pagesScanned = 0
+    var oldestInPage: Int64?
+    var lastPageWasFull = false
+    var hitPageCap = false
+    var stalledPagination = false
+
+    while true {
+      pagesScanned += 1
+      allItems = page.items
+      lastPageWasFull = page.items.count >= requestLimit
+
+      let candidates = page.items
+        .compactMap(RecentPlayCandidate.init(item:))
+        .filter { candidate in
+          guard let afterMs else { return true }
+          return candidate.playedAtMs > afterMs
+        }
+
+      for candidate in candidates {
+        let key = "\(candidate.trackUri):\(candidate.playedAtMs)"
+        guard seen.insert(key).inserted else { continue }
+        allCandidates.append(candidate)
+      }
+
+      let nextOldest = candidates.map(\.playedAtMs).min()
+      guard let afterMs,
+            lastPageWasFull,
+            let nextOldest,
+            nextOldest > afterMs
+      else { break }
+
+      if let oldestInPage, nextOldest >= oldestInPage {
+        stalledPagination = true
+        break
+      }
+      oldestInPage = nextOldest
+
+      guard pagesScanned < Self.maxCatchUpPages else {
+        hitPageCap = true
+        break
+      }
+
+      page = try await client.recentlyPlayed(afterMs: nil, beforeMs: nextOldest, limit: requestLimit)
+    }
+
+    let oldestCandidate = allCandidates.map(\.playedAtMs).min()
+    let stillAboveCursor = afterMs.map { cursor in
+      (oldestCandidate ?? Int64.max) > cursor
+    } ?? false
+    return (
+      candidates: allCandidates,
+      items: allItems,
+      possiblyTruncated: (hitPageCap || stalledPagination) && lastPageWasFull && stillAboveCursor)
   }
 
   private func syncCursorMs() throws -> Int64? {

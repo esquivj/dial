@@ -52,18 +52,18 @@ struct PetContext {
 
 enum PetBehaviorResolver {
   /// Priority (highest first):
-  ///   levelUp expression > firstListen expression > rediscovered expression
-  ///     > eating > ambient trick > paused > dormant > beatSync > walk > idle
+  ///   levelUp expression > eating > ambient trick > firstListen expression
+  ///     > rediscovered expression > paused > dormant > beatSync > walk > idle
   ///
   /// `walk` is the new default while music is playing without known BPM —
   /// keeps the pet moving so it never sits still mid-track.
   static func resolve(_ c: PetContext) -> PetBehavior {
     let motion = activeMotion(c)
     if c.leveledUp { return .expressed(.levelUp, motion: motion) }
+    if c.eating { return .eating }
+    if c.playing, let ambientTrick = c.ambientTrick { return ambientTrick }
     if c.firstListen { return .expressed(.firstListen, motion: motion) }
     if c.rediscovered { return .expressed(.rediscovered, motion: motion) }
-    if c.eating { return .eating }
-    if let ambientTrick = c.ambientTrick { return ambientTrick }
     if c.paused { return .paused }
     if let lp = c.lastPlayAt, c.now - lp >= 7 * 86_400 { return .dormant }
     return motion.behavior

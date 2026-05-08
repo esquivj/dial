@@ -51,11 +51,18 @@ final class PetBehaviorTests: XCTestCase {
   }
 
   func test_ambientTrickComesAfterCountedPlayPulse() {
-    let eating = PetBehaviorResolver.resolve(ctx(playing: true, eating: true, ambientTrick: .sparkStep))
+    let eating = PetBehaviorResolver.resolve(ctx(
+      playing: true, firstListen: true, eating: true, ambientTrick: .sparkStep))
     XCTAssertEqual(eating, .eating)
 
-    let trick = PetBehaviorResolver.resolve(ctx(playing: true, ambientTrick: .sparkStep))
+    let trick = PetBehaviorResolver.resolve(ctx(
+      playing: true, firstListen: true, ambientTrick: .sparkStep))
     XCTAssertEqual(trick, .sparkStep)
+  }
+
+  func test_staleAmbientTrickDoesNotOverridePaused() {
+    let r = PetBehaviorResolver.resolve(ctx(paused: true, ambientTrick: .sparkStep))
+    XCTAssertEqual(r, .paused)
   }
 
   func test_dormantAfter7Days() {

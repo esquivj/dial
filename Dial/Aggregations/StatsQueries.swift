@@ -700,6 +700,15 @@ struct StatsQueries {
     let tagArtistTagged: Int
   }
 
+  struct RecentPlaySyncHealth: Equatable {
+    let lastPlayedAtMs: Int64
+    let lastSyncedAt: Int64
+    let lastResponseCount: Int
+    let lastResponseSaturated: Bool
+    let consecutiveSaturated: Int
+    let lastInsertedCount: Int
+  }
+
   /// Counts distinct Spotify track URIs seen in `plays` and how many of
   /// those have been enriched (album_art_url populated by MetadataEnricher).
   /// Surfaced in the Settings diagnostic panel as "47,234 / 49,229 tracks"
@@ -781,6 +790,30 @@ struct StatsQueries {
         tagArtistTotal: tagRow?["total"] ?? 0,
         tagArtistChecked: tagRow?["checked"] ?? 0,
         tagArtistTagged: tagRow?["tagged"] ?? 0)
+    }
+  }
+
+  func recentPlaySyncHealth() throws -> RecentPlaySyncHealth? {
+    try dbq.read { db in
+      guard let row = try Row.fetchOne(db, sql: """
+        SELECT last_played_at_ms,
+               last_synced_at,
+               last_response_count,
+               last_response_saturated,
+               consecutive_saturated,
+               last_inserted_count
+        FROM recent_play_sync_state
+        WHERE id = 1
+        """)
+      else { return nil }
+
+      return RecentPlaySyncHealth(
+        lastPlayedAtMs: row["last_played_at_ms"],
+        lastSyncedAt: row["last_synced_at"],
+        lastResponseCount: row["last_response_count"],
+        lastResponseSaturated: (row["last_response_saturated"] as Int) == 1,
+        consecutiveSaturated: row["consecutive_saturated"],
+        lastInsertedCount: row["last_inserted_count"])
     }
   }
 

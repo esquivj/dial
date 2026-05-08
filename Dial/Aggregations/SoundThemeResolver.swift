@@ -509,17 +509,38 @@ struct SoundThemeResolver {
   }
 
   private static func containsAny(_ tag: String, _ needles: [String]) -> Bool {
-    needles.contains { tag.contains($0) }
+    needles.contains { containsTerm($0, in: tag) }
   }
 
   private static func firstMatch(in tag: String, from needles: [String]) -> String? {
-    needles.sorted { $0.count > $1.count }.first { tag.contains($0) }
+    needles.sorted { $0.count > $1.count }.first { containsTerm($0, in: tag) }
   }
 
   private static func containsWholeWord(_ tag: String, _ word: String) -> Bool {
     tag
       .split { !$0.isLetter && !$0.isNumber }
       .contains { String($0) == word }
+  }
+
+  private static func containsTerm(_ term: String, in tag: String) -> Bool {
+    let tagWords = words(in: tag)
+    let termWords = words(in: normalizedTagText(term))
+    guard !tagWords.isEmpty, !termWords.isEmpty, tagWords.count >= termWords.count else {
+      return false
+    }
+
+    for start in 0...(tagWords.count - termWords.count) {
+      if Array(tagWords[start..<(start + termWords.count)]) == termWords {
+        return true
+      }
+    }
+    return false
+  }
+
+  private static func words(in value: String) -> [String] {
+    value
+      .split { !$0.isLetter && !$0.isNumber }
+      .map(String.init)
   }
 
   private static func familyLabel(_ theme: DialThemeID) -> String {
@@ -544,7 +565,8 @@ struct SoundThemeResolver {
 
   private static let strongTrackElectronicTags = [
     "acid", "bassline", "breakcore", "club mix", "dance mix", "dj mix",
-    "eurodance", "garage", "hard bass", "jungle", "rave", "ukg"
+    "eurodance", "uk garage", "speed garage", "future garage",
+    "2-step garage", "2 step garage", "hard bass", "jungle", "rave", "ukg"
   ]
 
   private static let strongPunkTags = [

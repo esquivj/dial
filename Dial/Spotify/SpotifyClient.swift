@@ -112,12 +112,18 @@ final class SpotifyClient {
   }
 
   func recentlyPlayed(afterMs: Int64?, limit: Int = 50) async throws -> RecentlyPlayedResponse {
+    try await recentlyPlayed(afterMs: afterMs, beforeMs: nil, limit: limit)
+  }
+
+  func recentlyPlayed(afterMs: Int64?, beforeMs: Int64?, limit: Int = 50) async throws -> RecentlyPlayedResponse {
     guard var comps = URLComponents(string: "https://api.spotify.com/v1/me/player/recently-played") else {
       throw SpotifyAPIError.invalidResponse
     }
     var items = [URLQueryItem(name: "limit", value: "\(min(max(limit, 1), 50))")]
     if let afterMs {
       items.append(URLQueryItem(name: "after", value: "\(afterMs)"))
+    } else if let beforeMs {
+      items.append(URLQueryItem(name: "before", value: "\(beforeMs)"))
     }
     comps.queryItems = items
     guard let url = comps.url else { throw SpotifyAPIError.invalidResponse }

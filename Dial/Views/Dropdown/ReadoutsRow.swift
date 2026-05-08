@@ -18,7 +18,7 @@ struct ReadoutsRow: View {
       }
       .buttonStyle(.pressable)
       .frame(maxWidth: .infinity)
-      .help("Open stats")
+      .help("YTD plays include imported history, live plays, and recent catch-up. Dial merges clean, explicit, remaster, punctuation, and alternate Spotify URI variants by title plus first artist.")
       .accessibilityLabel("Year to date plays \(vm.playsYTD)")
       ReadoutDivider()
       Button(action: onOpenStats) {
@@ -28,7 +28,7 @@ struct ReadoutsRow: View {
       }
       .buttonStyle(.pressable)
       .frame(maxWidth: .infinity)
-      .help("Open stats")
+      .help("7-day rank uses the same merged track identity as play count, then ranks by play count with most-recent play as the tie break.")
       .accessibilityLabel("Seven day rank \(vm.agg.rank7d.map { "#\($0)" } ?? "not ranked")")
       ReadoutDivider()
       Button(action: onOpenHistory) {
@@ -38,7 +38,7 @@ struct ReadoutsRow: View {
       }
       .buttonStyle(.pressable)
       .frame(maxWidth: .infinity)
-      .help("Open history")
+      .help("Last played ignores the current in-progress play and looks backward across imported, live, and recent catch-up history for the same merged track identity.")
       .accessibilityLabel("Last played \(lastPlayedValue)")
     }
     .padding(Dial.Layout.Readouts.railPadding)

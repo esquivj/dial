@@ -230,13 +230,17 @@ private struct SparklesOverlay: View {
   let size: CGFloat
 
   var body: some View {
-    VStack(spacing: max(1, size * 0.10)) {
-      Text("+")
-      Text("*")
+    TimelineView(.periodic(from: .now, by: 0.22)) { ctx in
+      let phase = Int(ctx.date.timeIntervalSinceReferenceDate / 0.22) % 2
+      VStack(spacing: max(1, size * 0.10)) {
+        Text(phase == 0 ? "+" : "*")
+        Text(phase == 0 ? "*" : "+")
+      }
+      .font(.system(size: max(7, size * 0.42), weight: .bold, design: .monospaced))
+      .foregroundStyle(Color.black.opacity(0.82))
+      .frame(width: size, height: size)
+      .offset(x: phase == 0 ? 0 : -size * 0.05, y: phase == 0 ? 0 : size * 0.04)
     }
-    .font(.system(size: max(7, size * 0.42), weight: .bold, design: .monospaced))
-    .foregroundStyle(Color.black.opacity(0.82))
-    .frame(width: size, height: size)
   }
 }
 
@@ -244,15 +248,20 @@ private struct ThoughtDotsOverlay: View {
   let size: CGFloat
 
   var body: some View {
-    HStack(spacing: max(1, size * 0.14)) {
-      ForEach(0..<3, id: \.self) { idx in
-        Circle()
-          .fill(Color.black.opacity(0.82))
-          .frame(width: size * CGFloat(0.14 + Double(idx) * 0.04),
-                 height: size * CGFloat(0.14 + Double(idx) * 0.04))
+    TimelineView(.periodic(from: .now, by: 0.28)) { ctx in
+      let phase = Int(ctx.date.timeIntervalSinceReferenceDate / 0.28)
+      HStack(spacing: max(1, size * 0.14)) {
+        ForEach(0..<3, id: \.self) { idx in
+          let active = (phase + idx) % 3 == 0
+          Circle()
+            .fill(Color.black.opacity(active ? 0.86 : 0.46))
+            .frame(width: size * CGFloat(0.14 + Double(idx) * 0.04),
+                   height: size * CGFloat(0.14 + Double(idx) * 0.04))
+            .offset(y: active ? -size * 0.04 : 0)
+        }
       }
+      .frame(width: size, height: size)
     }
-    .frame(width: size, height: size)
   }
 }
 
@@ -260,13 +269,19 @@ private struct FeedingOverlay: View {
   let size: CGFloat
 
   var body: some View {
-    HStack(spacing: max(1, size * 0.10)) {
-      Circle().frame(width: size * 0.18, height: size * 0.18)
-      Circle().frame(width: size * 0.14, height: size * 0.14)
-      Circle().frame(width: size * 0.11, height: size * 0.11)
+    TimelineView(.periodic(from: .now, by: 0.20)) { ctx in
+      let phase = Int(ctx.date.timeIntervalSinceReferenceDate / 0.20)
+      HStack(spacing: max(1, size * 0.10)) {
+        ForEach(0..<3, id: \.self) { idx in
+          let active = (phase + idx) % 3 == 0
+          Circle()
+            .frame(width: size * CGFloat(active ? 0.18 : 0.12),
+                   height: size * CGFloat(active ? 0.18 : 0.12))
+        }
+      }
+      .foregroundStyle(Color.black.opacity(0.82))
+      .frame(width: size, height: size)
     }
-    .foregroundStyle(Color.black.opacity(0.82))
-    .frame(width: size, height: size)
   }
 }
 
@@ -274,10 +289,14 @@ private struct SleepOverlay: View {
   let size: CGFloat
 
   var body: some View {
-    Text("Z")
-      .font(.system(size: max(8, size * 0.62), weight: .bold, design: .monospaced))
-      .foregroundStyle(Color.black.opacity(0.82))
-      .frame(width: size, height: size)
+    TimelineView(.periodic(from: .now, by: 0.65)) { ctx in
+      let phase = Int(ctx.date.timeIntervalSinceReferenceDate / 0.65) % 2
+      Text("Z")
+        .font(.system(size: max(8, size * 0.62), weight: .bold, design: .monospaced))
+        .foregroundStyle(Color.black.opacity(phase == 0 ? 0.82 : 0.44))
+        .frame(width: size, height: size)
+        .offset(x: phase == 0 ? 0 : size * 0.10, y: phase == 0 ? 0 : -size * 0.08)
+    }
   }
 }
 

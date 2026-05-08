@@ -19,6 +19,7 @@ private extension StatsQueries.EnrichmentProgress {
 struct SettingsStatusPanel: View {
   let coord: AppCoordinator
   @State private var enrichment: StatsQueries.EnrichmentProgress = .empty
+  @State private var recentSync: StatsQueries.RecentPlaySyncHealth?
   @State private var enrichmentError: String?
   @State private var lastRefresh: Date?
   @State private var showThemeInspector = false
@@ -28,6 +29,7 @@ struct SettingsStatusPanel: View {
       TimelineView(.periodic(from: .now, by: 5)) { ctx in
         VStack(alignment: .leading, spacing: 8) {
           statusRow("Last sync", value: lastSyncLabel(now: ctx.date))
+          statusRow("Recent catch-up", value: recentSyncLabel(now: ctx.date))
           statusRow("Library scan", value: coord.backgroundEnrichmentLabel)
           statusRow("Audio meter", value: visualizerLabel)
           statusRow("Track data", value: enrichmentError ?? enrichmentLabel(enrichment))
@@ -101,6 +103,20 @@ struct SettingsStatusPanel: View {
     }
   }
 
+  private func recentSyncLabel(now: Date) -> String {
+    guard let recentSync else { return "never" }
+    let age = lastSyncLabel(
+      last: Date(timeIntervalSince1970: TimeInterval(recentSync.lastSyncedAt)),
+      now: now)
+    if recentSync.lastResponseSaturated {
+      return "\(recentSync.lastResponseCount) seen · possible gap"
+    }
+    if recentSync.lastInsertedCount > 0 {
+      return "\(recentSync.lastInsertedCount) added · \(age)"
+    }
+    return "caught up · \(age)"
+  }
+
   private var themeLabel: String {
     coord.nowPlaying.soundTheme.label
   }
@@ -134,11 +150,16 @@ struct SettingsStatusPanel: View {
     let dbq = coord.dbq
     do {
       let snapshot = try await Task.detached(priority: .utility) {
-        try StatsQueries(dbq: dbq).enrichmentProgress()
+        let queries = StatsQueries(dbq: dbq)
+        return (
+          enrichment: try queries.enrichmentProgress(),
+          recentSync: try queries.recentPlaySyncHealth()
+        )
       }.value
       guard !Task.isCancelled else { return }
       await MainActor.run {
-        enrichment = snapshot
+        enrichment = snapshot.enrichment
+        recentSync = snapshot.recentSync
         enrichmentError = nil
         lastRefresh = Date()
       }

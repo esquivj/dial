@@ -13,11 +13,11 @@ struct MenuBarSettingsPreview: View {
     let textWidth = CGFloat(min(maxWidth, 186))
     switch mode {
     case .iconOnly:
-      return 42
+      return 36
     case .albumArtTitle, .albumArtTrackArtist:
-      return (showAlbumArt ? 34 : 8) + textWidth
+      return 12 + (showAlbumArt ? 27 : 0) + textWidth
     case .petTitle, .petOnly, .titlePlayCount, .tinyChaos:
-      return textWidth
+      return 12 + textWidth
     }
   }
 
@@ -29,19 +29,7 @@ struct MenuBarSettingsPreview: View {
         .overlay(alignment: .leading) {
           HStack(spacing: 7) {
             if showAlbumArt && mode != .iconOnly {
-              ZStack {
-                RoundedRectangle(cornerRadius: Dial.Radius.tiny, style: .continuous)
-                  .fill(SettingsPalette.accent.opacity(0.32))
-                Rectangle()
-                  .fill(SettingsPalette.text.opacity(0.16))
-                  .frame(width: 7)
-                  .offset(x: -4)
-                DialIcon("music.note")
-                  .frame(width: 9, height: 9)
-                  .foregroundStyle(SettingsPalette.text.opacity(0.9))
-              }
-              .clipShape(RoundedRectangle(cornerRadius: Dial.Radius.tiny, style: .continuous))
-              .frame(width: 20, height: 20)
+              previewAlbumArt
             } else {
               DialIcon("music.note")
                 .frame(width: 13, height: 13)
@@ -49,10 +37,7 @@ struct MenuBarSettingsPreview: View {
             }
 
             if mode != .iconOnly {
-              Text(mode == .albumArtTrackArtist ? "VOLVER · Tainy" : "VOLVER")
-                .font(.custom("GeistMono-Medium", size: 13))
-                .foregroundStyle(SettingsPalette.text)
-                .lineLimit(1)
+              previewTitle
             }
           }
           .padding(.horizontal, 8)
@@ -66,12 +51,60 @@ struct MenuBarSettingsPreview: View {
               .padding(.bottom, 2)
           }
         }
+        .overlay(
+          RoundedRectangle(cornerRadius: Dial.Radius.control, style: .continuous)
+            .stroke(SettingsPalette.accent.opacity(0.18), lineWidth: 0.7))
+        .overlay(alignment: .top) {
+          RoundedRectangle(cornerRadius: Dial.Radius.control, style: .continuous)
+            .fill(Color.white.opacity(0.07))
+            .frame(height: 1)
+        }
       Spacer(minLength: 0)
     }
     .frame(maxWidth: .infinity, alignment: .leading)
     .padding(12)
     .background(SettingsPalette.preview)
     .clipShape(RoundedRectangle(cornerRadius: Dial.Radius.panel, style: .continuous))
+  }
+
+  private var previewAlbumArt: some View {
+    ZStack {
+      RoundedRectangle(cornerRadius: Dial.Radius.tiny, style: .continuous)
+        .fill(SettingsPalette.accent.opacity(0.30))
+      Rectangle()
+        .fill(SettingsPalette.text.opacity(0.16))
+        .frame(width: 7)
+        .offset(x: -4)
+      DialIcon("music.note")
+        .frame(width: 9, height: 9)
+        .foregroundStyle(SettingsPalette.text.opacity(0.9))
+    }
+    .clipShape(RoundedRectangle(cornerRadius: Dial.Radius.tiny, style: .continuous))
+    .overlay(
+      RoundedRectangle(cornerRadius: Dial.Radius.tiny, style: .continuous)
+        .stroke(Color.white.opacity(0.24), lineWidth: 0.55))
+    .frame(width: 20, height: 20)
+  }
+
+  @ViewBuilder
+  private var previewTitle: some View {
+    if mode == .albumArtTrackArtist {
+      HStack(spacing: 4) {
+        Text("VOLVER")
+          .foregroundStyle(SettingsPalette.text)
+        Text("•")
+          .foregroundStyle(SettingsPalette.accent.opacity(0.72))
+        Text("Tainy")
+          .foregroundStyle(SettingsPalette.muted.opacity(0.88))
+      }
+      .font(.custom("GeistMono-Medium", size: 13))
+      .lineLimit(1)
+    } else {
+      Text("VOLVER")
+        .font(.custom("GeistMono-Medium", size: 13))
+        .foregroundStyle(SettingsPalette.text)
+        .lineLimit(1)
+    }
   }
 }
 

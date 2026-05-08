@@ -43,6 +43,8 @@ final class AppCoordinator {
   private var recentRepairTask: Task<Void, Never>?
   private var recentPeriodicTask: Task<Void, Never>?
   private var countedPlaySideEffectsTask: Task<Void, Never>?
+  private var playbackPostRenderTask: Task<Void, Never>?
+  private var weeklyMemoriesTask: Task<Void, Never>?
   private var wakeObserver: NSObjectProtocol?
   private var networkMonitor: NWPathMonitor?
   private let networkMonitorQueue = DispatchQueue(label: "com.dial.Dial.recent-play-network-monitor")
@@ -98,7 +100,7 @@ final class AppCoordinator {
     startRecentPlayObservers()
     guard !pollingStarted else { return }
     pollingStarted = true
-    startRecentPlayRepair(reason: "launch")
+    startRecentPlayRepair(reason: "launch", delay: 8)
     startPeriodicRecentPlaySync()
     Task { [weak self] in
       guard let self else { return }
@@ -125,12 +127,16 @@ final class AppCoordinator {
       self.pollingStarted = false
     }
     syncBackgroundEnrichment()
-    refreshWeeklyMemoriesIfNeeded()
+    refreshWeeklyMemoriesIfNeeded(delay: 12)
   }
 
-  private func startRecentPlayRepair(reason: String) {
+  private func startRecentPlayRepair(reason: String, delay: TimeInterval = 0) {
     recentRepairTask?.cancel()
     recentRepairTask = Task { [weak self] in
+      if delay > 0 {
+        try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+        guard !Task.isCancelled else { return }
+      }
       await self?.runRecentPlayRepair(reason: reason, aggressive: true)
     }
   }
@@ -339,6 +345,9 @@ final class AppCoordinator {
   private func handle(_ event: PlaybackEvent, source: PlaybackEventSource = .poll) async {
     let perf: DialPerfInterval? = source == .poll ? DialPerf.begin("playback.poll_to_render") : nil
     var perfEnded = false
+    func beginPollInterval(_ name: StaticString) -> DialPerfInterval? {
+      source == .poll ? DialPerf.begin(name) : nil
+    }
     func endPerf() {
       guard !perfEnded else { return }
       perf?.end()
@@ -360,12 +369,14 @@ final class AppCoordinator {
     let event = reduction.event
     switch event {
     case let .started(uri, name, artistName, artistUri, artists, albumName, artUrl, durationMs, _):
+      let visibleReadPerf = beginPollInterval("playback.visible_state_read")
       let visibleState = await MainActor.run {
         (
           existingTrack: nowPlaying.track,
           durationMs: menubar.durationMs
         )
       }
+      visibleReadPerf?.end()
       let existingTrack = visibleState.existingTrack
       let trackChanged = reduction.trackChanged || existingTrack?.uri != uri
 
@@ -402,6 +413,7 @@ final class AppCoordinator {
         artistUris: initialResolvedArtists.map(\.uri).filter { $0.hasPrefix("spotify:artist:") },
         albumName: initialResolvedAlbumName,
         artUrl: initialResolvedArtUrl)
+      let visiblePublishPerf = beginPollInterval("playback.visible_publish")
       await MainActor.run {
         if trackChanged {
           currentTrackCountedAt = nil
@@ -417,6 +429,7 @@ final class AppCoordinator {
         }
         resolvePetBehavior()
       }
+      visiblePublishPerf?.end()
       endPerf()
 
       let needsStoredMetadata = trackChanged && (
@@ -491,50 +504,79 @@ final class AppCoordinator {
 
       persistLiveArtists(resolvedArtists)
 
-      let stillCurrent = await MainActor.run { nowPlaying.track?.uri == uri }
-      guard stillCurrent else { return }
+      playbackPostRenderTask?.cancel()
+      let nextPostRender = Task(priority: .utility) { [weak self] in
+        guard let self, !Task.isCancelled else { return }
 
-      await MainActor.run {
-        aggCache.refresh(trackUri: uri, artistUri: resolvedArtistUri, currentPlayAt: nil)
-        updateSoundTheme(
+        let stillCurrent = await MainActor.run { self.nowPlaying.track?.uri == uri }
+        guard stillCurrent, !Task.isCancelled else { return }
+
+        let postRenderComputePerf = source == .poll
+          ? DialPerf.begin("playback.post_render_compute")
+          : nil
+        let aggregationSnapshot = self.aggCache.snapshot(
+          trackUri: uri,
+          artistUri: resolvedArtistUri,
+          currentPlayAt: nil)
+        let soundThemeDecision = self.makeSoundThemeDecision(
           for: resolvedArtists.map(\.uri),
           allowFallback: !trackChanged,
           trackName: resolvedName,
           artistName: resolvedArtistName,
           albumName: resolvedAlbumName)
-        warmCurrentSoundTags(for: resolvedArtists)
-        nowPlaying.playsYTD = aggCache.playsYTD
-        menubar.playsYTD = aggCache.playsYTD
-        updatePetMemoryText()
-        resolvePetBehavior()
-      }
-      // BPM lookup is best-effort for the beat-sync animation.
-      if trackChanged,
-         let trackId = uri.split(separator: ":").last,
-         await SpotifyRateLimitGate.shared.cooldownRemaining() <= 0,
-         let features = try? await client.audioFeatures(trackId: String(trackId)) {
+        postRenderComputePerf?.end()
+        guard !Task.isCancelled else { return }
+
+        let postRenderApplyPerf = source == .poll
+          ? DialPerf.begin("playback.post_render_apply")
+          : nil
         await MainActor.run {
-          guard nowPlaying.track?.uri == uri else { return }
-          pet.currentBPM = features.tempo
-          resolvePetBehavior()
+          guard self.nowPlaying.track?.uri == uri else { return }
+          self.aggCache.apply(aggregationSnapshot)
+          self.applySoundThemeDecision(soundThemeDecision)
+          self.warmCurrentSoundTags(for: resolvedArtists)
+          self.nowPlaying.playsYTD = self.aggCache.playsYTD
+          self.menubar.playsYTD = self.aggCache.playsYTD
+          self.updatePetMemoryText()
+          self.resolvePetBehavior()
+        }
+        postRenderApplyPerf?.end()
+
+        // BPM lookup is best-effort for the beat-sync animation.
+        if trackChanged,
+           let trackId = uri.split(separator: ":").last,
+           await SpotifyRateLimitGate.shared.cooldownRemaining() <= 0,
+           let features = try? await self.client.audioFeatures(trackId: String(trackId)) {
+          await MainActor.run {
+            guard self.nowPlaying.track?.uri == uri else { return }
+            self.pet.currentBPM = features.tempo
+            self.resolvePetBehavior()
+          }
         }
       }
+      playbackPostRenderTask = nextPostRender
 
     case .paused:
+      let visiblePublishPerf = beginPollInterval("playback.visible_publish")
       await MainActor.run {
         menubar.state = .paused
         resolvePetBehavior()
       }
+      visiblePublishPerf?.end()
       endPerf()
 
     case .resumed:
+      let visiblePublishPerf = beginPollInterval("playback.visible_publish")
       await MainActor.run {
         menubar.state = .playing
         resolvePetBehavior()
       }
+      visiblePublishPerf?.end()
       endPerf()
 
     case .noPlayback:
+      playbackPostRenderTask?.cancel()
+      let visiblePublishPerf = beginPollInterval("playback.visible_publish")
       await MainActor.run {
         currentTrackCountedAt = nil
         clearAmbientTrick()
@@ -553,22 +595,28 @@ final class AppCoordinator {
         aggCache.refresh(trackUri: nil, artistUri: nil, currentPlayAt: nil)
         resolvePetBehavior()
       }
+      visiblePublishPerf?.end()
       endPerf()
 
     case let .progress(ms):
+      let visiblePublishPerf = beginPollInterval("playback.visible_publish")
       await MainActor.run {
         menubar.progressMs = ms
         menubar.lastProgressUpdate = Date()
       }
+      visiblePublishPerf?.end()
       endPerf()
 
     case let .modesChanged(shuffle, repeatMode):
+      let visiblePublishPerf = beginPollInterval("playback.visible_publish")
       await MainActor.run {
         menubar.applyRemoteModes(shuffle: shuffle, repeatMode: repeatMode)
       }
+      visiblePublishPerf?.end()
       endPerf()
 
     case let .countedPlay(uri, ms, at):
+      let visibleReadPerf = beginPollInterval("playback.visible_state_read")
       let countedContext = await MainActor.run {
         (
           xpBefore: pet.xp,
@@ -576,6 +624,7 @@ final class AppCoordinator {
           trackName: nowPlaying.track?.name ?? "this play"
         )
       }
+      visibleReadPerf?.end()
       endPerf()
       let previousSideEffects = countedPlaySideEffectsTask
       let nextSideEffects = Task(priority: .utility) { [weak self] in
@@ -677,10 +726,18 @@ final class AppCoordinator {
     }
   }
 
-  private func refreshWeeklyMemoriesIfNeeded(limit: Int = 12) {
+  private func refreshWeeklyMemoriesIfNeeded(limit: Int = 12, delay: TimeInterval = 0) {
     guard settings.petEnabled, settings.livingMemoriesEnabled else { return }
+    guard weeklyMemoriesTask == nil else { return }
     let dbq = self.dbq
-    Task(priority: .utility) {
+    weeklyMemoriesTask = Task(priority: .background) { [weak self] in
+      defer { self?.weeklyMemoriesTask = nil }
+      if delay > 0 {
+        try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+        guard !Task.isCancelled else { return }
+      }
+      let perf = DialPerf.begin("weekly_memories.refresh")
+      defer { perf.end() }
       do {
         _ = try WeeklyMemoriesDAO(dbq: dbq).ensureRecentWeeks(limit: limit)
       } catch {
@@ -765,14 +822,32 @@ final class AppCoordinator {
     artistName: String? = nil,
     albumName: String? = nil
   ) {
+    applySoundThemeDecision(makeSoundThemeDecision(
+      for: artistUris,
+      allowFallback: allowFallback,
+      trackName: trackName,
+      artistName: artistName,
+      albumName: albumName))
+  }
+
+  private func makeSoundThemeDecision(
+    for artistUris: [String],
+    allowFallback: Bool = true,
+    trackName: String? = nil,
+    artistName: String? = nil,
+    albumName: String? = nil
+  ) -> SoundThemeDecision? {
     let artistUris = artistUris.filter { $0.hasPrefix("spotify:artist:") }
     let queries = StatsQueries(dbq: dbq)
-    let decision = try? queries.soundThemeDecision(
+    return try? queries.soundThemeDecision(
       forArtistUris: artistUris,
       trackName: trackName,
       artistName: artistName,
       albumName: albumName,
       allowRecentFallback: allowFallback)
+  }
+
+  private func applySoundThemeDecision(_ decision: SoundThemeDecision?) {
     let resolved = Self.resolvedSoundThemeState(
       currentTheme: nowPlaying.soundTheme,
       hasTrack: nowPlaying.track != nil,

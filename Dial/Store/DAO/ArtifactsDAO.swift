@@ -96,10 +96,15 @@ struct ArtifactsDAO {
           sourceBadgeEventId: nil,
           trackUri: nil,
           artistUri: nil,
-          detail: "\(memory.memento) · \(memory.trait)",
+          detail: weeklyMemoryDetail(memory),
           sourceWeekStart: memory.weekStart),
         in: db)
     }
+  }
+
+  private func weeklyMemoryDetail(_ memory: WeeklyMemoryRecord) -> String {
+    let sound = memory.dominantGenre ?? memory.theme.label
+    return "\(memory.memento) · \(memory.trait) · \(sound)"
   }
 
   private func insertIgnoring(_ artifact: Artifact, in db: Database) throws {

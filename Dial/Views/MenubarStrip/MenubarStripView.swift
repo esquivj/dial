@@ -15,6 +15,7 @@ struct MenubarStripView: View {
     static let albumArt: CGFloat = 20
     static let pet: CGFloat = 20
     static let brandSymbol: CGFloat = 20
+    static let capsuleRadius: CGFloat = 7
   }
 
   @State private var trackFlash = false
@@ -41,13 +42,7 @@ struct MenubarStripView: View {
         }
       }
       .background {
-        if trackFlash && settings.flashOnTrackChange {
-          RoundedRectangle(cornerRadius: Dial.Radius.tiny)
-            .fill(theme.accent.opacity(0.18))
-            .overlay(
-              RoundedRectangle(cornerRadius: Dial.Radius.tiny)
-                .stroke(theme.accent.opacity(0.45), lineWidth: 0.8))
-        }
+        menuBarTrackFlash
       }
       .onChange(of: vm.track?.uri) { oldValue, newValue in
         guard settings.flashOnTrackChange, !reduceMotion, oldValue != nil, newValue != nil else { return }
@@ -59,12 +54,20 @@ struct MenubarStripView: View {
       }
   }
 
+  @ViewBuilder
+  private var menuBarTrackFlash: some View {
+    if trackFlash && settings.flashOnTrackChange {
+      RoundedRectangle(cornerRadius: Metrics.capsuleRadius, style: .continuous)
+        .fill(theme.accent.opacity(0.14))
+    }
+  }
+
   private var horizontalPadding: (leading: CGFloat, trailing: CGFloat) {
     switch settings.menuBarDisplayMode {
     case .albumArtTitle, .albumArtTrackArtist:
-      return (7, 1)
+      return (7, 5)
     default:
-      return (4, 4)
+      return (6, 6)
     }
   }
 
@@ -125,16 +128,23 @@ struct MenubarStripView: View {
     case .playing:
       trackArtistLine
     case .paused:
-      dynamicMenuBarText(pausedTrackArtistString)
-        .foregroundStyle(Dial.Palette.textMuted)
+      dynamicMenuBarText(pausedTrackArtistString, foreground: Dial.Palette.textMuted)
     case .nothingPlaying:
       brandMenuBarText
     }
   }
 
   private var trackArtistLine: some View {
-    dynamicMenuBarText(trackArtistString)
-      .foregroundStyle(Dial.Palette.textPrimary)
+    let title = vm.track?.name ?? ""
+    let artist = vm.track?.artistName ?? ""
+
+    return Group {
+      if title.isEmpty || artist.isEmpty {
+        dynamicMenuBarText(trackArtistString, foreground: Color.white.opacity(0.93))
+      } else {
+        dynamicMenuBarPair(primary: title, secondary: artist, widthKey: trackArtistString)
+      }
+    }
   }
 
   private var trackArtistString: String {
@@ -151,24 +161,33 @@ struct MenubarStripView: View {
   private var titleText: some View {
     switch vm.state {
     case .playing:
-      dynamicMenuBarText(vm.track?.name ?? "")
-        .foregroundStyle(Dial.Palette.textPrimary)
+      dynamicMenuBarText(vm.track?.name ?? "", foreground: Dial.Palette.textPrimary)
     case .paused:
-      dynamicMenuBarText(pausedTitleString)
-        .foregroundStyle(Dial.Palette.textMuted)
+      dynamicMenuBarText(pausedTitleString, foreground: Dial.Palette.textMuted)
     case .nothingPlaying:
       brandMenuBarText
     }
   }
 
-  private func dynamicMenuBarText(_ text: String) -> some View {
-    Text(text)
-      .font(MenuBarTextMetrics.font)
-      .kerning(MenuBarTextMetrics.kerning)
-      .lineLimit(1)
-      .truncationMode(.tail)
-      .frame(width: menuBarTextWidth(for: text), height: MenuBarTextMetrics.lineHeight, alignment: .leading)
-      .clipped()
+  private func dynamicMenuBarText(
+    _ text: String,
+    foreground: Color
+  ) -> some View {
+    MenubarTickerText(
+      segments: [.init(text: text, foreground: foreground)],
+      width: menuBarTextWidth(for: text),
+      accessibilityLabel: text)
+  }
+
+  private func dynamicMenuBarPair(primary: String, secondary: String, widthKey: String) -> some View {
+    MenubarTickerText(
+      segments: [
+        .init(text: primary, foreground: Color.white.opacity(0.94)),
+        .init(text: " • ", foreground: theme.accent.opacity(0.70)),
+        .init(text: secondary, foreground: Dial.Palette.textMuted.opacity(0.88)),
+      ],
+      width: menuBarTextWidth(for: widthKey),
+      accessibilityLabel: widthKey)
   }
 
   private func menuBarTextWidth(for text: String) -> CGFloat {
@@ -218,8 +237,9 @@ struct MenubarStripView: View {
     .clipShape(RoundedRectangle(cornerRadius: Dial.Radius.printed))
     .overlay(
       RoundedRectangle(cornerRadius: Dial.Radius.printed)
-        .stroke(Color.white.opacity(0.18), lineWidth: 0.5)
+        .stroke(Color.white.opacity(0.24), lineWidth: 0.55)
     )
+    .shadow(color: Color.black.opacity(0.40), radius: 1.5, x: 0, y: 0.6)
     .saturation(vm.state == .paused ? 0.45 : 1)
     .brightness(vm.state == .paused ? -0.08 : 0)
     .opacity(vm.state == .paused ? 0.78 : 1)
@@ -294,5 +314,103 @@ struct MenubarStripView: View {
     guard vm.durationMs > 0 else { return 0 }
     let ms = vm.interpolatedProgressMs()
     return CGFloat(min(1, max(0, Double(ms) / Double(vm.durationMs))))
+  }
+}
+
+private struct MenubarTickerText: View {
+  struct Segment {
+    let text: String
+    let foreground: Color
+  }
+
+  let segments: [Segment]
+  let width: CGFloat
+  let accessibilityLabel: String
+
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @State private var contentWidth: CGFloat = 0
+  @State private var cycleStart = Date()
+
+  private let speed: Double = 24
+  private let startHold: TimeInterval = 0.85
+  private let endHold: TimeInterval = 0.95
+
+  var body: some View {
+    let overflow = max(0, contentWidth - width)
+    let needsTicker = overflow > 1 && !reduceMotion
+
+    ZStack(alignment: .leading) {
+      if needsTicker {
+        TimelineView(.animation) { context in
+          scrollingContent(
+            elapsed: context.date.timeIntervalSince(cycleStart),
+            overflow: overflow)
+        }
+      } else if overflow > 1 {
+        fallbackText
+      } else {
+        tickerContent
+      }
+    }
+    .frame(width: width, height: MenuBarTextMetrics.lineHeight, alignment: .leading)
+    .clipped()
+    .background(measuredContent)
+    .accessibilityLabel(accessibilityLabel)
+    .onAppear { cycleStart = Date() }
+    .onChange(of: accessibilityLabel) { _, _ in cycleStart = Date() }
+    .onChange(of: width) { _, _ in cycleStart = Date() }
+  }
+
+  private func scrollingContent(elapsed: TimeInterval, overflow: CGFloat) -> some View {
+    let travelTime = max(1.0, TimeInterval(overflow) / speed)
+    let cycleLength = startHold + travelTime + endHold
+    let phase = elapsed.truncatingRemainder(dividingBy: cycleLength)
+    let offset: CGFloat = {
+      if phase < startHold {
+        return 0
+      }
+      if phase < startHold + travelTime {
+        return -CGFloat(phase - startHold) * speed
+      }
+      return -overflow
+    }()
+
+    return tickerContent.offset(x: offset)
+  }
+
+  private var tickerContent: some View {
+    HStack(spacing: 0) {
+      ForEach(Array(segments.enumerated()), id: \.offset) { _, segment in
+        Text(segment.text)
+          .font(MenuBarTextMetrics.font)
+          .kerning(MenuBarTextMetrics.kerning)
+          .foregroundStyle(segment.foreground)
+          .lineLimit(1)
+          .fixedSize(horizontal: true, vertical: false)
+      }
+    }
+  }
+
+  private var fallbackText: some View {
+    Text(accessibilityLabel)
+      .font(MenuBarTextMetrics.font)
+      .kerning(MenuBarTextMetrics.kerning)
+      .foregroundStyle(segments.first?.foreground ?? Dial.Palette.textPrimary)
+      .lineLimit(1)
+      .truncationMode(.tail)
+  }
+
+  private var measuredContent: some View {
+    tickerContent
+      .opacity(0)
+      .background(
+        GeometryReader { proxy in
+          Color.clear
+            .onAppear { contentWidth = proxy.size.width }
+            .onChange(of: proxy.size.width) { _, width in
+              contentWidth = width
+            }
+        }
+      )
   }
 }

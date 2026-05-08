@@ -19,6 +19,7 @@ struct StatsView: View {
   @State private var topTracks: [StatsQueries.TopRow] = []
   @State private var topArtists: [StatsQueries.TopRow] = []
   @State private var topGenres: [StatsQueries.GenreRow] = []
+  @State private var weeklyMemory: StatsQueries.WeeklyMemorySnapshot?
   @State private var rhythmBuckets: [StatsQueries.RhythmBucket] = []
   @State private var badgeSummaries: [StatsQueries.BadgeSummary] = []
   @State private var recentBadges: [StatsQueries.BadgeMemoryRow] = []
@@ -48,6 +49,7 @@ struct StatsView: View {
     _topTracks = State(initialValue: initialSnapshot?.topTracks ?? [])
     _topArtists = State(initialValue: initialSnapshot?.topArtists ?? [])
     _topGenres = State(initialValue: initialSnapshot?.topGenres ?? [])
+    _weeklyMemory = State(initialValue: initialSnapshot?.weeklyMemory)
     _rhythmBuckets = State(initialValue: initialSnapshot?.rhythmBuckets ?? [])
     _badgeSummaries = State(initialValue: initialSnapshot?.badgeSummaries ?? [])
     _recentBadges = State(initialValue: initialSnapshot?.recentBadges ?? [])
@@ -116,6 +118,9 @@ struct StatsView: View {
     ScrollView(.vertical, showsIndicators: true) {
       VStack(alignment: .leading, spacing: Dial.Layout.SecondaryScreen.sectionSpacing) {
         overviewPanel
+        if let weeklyMemory {
+          WeeklyMemoryStatsCard(memory: weeklyMemory)
+        }
         genreSignalSection
         rhythmSection
         topTracksSection
@@ -542,12 +547,88 @@ struct StatsView: View {
     topTracks = snapshot.topTracks
     topArtists = snapshot.topArtists
     topGenres = snapshot.topGenres
+    weeklyMemory = snapshot.weeklyMemory
     rhythmBuckets = snapshot.rhythmBuckets
     badgeSummaries = snapshot.badgeSummaries
     recentBadges = snapshot.recentBadges
     if range == .ytd {
       onSnapshot(snapshot)
     }
+  }
+}
+
+private struct WeeklyMemoryStatsCard: View {
+  let memory: StatsQueries.WeeklyMemorySnapshot
+  @Environment(\.dialTheme) private var theme
+
+  var body: some View {
+    let memoryTheme = DialTheme.palette(for: memory.theme)
+    let accent = memoryTheme.accent
+
+    HStack(alignment: .center, spacing: 10) {
+      VStack(alignment: .leading, spacing: 3) {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+          Text("THIS WEEK")
+            .font(Dial.Typography.monoTiny)
+            .tracking(1.0)
+            .foregroundStyle(theme.textMuted.opacity(0.72))
+
+          Text(memory.trait.uppercased())
+            .font(Dial.Typography.monoTiny)
+            .tracking(1.0)
+            .foregroundStyle(accent)
+            .lineLimit(1)
+            .minimumScaleFactor(0.75)
+        }
+
+        Text(memory.memento.uppercased())
+          .font(Dial.Typography.monoLabel)
+          .tracking(1.1)
+          .foregroundStyle(theme.textPrimary)
+          .lineLimit(1)
+          .minimumScaleFactor(0.78)
+
+        Text(memory.recapLine)
+          .font(Dial.Typography.monoSmall)
+          .foregroundStyle(theme.textMuted.opacity(0.72))
+          .lineLimit(1)
+          .minimumScaleFactor(0.64)
+      }
+      .frame(maxWidth: .infinity, alignment: .leading)
+
+      VStack(alignment: .trailing, spacing: 3) {
+        Text((memory.dominantGenre ?? memory.theme.label).uppercased())
+          .font(Dial.Typography.monoTiny)
+          .tracking(0.8)
+          .foregroundStyle(accent.opacity(0.95))
+          .lineLimit(1)
+          .minimumScaleFactor(0.62)
+
+        Text(roomObjectLabel(memory.roomObjectName))
+          .font(Dial.Typography.monoTiny)
+          .tracking(0.8)
+          .foregroundStyle(theme.textPrimary.opacity(0.80))
+          .lineLimit(2)
+          .multilineTextAlignment(.trailing)
+          .minimumScaleFactor(0.66)
+      }
+      .frame(width: 90, alignment: .trailing)
+    }
+    .padding(EdgeInsets(top: 8, leading: 9, bottom: 8, trailing: 9))
+    .dialPrintedChip(
+      shape: RoundedRectangle(cornerRadius: Dial.Radius.tiny, style: .continuous),
+      color: accent,
+      fillOpacity: 0.04,
+      edgeOpacity: 0.16)
+    .help(helpText)
+    .accessibilityElement(children: .combine)
+    .accessibilityLabel("This week's memory")
+    .accessibilityValue("\(memory.trait). \(memory.memento). \(memory.recapLine)")
+  }
+
+  private var helpText: String {
+    let genre = memory.dominantGenre ?? memory.theme.label
+    return "\(memory.trait): \(memory.recapLine) Memento: \(memory.memento). Room object: \(roomObjectLabel(memory.roomObjectName)). Dominant sound: \(genre)."
   }
 }
 
@@ -753,6 +834,12 @@ private func memoryColor(_ category: BadgeCategory, theme: DialTheme) -> Color {
   case .pattern: return theme.memoryAccent
   case .milestone: return theme.textPrimary
   }
+}
+
+private func roomObjectLabel(_ name: String) -> String {
+  name
+    .replacingOccurrences(of: "_", with: " ")
+    .uppercased()
 }
 
 private struct TopTrackRow: View {

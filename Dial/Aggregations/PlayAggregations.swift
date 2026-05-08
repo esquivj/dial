@@ -9,49 +9,47 @@ struct PlayAggregations {
   func plays30d(trackUri: String) throws -> Int {
     let cutoff = now() - 30 * 86_400
     return try dbq.read { db in
-      try Int.fetchOne(db,
-        sql: "SELECT COUNT(*) FROM plays WHERE track_uri = ? AND played_at > ?",
-        arguments: [trackUri, cutoff]) ?? 0
+      let uris = try matchingTrackUris(trackUri: trackUri, in: db)
+      return try Int.fetchOne(db,
+        sql: "SELECT COUNT(*) FROM plays WHERE track_uri IN (\(placeholders(for: uris))) AND played_at > ?",
+        arguments: statementArguments(uris, appending: [cutoff])) ?? 0
     }
   }
 
   func playsYTD(trackUri: String) throws -> Int {
     let cutoff = Self.startOfYearEpoch(for: now())
     return try dbq.read { db in
-      try Int.fetchOne(db,
-        sql: "SELECT COUNT(*) FROM plays WHERE track_uri = ? AND played_at >= ?",
-        arguments: [trackUri, cutoff]) ?? 0
+      let uris = try matchingTrackUris(trackUri: trackUri, in: db)
+      return try Int.fetchOne(db,
+        sql: "SELECT COUNT(*) FROM plays WHERE track_uri IN (\(placeholders(for: uris))) AND played_at >= ?",
+        arguments: statementArguments(uris, appending: [cutoff])) ?? 0
     }
   }
 
   /// 1-based rank within last 7d among all tracks played in that window.
   /// Ties broken by most-recent play.
   func rank7d(trackUri: String) throws -> Int? {
-    let cutoff = now() - 7 * 86_400
     return try dbq.read { db in
-      try Int.fetchOne(db, sql: """
-        WITH ranked AS (
-          SELECT track_uri, COUNT(*) as c, MAX(played_at) as last
-          FROM plays WHERE played_at > ? GROUP BY track_uri
-        )
-        SELECT rnk FROM (
-          SELECT track_uri, ROW_NUMBER() OVER (ORDER BY c DESC, last DESC) as rnk FROM ranked
-        ) WHERE track_uri = ?
-        """, arguments: [cutoff, trackUri])
+      let uris = try matchingTrackUris(trackUri: trackUri, in: db)
+      return try TrackIdentityResolver.rank7d(
+        matching: uris,
+        anchorAt: now(),
+        in: db)
     }
   }
 
   func lastPlayedAt(trackUri: String, before currentPlayAt: Int64? = nil) throws -> Int64? {
     let upperBound = currentPlayAt ?? now()
     return try dbq.read { db in
-      try Int64.fetchOne(db, sql: """
+      let uris = try matchingTrackUris(trackUri: trackUri, in: db)
+      return try Int64.fetchOne(db, sql: """
         SELECT played_at
         FROM plays
-        WHERE track_uri = ?
+        WHERE track_uri IN (\(placeholders(for: uris)))
           AND played_at < ?
         ORDER BY played_at DESC, id DESC
         LIMIT 1
-        """, arguments: [trackUri, upperBound])
+        """, arguments: statementArguments(uris, appending: [upperBound]))
     }
   }
 }
@@ -68,15 +66,20 @@ private extension PlayAggregations {
 }
 
 extension PlayAggregations {
+  private static let familiarArtistPlayThreshold = 20
+  private static let familiarAlbumPlayThreshold = 3
+
   func firstListen(trackUri: String) throws -> Bool {
     try dbq.read { db in
+      let uris = try matchingTrackUris(trackUri: trackUri, in: db)
       let imports = try Int.fetchOne(db,
-        sql: "SELECT COUNT(*) FROM plays WHERE track_uri = ? AND source = 'import'",
-        arguments: [trackUri]) ?? 0
+        sql: "SELECT COUNT(*) FROM plays WHERE track_uri IN (\(placeholders(for: uris))) AND source = 'import'",
+        arguments: StatementArguments(uris)) ?? 0
       let live = try Int.fetchOne(db,
-        sql: "SELECT COUNT(*) FROM plays WHERE track_uri = ? AND source = 'live'",
-        arguments: [trackUri]) ?? 0
-      return imports == 0 && live == 1
+        sql: "SELECT COUNT(*) FROM plays WHERE track_uri IN (\(placeholders(for: uris))) AND source = 'live'",
+        arguments: StatementArguments(uris)) ?? 0
+      guard imports == 0 && live == 1 else { return false }
+      return try !isKnownCatalogContext(trackUri: trackUri, in: db)
     }
   }
 
@@ -84,27 +87,27 @@ extension PlayAggregations {
     let ninetyDays: Int64 = 90 * 86_400
     let anchor = now()
     return try dbq.read { db in
+      let uris = try matchingTrackUris(trackUri: trackUri, in: db)
       let recentRediscovery = try Int.fetchOne(db, sql: """
         SELECT 1
         FROM badge_events
-        WHERE track_uri = ?
+        WHERE track_uri IN (\(placeholders(for: uris)))
           AND kind = ?
           AND earned_at >= ?
         LIMIT 1
-        """, arguments: [
-          trackUri,
+        """, arguments: statementArguments(uris, appending: [
           BadgeMemoryKind.rediscovered.rawValue,
           anchor - 24 * 60 * 60,
-        ])
+        ]))
       if recentRediscovery != nil { return true }
 
       let latest = try Int64.fetchAll(db, sql: """
         SELECT played_at
         FROM plays
-        WHERE track_uri = ?
+        WHERE track_uri IN (\(placeholders(for: uris)))
         ORDER BY played_at DESC, id DESC
         LIMIT 2
-        """, arguments: [trackUri])
+        """, arguments: StatementArguments(uris))
 
       if latest.count >= 2 {
         let latestPlay = latest[0]
@@ -139,6 +142,120 @@ extension PlayAggregations {
         countedCurrentPlay: currentPlayAt != nil,
         in: db)
     }
+  }
+}
+
+private extension PlayAggregations {
+  struct TrackIdentity {
+    let trackName: String?
+    let albumName: String?
+    let artistName: String?
+    let artistUri: String?
+  }
+
+  func matchingTrackUris(trackUri: String, in db: Database) throws -> [String] {
+    let identity = try trackIdentity(trackUri: trackUri, in: db)
+    return try TrackIdentityResolver.matchingTrackUris(
+      trackUri: trackUri,
+      trackName: identity.trackName,
+      artistName: identity.artistName,
+      artistUri: identity.artistUri,
+      in: db)
+  }
+
+  func trackIdentity(trackUri: String, in db: Database) throws -> TrackIdentity {
+    guard let row = try Row.fetchOne(db, sql: """
+      SELECT
+        LOWER(TRIM(name)) AS track_name,
+        LOWER(TRIM(album_name)) AS album_name,
+        CASE WHEN artists_json IS NOT NULL AND json_valid(artists_json) = 1
+             THEN LOWER(TRIM(json_extract(artists_json, '$[0].name')))
+             ELSE NULL
+        END AS artist_name,
+        CASE WHEN artists_json IS NOT NULL AND json_valid(artists_json) = 1
+             THEN json_extract(artists_json, '$[0].uri')
+             ELSE NULL
+        END AS artist_uri
+      FROM tracks
+      WHERE uri = ?
+      """, arguments: [trackUri])
+    else { return TrackIdentity(trackName: nil, albumName: nil, artistName: nil, artistUri: nil) }
+
+    return TrackIdentity(
+      trackName: nonEmpty(row["track_name"]),
+      albumName: nonEmpty(row["album_name"]),
+      artistName: nonEmpty(row["artist_name"]),
+      artistUri: nonEmpty(row["artist_uri"])
+    )
+  }
+
+  func isKnownCatalogContext(trackUri: String, in db: Database) throws -> Bool {
+    let identity = try trackIdentity(trackUri: trackUri, in: db)
+    let artistCount = try artistLifetimePlayCount(identity: identity, in: db)
+    let albumCount = try albumLifetimePlayCount(identity: identity, in: db)
+    return artistCount >= Self.familiarArtistPlayThreshold || albumCount >= Self.familiarAlbumPlayThreshold
+  }
+
+  func artistLifetimePlayCount(identity: TrackIdentity, in db: Database) throws -> Int {
+    guard identity.artistUri != nil || identity.artistName != nil else { return 0 }
+    return try Int.fetchOne(db, sql: """
+      SELECT COUNT(*)
+      FROM plays p
+      JOIN tracks t ON t.uri = p.track_uri
+      WHERE t.artists_json IS NOT NULL
+        AND json_valid(t.artists_json) = 1
+        AND (
+          (? IS NOT NULL AND json_extract(t.artists_json, '$[0].uri') = ?)
+          OR
+          (? IS NOT NULL AND LOWER(TRIM(json_extract(t.artists_json, '$[0].name'))) = ?)
+        )
+      """, arguments: [
+        identity.artistUri,
+        identity.artistUri,
+        identity.artistName,
+        identity.artistName,
+      ]) ?? 0
+  }
+
+  func albumLifetimePlayCount(identity: TrackIdentity, in db: Database) throws -> Int {
+    guard let albumName = identity.albumName,
+          identity.artistUri != nil || identity.artistName != nil
+    else { return 0 }
+    return try Int.fetchOne(db, sql: """
+      SELECT COUNT(*)
+      FROM plays p
+      JOIN tracks t ON t.uri = p.track_uri
+      WHERE t.album_name IS NOT NULL
+        AND LOWER(TRIM(t.album_name)) = ?
+        AND t.artists_json IS NOT NULL
+        AND json_valid(t.artists_json) = 1
+        AND (
+          (? IS NOT NULL AND json_extract(t.artists_json, '$[0].uri') = ?)
+          OR
+          (? IS NOT NULL AND LOWER(TRIM(json_extract(t.artists_json, '$[0].name'))) = ?)
+        )
+      """, arguments: [
+        albumName,
+        identity.artistUri,
+        identity.artistUri,
+        identity.artistName,
+        identity.artistName,
+      ]) ?? 0
+  }
+
+  func placeholders(for values: [String]) -> String {
+    Array(repeating: "?", count: values.count).joined(separator: ",")
+  }
+
+  func statementArguments(_ uris: [String], appending values: [DatabaseValueConvertible]) -> StatementArguments {
+    var arguments: [DatabaseValueConvertible] = uris
+    arguments.append(contentsOf: values)
+    return StatementArguments(arguments)
+  }
+
+  func nonEmpty(_ value: String?) -> String? {
+    guard let value, !value.isEmpty else { return nil }
+    return value
   }
 }
 

@@ -62,6 +62,32 @@ final class SpotifyClientTests: XCTestCase {
     XCTAssertEqual(page.items.first?.playedAtMs, 1_700_000_100_123)
   }
 
+  func test_recentlyPlayed_usesBeforeCursorWhenPagingBack() async throws {
+    let json = #"""
+      {"items":[]}
+    """#
+    StubURLProtocol.handler = { req in
+      XCTAssertEqual(req.httpMethod, "GET")
+      XCTAssertEqual(req.url?.path, "/v1/me/player/recently-played")
+      let query = URLComponents(url: req.url!, resolvingAgainstBaseURL: false)?.queryItems ?? []
+      XCTAssertNil(query.first(where: { $0.name == "after" })?.value)
+      XCTAssertEqual(query.first(where: { $0.name == "before" })?.value, "1700000000123")
+      XCTAssertEqual(query.first(where: { $0.name == "limit" })?.value, "50")
+      let r = HTTPURLResponse(url: req.url!, statusCode: 200, httpVersion: nil, headerFields: [:])!
+      return (r, json.data(using: .utf8)!)
+    }
+    let store = InMemoryTokenStore()
+    try store.save(.init(accessToken: "valid", refreshToken: "r",
+                         expiresAt: Int64(Date().timeIntervalSince1970) + 3600))
+    let client = SpotifyClient(session: StubURLProtocol.session(),
+                               tokenStore: store,
+                               refresh: { try store.load()! })
+
+    let page = try await client.recentlyPlayed(afterMs: nil, beforeMs: 1_700_000_000_123, limit: 50)
+
+    XCTAssertTrue(page.items.isEmpty)
+  }
+
   func test_on401_triggersRefreshThenRetries() async throws {
     var callCount = 0
     StubURLProtocol.handler = { req in

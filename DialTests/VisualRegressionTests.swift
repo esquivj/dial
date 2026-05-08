@@ -83,6 +83,23 @@ final class VisualRegressionTests: XCTestCase {
     }
   }
 
+  func test_menuBarSettingsSurfaceRendersSelectedPreviewState() throws {
+    let context = try makeSnapshotContext(themeID: .aqua)
+    context.settings.menuBarDisplayMode = .albumArtTrackArtist
+    context.settings.showAlbumArtInMenuBar = true
+    context.settings.showProgressInMenuBar = true
+    context.settings.menuBarTitleWidth = 168
+
+    let view = SettingsMenuBarSnapshotHarness(settings: context.settings)
+      .preferredColorScheme(.dark)
+    let image = try render(view, size: CGSize(width: SettingsLayout.windowWidth, height: SettingsLayout.windowHeight))
+    let snapshotName = "dial-settings-menubar"
+    try attach(image, name: snapshotName)
+    try assertMatchesBaseline(image, name: snapshotName)
+
+    XCTAssertGreaterThan(opaquePixelCount(in: image), 70_000, "Menu bar settings screen rendered blank.")
+  }
+
   func test_transportButtonGeometryKeepsButtonsCenteredInsidePNGWells() {
     let regular = TransportHardware.buttonSize(prominent: false)
     let play = TransportHardware.buttonSize(prominent: true)
@@ -175,6 +192,53 @@ final class VisualRegressionTests: XCTestCase {
       availableHeight,
       "Pet screen overfills the hardware-shell plate. Merge or remove a row instead of stacking another shelf."
     )
+  }
+
+  func test_statsScreenRendersWeeklyMemorySignal() throws {
+    let context = try makeSnapshotContext(themeID: .classic)
+    let now = Int64(Date().timeIntervalSince1970)
+    let bounds = StatsQueries.weekBounds(containing: now)
+    let memory = StatsQueries.WeeklyMemorySnapshot(
+      weekStart: bounds.start,
+      weekEnd: bounds.end,
+      trait: "Pulsebound",
+      memento: "Signal Cube",
+      recapLine: "The week leaned into electronic pressure.",
+      roomObjectName: "stereo",
+      dominantGenre: "electronic",
+      theme: .slime,
+      playCount: 12,
+      listeningMs: 2_160_000,
+      uniqueArtists: 4,
+      newArtists: 1)
+    try WeeklyMemoriesDAO(dbq: context.dbq, now: { now }).upsert(memory, now: now)
+    let snapshot = StatsViewSnapshot(
+      totals: StatsQueries.Totals(
+        plays: 12,
+        listeningMs: 2_160_000,
+        uniqueTracks: 8,
+        uniqueArtists: 4),
+      topTracks: [],
+      topArtists: [],
+      topGenres: [],
+      weeklyMemory: memory,
+      rhythmBuckets: [],
+      badgeSummaries: [],
+      recentBadges: [])
+
+    let view = StatsView(
+      dbq: context.dbq,
+      artworkCache: context.artworkCache,
+      initialSnapshot: snapshot,
+      onBack: {},
+      placement: .hardwareShell)
+      .environment(\.dialTheme, DialTheme.classic)
+      .preferredColorScheme(.dark)
+
+    let image = try render(view, size: CGSize(width: DropdownLayout.width, height: DropdownLayout.height))
+
+    XCTAssertNotNil(snapshot.weeklyMemory)
+    XCTAssertGreaterThan(opaquePixelCount(in: image), 35_000, "Stats screen rendered blank.")
   }
 
   private func makeSnapshotContext(themeID: DialThemeID) throws -> SnapshotContext {
@@ -552,7 +616,7 @@ final class VisualRegressionTests: XCTestCase {
     let url = directory.appendingPathComponent("\(name).png")
     let data = try pngData(for: image)
 
-    if ProcessInfo.processInfo.environment["DIAL_RECORD_VISUAL_SNAPSHOTS"] == "1" {
+    if shouldRecordVisualSnapshots {
       try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
       try data.write(to: url, options: .atomic)
       return
@@ -621,6 +685,11 @@ final class VisualRegressionTests: XCTestCase {
     URL(fileURLWithPath: #filePath)
       .deletingLastPathComponent()
       .appendingPathComponent("Snapshots/VisualRegression", isDirectory: true)
+  }
+
+  private var shouldRecordVisualSnapshots: Bool {
+    ProcessInfo.processInfo.environment["DIAL_RECORD_VISUAL_SNAPSHOTS"] == "1"
+      || FileManager.default.fileExists(atPath: snapshotDirectory.appendingPathComponent(".record").path)
   }
 
   private func cgImage(from data: Data) -> CGImage? {
@@ -695,6 +764,62 @@ private struct MarketingMenubarConfig {
   let showProgress: Bool
   let petStage: PetStage
   let plays: Int
+}
+
+private struct SettingsMenuBarSnapshotHarness: View {
+  @Bindable var settings: SettingsViewModel
+
+  var body: some View {
+    HStack(spacing: 0) {
+      SettingsSidebar(selection: .constant(.menuBar)) { _ in }
+
+      Rectangle()
+        .fill(SettingsPalette.rule)
+        .frame(width: 1)
+
+      VStack(alignment: .leading, spacing: 0) {
+        VStack(alignment: .leading, spacing: SettingsLayout.sectionGap) {
+          SettingsSection("PREVIEW") {
+            MenuBarSettingsPreview(
+              mode: settings.menuBarDisplayMode,
+              showAlbumArt: settings.showAlbumArtInMenuBar,
+              maxWidth: settings.menuBarTitleWidth,
+              showProgress: settings.showProgressInMenuBar)
+          }
+
+          SettingsSection("SWITCHES") {
+            VStack(spacing: SettingsLayout.controlGap) {
+              SettingsToggle(
+                title: "Show album art",
+                detail: "Show the current cover in menu bar modes that include artwork.",
+                isOn: $settings.showAlbumArtInMenuBar)
+
+              SettingsToggle(
+                title: "Show progress line",
+                detail: "Show a tiny playback progress line under the menu bar item.",
+                isOn: $settings.showProgressInMenuBar)
+
+              SettingsToggle(
+                title: "Flash on new track",
+                detail: "Pulse the menu bar item when the track changes.",
+                isOn: $settings.flashOnTrackChange)
+            }
+          }
+        }
+          .padding(EdgeInsets(
+            top: SettingsLayout.contentTop,
+            leading: SettingsLayout.sidePadding,
+            bottom: SettingsLayout.contentBottom,
+            trailing: SettingsLayout.sidePadding))
+          .frame(maxWidth: .infinity, alignment: .leading)
+      }
+      .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+    .foregroundStyle(SettingsPalette.text)
+    .tint(SettingsPalette.accent)
+    .background(SettingsPalette.canvas)
+    .frame(width: SettingsLayout.windowWidth, height: SettingsLayout.windowHeight)
+  }
 }
 
 private struct MainHUDSnapshotHarness: View {

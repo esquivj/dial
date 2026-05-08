@@ -258,6 +258,108 @@ enum Migrations {
         t.add(column: "last_inserted_count", .integer).notNull().defaults(to: 0)
       }
     }
+
+    m.registerMigration("v12_reclassify_rock_hybrid_tags") { db in
+      try db.execute(sql: """
+        UPDATE normalized_tags
+        SET family = CASE
+          WHEN LOWER(REPLACE(raw_tag, '-', ' ')) LIKE '%dance punk%' THEN 'punk/emo'
+          WHEN LOWER(REPLACE(raw_tag, '-', ' ')) LIKE '%garage rock%' THEN 'rock'
+          WHEN LOWER(REPLACE(raw_tag, '-', ' ')) LIKE '%dance rock%' THEN 'rock'
+          WHEN LOWER(REPLACE(raw_tag, '-', ' ')) LIKE '%new wave%' THEN 'rock'
+          ELSE family
+        END
+        WHERE family = 'electronic'
+          AND (
+            LOWER(REPLACE(raw_tag, '-', ' ')) LIKE '%dance punk%'
+            OR LOWER(REPLACE(raw_tag, '-', ' ')) LIKE '%garage rock%'
+            OR LOWER(REPLACE(raw_tag, '-', ' ')) LIKE '%dance rock%'
+            OR LOWER(REPLACE(raw_tag, '-', ' ')) LIKE '%new wave%'
+          )
+      """)
+    }
+
+    m.registerMigration("v13_reclassify_new_wave_tags") { db in
+      try db.execute(sql: """
+        UPDATE normalized_tags
+        SET family = 'rock'
+        WHERE family NOT IN ('metal', 'punk/emo')
+          AND LOWER(REPLACE(raw_tag, '-', ' ')) LIKE '%new wave%'
+      """)
+    }
+
+    // First Listen should be high-confidence. If the exact track was missing
+    // from the export but the artist or album is already clearly present, the
+    // app should not preserve a "No plays in your history" memory. Leave XP
+    // alone, same as the earlier cleanup migrations.
+    m.registerMigration("v14_cleanup_false_first_listen_badges_for_known_catalog") { db in
+      try db.execute(sql: """
+        CREATE TEMP TABLE track_catalog_identity AS
+        SELECT uri,
+               LOWER(TRIM(json_extract(artists_json, '$[0].name'))) AS artist_name,
+               LOWER(TRIM(album_name)) AS album_name
+        FROM tracks
+        WHERE artists_json IS NOT NULL
+          AND json_valid(artists_json) = 1
+          AND TRIM(json_extract(artists_json, '$[0].name')) <> '';
+
+        CREATE INDEX temp.track_catalog_identity_by_uri ON track_catalog_identity(uri);
+        CREATE INDEX temp.track_catalog_identity_by_artist ON track_catalog_identity(artist_name);
+        CREATE INDEX temp.track_catalog_identity_by_album ON track_catalog_identity(artist_name, album_name);
+
+        CREATE TEMP TABLE first_listen_candidates AS
+        SELECT e.id,
+               e.earned_at,
+               i.artist_name,
+               i.album_name
+        FROM badge_events e
+        JOIN track_catalog_identity i ON i.uri = e.track_uri
+        WHERE e.kind = 'first_listen';
+
+        CREATE INDEX temp.first_listen_candidates_by_artist ON first_listen_candidates(artist_name);
+        CREATE INDEX temp.first_listen_candidates_by_album ON first_listen_candidates(artist_name, album_name);
+
+        CREATE TEMP TABLE false_first_listen_badge_ids (id INTEGER PRIMARY KEY);
+
+        INSERT OR IGNORE INTO false_first_listen_badge_ids (id)
+        SELECT c.id
+        FROM first_listen_candidates c
+        JOIN track_catalog_identity i ON i.artist_name = c.artist_name
+        JOIN plays prior_play ON prior_play.track_uri = i.uri
+        WHERE prior_play.played_at < c.earned_at
+        GROUP BY c.id
+        HAVING COUNT(*) >= 20;
+
+        INSERT OR IGNORE INTO false_first_listen_badge_ids (id)
+        SELECT c.id
+        FROM first_listen_candidates c
+        JOIN track_catalog_identity i
+          ON i.artist_name = c.artist_name
+         AND i.album_name = c.album_name
+        JOIN plays prior_play ON prior_play.track_uri = i.uri
+        WHERE c.album_name IS NOT NULL
+          AND c.album_name <> ''
+          AND prior_play.played_at < c.earned_at
+        GROUP BY c.id
+        HAVING COUNT(*) >= 3;
+
+        DELETE FROM badge_events
+        WHERE id IN (SELECT id FROM false_first_listen_badge_ids);
+
+        DROP TABLE false_first_listen_badge_ids;
+        DROP TABLE first_listen_candidates;
+        DROP TABLE track_catalog_identity;
+      """)
+
+      if try db.tableExists("artifacts") {
+        try db.execute(sql: """
+          UPDATE artifacts
+          SET source_badge_event_id = NULL
+          WHERE source_badge_event_id IS NOT NULL
+            AND source_badge_event_id NOT IN (SELECT id FROM badge_events)
+        """)
+      }
+    }
     return m
   }
 }

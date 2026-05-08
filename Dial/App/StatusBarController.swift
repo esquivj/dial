@@ -118,7 +118,7 @@ final class StatusBarController {
     }
 
     let titleWidth = CGFloat(MenuBarTextMetrics.clampedSettingWidth(coord.settings.menuBarTitleWidth))
-    let horizontalPadding: CGFloat = 8
+    let horizontalPadding: CGFloat = 12
     let iconSlot: CGFloat = 22
     let iconGap: CGFloat = 5
 

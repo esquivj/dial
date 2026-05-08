@@ -122,8 +122,20 @@ struct StatusRail: View {
     return DialIcon(name)
       .frame(width: metrics.size, height: metrics.size)
       .offset(y: metrics.yOffset)
-      .foregroundStyle(theme.textMuted)
+      .foregroundStyle(theme.textPrimary.opacity(0.76))
       .frame(width: Dial.Layout.StatusRail.hitSize, height: Dial.Layout.StatusRail.hitSize)
+      .background {
+        RoundedRectangle(cornerRadius: Dial.Radius.control, style: .continuous)
+          .fill(theme.surface.opacity(0.26))
+          .overlay(
+            RoundedRectangle(cornerRadius: Dial.Radius.control, style: .continuous)
+              .stroke(theme.hairline.opacity(0.48), lineWidth: 0.7))
+          .overlay(alignment: .top) {
+            RoundedRectangle(cornerRadius: Dial.Radius.control, style: .continuous)
+              .fill(Color.white.opacity(0.07))
+              .frame(height: 1)
+          }
+      }
       .dialHitSlop(
         horizontal: max(0, (44 - Dial.Layout.StatusRail.hitSize) / 2),
         vertical: max(0, (44 - Dial.Layout.StatusRail.hitSize) / 2))

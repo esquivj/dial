@@ -76,6 +76,159 @@ final class PlayAggregationsTests: XCTestCase {
     try plays.insert(.init(playedAt: 1_700_000_001, trackUri: "NEW", msPlayed: 200_000, source: "live"))
     XCTAssertFalse(try agg.firstListen(trackUri: "NEW"))
   }
+
+  func test_firstListen_usesTitleArtistFallbackForImportedAlternateUri() throws {
+    let plays = PlaysDAO(dbq: dbq)
+    let tracks = TracksDAO(dbq: dbq)
+    let now: Int64 = 1_700_000_000
+
+    try tracks.upsert(.init(
+      uri: "spotify:track:imported-version",
+      name: "Juicebox",
+      albumName: "First Impressions Of Earth",
+      albumArtUrl: nil,
+      durationMs: nil,
+      artistsJson: #"[{"name":"The Strokes","uri":"artist:The_Strokes"}]"#))
+    try tracks.upsert(.init(
+      uri: "spotify:track:live-version",
+      name: "Juicebox",
+      albumName: "First Impressions Of Earth",
+      albumArtUrl: nil,
+      durationMs: nil,
+      artistsJson: #"[{"name":"The Strokes","uri":"spotify:artist:0epOFNiUfyON9EYx7Tpr6V"}]"#))
+
+    try plays.insert(.init(
+      playedAt: now - 120 * 86_400,
+      trackUri: "spotify:track:imported-version",
+      msPlayed: 200_000,
+      source: "import"))
+    try plays.insert(.init(
+      playedAt: now,
+      trackUri: "spotify:track:live-version",
+      msPlayed: 200_000,
+      source: "live"))
+
+    XCTAssertFalse(try agg.firstListen(trackUri: "spotify:track:live-version"))
+    XCTAssertTrue(try agg.rediscovered(trackUri: "spotify:track:live-version"))
+    XCTAssertEqual(
+      try agg.lastPlayedAt(trackUri: "spotify:track:live-version", before: now),
+      now - 120 * 86_400)
+  }
+
+  func test_firstListen_falseForRareTrackFromFamiliarCatalog() throws {
+    let plays = PlaysDAO(dbq: dbq)
+    let tracks = TracksDAO(dbq: dbq)
+    let now: Int64 = 1_700_000_000
+
+    for i in 0..<20 {
+      let uri = "spotify:track:familiar-\(i)"
+      try tracks.upsert(.init(
+        uri: uri,
+        name: "Known \(i)",
+        albumName: i < 5 ? "Known Album" : "Other Album",
+        albumArtUrl: nil,
+        durationMs: nil,
+        artistsJson: #"[{"name":"Foals","uri":"artist:Foals"}]"#))
+      try plays.insert(.init(
+        playedAt: now - 120 * 86_400 + Int64(i),
+        trackUri: uri,
+        msPlayed: 200_000,
+        source: "import"))
+    }
+
+    try tracks.upsert(.init(
+      uri: "spotify:track:red-socks",
+      name: "Red Socks Pugie",
+      albumName: "Known Album",
+      albumArtUrl: nil,
+      durationMs: nil,
+      artistsJson: #"[{"name":"Foals","uri":"spotify:artist:foals"}]"#))
+    try plays.insert(.init(
+      playedAt: now,
+      trackUri: "spotify:track:red-socks",
+      msPlayed: 200_000,
+      source: "live"))
+
+    XCTAssertFalse(try agg.firstListen(trackUri: "spotify:track:red-socks"))
+  }
+
+  func test_trackIdentityMergesRemasterCleanExplicitAndPunctuationVariants() throws {
+    let plays = PlaysDAO(dbq: dbq)
+    let tracks = TracksDAO(dbq: dbq)
+    let now: Int64 = 1_700_000_000
+
+    try tracks.upsert(.init(
+      uri: "spotify:track:red-socks-import",
+      name: "Red Socks Pugie - 2008 Remaster",
+      albumName: "Antidotes",
+      albumArtUrl: nil,
+      durationMs: nil,
+      artistsJson: #"[{"name":"Foals","uri":"artist:Foals"}]"#))
+    try tracks.upsert(.init(
+      uri: "spotify:track:red-socks-live",
+      name: "RED SOCKS PUGIE (Explicit)",
+      albumName: "Antidotes",
+      albumArtUrl: nil,
+      durationMs: nil,
+      artistsJson: #"[{"name":"FOALS","uri":"spotify:artist:foals"}]"#))
+
+    try plays.insert(.init(
+      playedAt: now - 120 * 86_400,
+      trackUri: "spotify:track:red-socks-import",
+      msPlayed: 200_000,
+      source: "import"))
+    try plays.insert(.init(
+      playedAt: now,
+      trackUri: "spotify:track:red-socks-live",
+      msPlayed: 200_000,
+      source: "live"))
+
+    XCTAssertFalse(try agg.firstListen(trackUri: "spotify:track:red-socks-live"))
+    XCTAssertTrue(try agg.rediscovered(trackUri: "spotify:track:red-socks-live"))
+    XCTAssertEqual(try agg.playsYTD(trackUri: "spotify:track:red-socks-live"), 2)
+    XCTAssertEqual(
+      try agg.lastPlayedAt(trackUri: "spotify:track:red-socks-live", before: now),
+      now - 120 * 86_400)
+  }
+
+  func test_rank7dMergesAlternateTrackIdentitiesBeforeRanking() throws {
+    let plays = PlaysDAO(dbq: dbq)
+    let tracks = TracksDAO(dbq: dbq)
+    let now: Int64 = 1_700_000_000
+
+    try tracks.upsert(.init(
+      uri: "spotify:track:signal-import",
+      name: "Signal Test - Remastered 2011",
+      albumName: "Signal",
+      albumArtUrl: nil,
+      durationMs: nil,
+      artistsJson: #"[{"name":"Dial Artist","uri":"artist:Dial"}]"#))
+    try tracks.upsert(.init(
+      uri: "spotify:track:signal-live",
+      name: "Signal Test",
+      albumName: "Signal",
+      albumArtUrl: nil,
+      durationMs: nil,
+      artistsJson: #"[{"name":"Dial Artist","uri":"spotify:artist:dial"}]"#))
+
+    for i in 0..<2 {
+      try plays.insert(.init(
+        playedAt: now - Int64(i + 1) * 60,
+        trackUri: "spotify:track:signal-import",
+        msPlayed: 200_000,
+        source: "import"))
+    }
+    for i in 0..<4 {
+      try plays.insert(.init(
+        playedAt: now - Int64(i + 3) * 60,
+        trackUri: "spotify:track:signal-live",
+        msPlayed: 200_000,
+        source: "live"))
+    }
+
+    XCTAssertEqual(try agg.rank7d(trackUri: "spotify:track:signal-live"), 1)
+  }
+
   func test_rediscovered_gapAtLeast90Days() throws {
     let plays = PlaysDAO(dbq: dbq)
     let now: Int64 = 1_700_000_000
