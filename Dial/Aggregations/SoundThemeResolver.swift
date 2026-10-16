@@ -426,22 +426,6 @@ struct SoundThemeResolver {
     return "\(theme.label) from \(details)."
   }
 
-  private static func themeScores(forFamilies families: [(String, Int)]) -> [DialThemeID: Int] {
-    var scores: [DialThemeID: Int] = [:]
-    for (family, score) in families {
-      guard let theme = theme(forFamily: family) else { continue }
-      scores[theme, default: 0] += max(1, score)
-    }
-    return scores
-  }
-
-  private static func orderedScores(_ scores: [DialThemeID: Int]) -> [(key: DialThemeID, value: Int)] {
-    scores.sorted { lhs, rhs in
-      if lhs.value != rhs.value { return lhs.value > rhs.value }
-      return themePriority(lhs.key) < themePriority(rhs.key)
-    }
-  }
-
   private static func weightedScore(_ score: Double, rank: Int?, artistIndex: Int, multiplier: Double) -> Double {
     let rankWeight: Double = {
       switch rank ?? 999 {

@@ -32,9 +32,6 @@ packages:
   KeychainAccess:
     url: https://github.com/kishikawakatsumi/KeychainAccess
     from: "4.2.2"
-  SnapshotTesting:
-    url: https://github.com/pointfreeco/swift-snapshot-testing
-    from: "1.17.0"
 
 targets:
   Dial:
@@ -140,8 +137,6 @@ targets:
         CODE_SIGN_IDENTITY: "Dial Local Dev"
     dependencies:
       - target: Dial
-      - package: SnapshotTesting
-        product: SnapshotTesting
 
 schemes:
   Dial:

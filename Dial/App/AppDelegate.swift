@@ -290,7 +290,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
           dbq: dbq,
           client: client,
           lastFMKey: key,
-          logger: { [weak self] in self?.stderr($0) })
+          logger: { [self] message in self.stderr(message) })
 
         stderr("→ DB: \(dbURL.path)")
         if request.auditOnly {

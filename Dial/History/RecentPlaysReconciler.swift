@@ -76,7 +76,7 @@ final class RecentPlaysReconciler {
       }
     }
     if !candidates.isEmpty {
-      try await dbq.write { db in
+      _ = try await dbq.write { db in
         try ArtistIdentityRepair.rebuildAliases(in: db)
       }
     }

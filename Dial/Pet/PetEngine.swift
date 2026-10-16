@@ -6,7 +6,7 @@ import os.log
 private let petLog = Logger(subsystem: "com.dial.Dial", category: "PetEngine")
 
 /// Inserts a `Play` and awards pet XP atomically. Used by:
-///  - `PlayRecorder` callsite: live polling counted plays
+///  - `AppCoordinator`: live polling counted plays (source "live")
 ///  - historical/import flows when they need the same insert/accounting path
 final class PetEngine {
   private let dbq: DatabaseQueue

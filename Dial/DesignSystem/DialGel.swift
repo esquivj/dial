@@ -299,41 +299,6 @@ struct MediaFrameMaterial<S: Shape>: ViewModifier {
   }
 }
 
-/// Backward-compatible wrapper for older call sites. New UI should prefer
-/// `dialRaisedGel(...)` so the material intent is explicit.
-struct GelContainer: ViewModifier {
-  var cornerRadius: CGFloat
-  var strokeColor: Color = .white
-  var haloColor: Color = Dial.Palette.accent
-  var strokeOpacity: Double = 0.50
-  var sheenOpacity: Double = 0.45
-  var sheenLineWidth: CGFloat = 1.2
-  var haloOpacity: Double = 0.30
-  var haloRadius: CGFloat = 9
-  var convexTopOpacity: Double = 0.20
-  var convexBottomOpacity: Double = 0.22
-  var innerShadowOpacity: Double = 0.45
-  var innerShadowOffset: CGFloat = 1.5
-  var baseFill: Color = Dial.Palette.surface
-
-  func body(content: Content) -> some View {
-    content
-      .dialRaisedGel(
-        shape: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous),
-        fill: baseFill,
-        edgeColor: strokeColor,
-        edgeOpacity: strokeOpacity,
-        fillTopOpacity: convexTopOpacity,
-        fillBottomOpacity: convexBottomOpacity,
-        sheenOpacity: sheenOpacity,
-        sheenLineWidth: sheenLineWidth,
-        contactShadowOpacity: 0,
-        innerShadowOpacity: innerShadowOpacity
-      )
-      .shadow(color: haloColor.opacity(haloOpacity), radius: haloRadius, x: 0, y: 0)
-  }
-}
-
 extension View {
   func dialChassisPlastic<S: Shape>(shape: S) -> some View {
     self.modifier(ChassisPlastic(shape: shape))
@@ -400,36 +365,4 @@ extension View {
     self.modifier(MediaFrameMaterial(shape: shape))
   }
 
-  /// Apply the gel/convex container chrome. See `GelContainer` for the
-  /// compatibility details. Prefer `dialRaisedGel(...)` for new UI.
-  func gelContainer(
-    cornerRadius: CGFloat,
-    strokeColor: Color = .white,
-    haloColor: Color = Dial.Palette.accent,
-    strokeOpacity: Double = 0.50,
-    sheenOpacity: Double = 0.55,
-    sheenLineWidth: CGFloat = 1.0,
-    haloOpacity: Double = 0,
-    haloRadius: CGFloat = 8,
-    convexTopOpacity: Double = 0.10,
-    convexBottomOpacity: Double = 0.04,
-    innerShadowOpacity: Double = 0.45,
-    innerShadowOffset: CGFloat = 1.5,
-    baseFill: Color = Dial.Palette.surface
-  ) -> some View {
-    self.modifier(GelContainer(
-      cornerRadius: cornerRadius,
-      strokeColor: strokeColor,
-      haloColor: haloColor,
-      strokeOpacity: strokeOpacity,
-      sheenOpacity: sheenOpacity,
-      sheenLineWidth: sheenLineWidth,
-      haloOpacity: haloOpacity,
-      haloRadius: haloRadius,
-      convexTopOpacity: convexTopOpacity,
-      convexBottomOpacity: convexBottomOpacity,
-      innerShadowOpacity: innerShadowOpacity,
-      innerShadowOffset: innerShadowOffset,
-      baseFill: baseFill))
-  }
 }
