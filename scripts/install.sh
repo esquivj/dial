@@ -5,9 +5,9 @@
 # Why this exists: macOS TCC tracks Screen Recording permission by code
 # signature, and Xcode's per-build ad-hoc signatures change every time —
 # so reinstalling under /Applications/Dial.app (a stable path) is the
-# closest thing we get to "permission persists." Combined with a real
-# DEVELOPMENT_TEAM in project.yml (Apple Development cert), TCC actually
-# recognizes the rebuild as the same app and keeps the grant.
+# closest thing we get to "permission persists." Combined with the stable
+# self-signed "Dial Local Dev" cert (scripts/create-cert.sh, referenced in
+# project.yml), TCC recognizes the rebuild as the same app and keeps the grant.
 #
 # Usage:
 #     ./scripts/install.sh           # build + install + open
@@ -36,7 +36,7 @@ trap "rm -f $BUILD_LOG" EXIT
 if ! xcodebuild -project "${APP_NAME}.xcodeproj" \
                 -scheme "${APP_NAME}" \
                 -configuration Debug \
-                -allowProvisioningUpdates \
+                -derivedDataPath "$REPO_ROOT/.build/DerivedData" \
                 build > "$BUILD_LOG" 2>&1; then
   echo "✗ Build failed. Tail of log:"
   tail -30 "$BUILD_LOG"
@@ -49,11 +49,11 @@ if [ "$WARNINGS" -gt 0 ]; then
   echo "  (built with $WARNINGS warning(s))"
 fi
 
-# 3. Locate the freshly built .app under DerivedData.
-APP_PATH=$(find ~/Library/Developer/Xcode/DerivedData/${APP_NAME}-*/Build/Products/Debug \
-  -name "${APP_NAME}.app" -type d 2>/dev/null | head -1)
+# 3. The freshly built .app lives in the repo's own DerivedData (same path
+#    scripts/dev.sh uses), so there's never a stale copy to pick by mistake.
+APP_PATH="$REPO_ROOT/.build/DerivedData/Build/Products/Debug/${APP_NAME}.app"
 
-if [ -z "$APP_PATH" ]; then
+if [ ! -d "$APP_PATH" ]; then
   echo "✗ Could not find ${APP_NAME}.app under DerivedData after a successful build"
   exit 1
 fi
