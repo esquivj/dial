@@ -15,7 +15,7 @@ scripts/dev.sh record                       # re-record visual baselines (see be
 scripts/dev.sh install                      # build, replace /Applications/Dial.app, relaunch
 ```
 
-First time on a machine: `brew install xcodegen`, then `scripts/create-cert.sh` once. Every build is signed with the self-signed "Dial Local Dev" cert (`project.yml`), so macOS keeps the Screen Recording grant across rebuilds. Without it, builds fail to sign.
+First time on a machine: `brew install xcodegen`, then `scripts/create-cert.sh` once. Every build is signed with the self-signed "Dial Local Dev" cert (`project.yml`), so macOS keeps the Screen Recording grant across rebuilds. Without it, builds fail to sign. (`security find-identity -v` reports 0 valid identities for it because it's self-signed; that's expected. `dev.sh` checks with `security find-certificate`.)
 
 Full logs are in `.build/logs/`. Don't pass your own `-derivedDataPath` to a new folder; one shared folder keeps builds incremental and the repo small.
 
@@ -45,12 +45,18 @@ Full logs are in `.build/logs/`. Don't pass your own `-derivedDataPath` to a new
 - **The HUD shape is locked.** Read `HUD_LOOK_LOCK.md` before any change inside the dropdown. Don't change `Dial.Layout.Dropdown` sizes, the shell art, or element placement unless the user explicitly asks. Never fix a shell or art problem by moving UI. The panel and its snapshots are 440×440, and the rounded shell fills that square edge to edge by design.
 - **`project.yml` is the source of truth.** `Dial.xcodeproj` is generated and gitignored. `dev.sh` regenerates it, so new Swift files are picked up automatically. New resource folders must be added to `project.yml` with `buildPhase: resources`, or they silently won't ship.
 - **Migrations are append-only.** Add `v16_…` at the end of `Migrations.swift`; never edit a shipped migration.
-- **Play counting:** a live play counts at ≥30 s or ≥50% of the track (`DedupRule`). Dedup happens in `PetEngine.recordPlay`. Imports currently insert every row with no threshold; this is a known open question, so don't "fix" it without asking.
+- **Play counting** has four layers:
+  1. `DedupRule`: a live play counts at ≥30 s or ≥50% of the track.
+  2. `PollingService`: counts once per track change.
+  3. `PetEngine.recordPlay`: dedups `live` and `recent` plays against nearby rows.
+  4. The unique `(played_at, track_uri, ms_played)` index.
+
+  `Importer` inserts streaming-history rows directly, with no threshold, and stats count every row. This is a known open question, so don't "fix" it without asking.
 - **Theme ids are not display names:** `ember` displays as "Magenta", and `classic` as "Smoke Gel".
 
 ## Verifying a UI change without a human
 
-1. `scripts/dev.sh snapshot`. Renders are compared with the PNGs in `DialTests/Snapshots/VisualRegression/`.
+1. `scripts/dev.sh snapshot`. Renders are compared with the PNGs in `DialTests/Snapshots/VisualRegression/`, and every render is exported to `.build/snapshots/<name>.png`. **Open the render you changed.** A pass alone doesn't prove much: the 0.2% pixel tolerance lets a changed label slip through.
 2. On failure, open `.build/snapshot-failures/<name>.actual.png` next to `<name>.baseline.png`.
 3. If the change is intended, run `scripts/dev.sh record`, **look at every changed PNG**, and get the user's OK before committing new baselines. A baseline recorded over a broken layout hides the breakage.
 

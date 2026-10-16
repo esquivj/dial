@@ -7,7 +7,8 @@ private let petLog = Logger(subsystem: "com.dial.Dial", category: "PetEngine")
 
 /// Inserts a `Play` and awards pet XP atomically. Used by:
 ///  - `AppCoordinator`: live polling counted plays (source "live")
-///  - historical/import flows when they need the same insert/accounting path
+///  - `RecentPlaysReconciler`: plays recovered from Spotify's recently-played list (source "recent")
+/// Streaming-history imports do not come through here; `Importer` inserts rows directly.
 final class PetEngine {
   private let dbq: DatabaseQueue
   private let clock: () -> Int64
@@ -37,9 +38,9 @@ final class PetEngine {
   /// same track inside the track-duration window, the API row is just repair
   /// noise and should not double-count.
   ///
-  /// Imports (`source: "import"`) bypass this check — duplicates there are
-  /// already deduped by the unique `(played_at, track_uri, ms_played)` index
-  /// on the plays table.
+  /// Imports (`source: "import"`) never reach this method — `Importer` inserts
+  /// directly and relies on the unique `(played_at, track_uri, ms_played)` index
+  /// on the plays table for dedup.
   @discardableResult
   func recordPlay(_ play: Play) throws -> Bool {
     try dbq.write { db in

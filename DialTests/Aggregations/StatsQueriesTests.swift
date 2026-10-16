@@ -355,7 +355,7 @@ final class StatsQueriesTests: XCTestCase {
       albumArtUrl: nil,
       durationMs: nil,
       artistsJson: #"[{"name":"Junior H","uri":"spotify:artist:juniorh"}]"#))
-    try dbq.write { db in
+    _ = try dbq.write { db in
       try ArtistIdentityRepair.rebuildAliases(in: db, now: 100)
     }
     try plays.insert(.init(playedAt: 1, trackUri: "spotify:track:imported", msPlayed: 180_000, source: "import"))
@@ -1190,7 +1190,7 @@ final class StatsQueriesTests: XCTestCase {
       albumArtUrl: nil,
       durationMs: nil,
       artistsJson: #"[{"name":"Junior H","uri":"spotify:artist:juniorh"}]"#))
-    try dbq.write { db in
+    _ = try dbq.write { db in
       try ArtistIdentityRepair.rebuildAliases(in: db, now: 100)
     }
     try plays.insert(.init(playedAt: 1, trackUri: "spotify:track:imported", msPlayed: 180_000, source: "import"))

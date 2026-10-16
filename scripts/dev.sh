@@ -14,6 +14,7 @@
 # Output is a short summary. Full logs: .build/logs/<command>.log
 # Test results bundle: .build/results/test.xcresult
 # Failed visual snapshots: .build/snapshot-failures/<name>.{actual,baseline}.png
+# Every render from `snapshot` (pass or fail): .build/snapshots/<name>.png
 
 set -euo pipefail
 
@@ -24,6 +25,7 @@ DERIVED_DATA="$REPO_ROOT/.build/DerivedData"
 LOG_DIR="$REPO_ROOT/.build/logs"
 RESULT_BUNDLE="$REPO_ROOT/.build/results/test.xcresult"
 SNAPSHOT_FAILURES="$REPO_ROOT/.build/snapshot-failures"
+SNAPSHOT_RENDERS="$REPO_ROOT/.build/snapshots"
 RECORD_FLAG="$REPO_ROOT/DialTests/Snapshots/VisualRegression/.record"
 CERT_NAME="Dial Local Dev"
 
@@ -91,6 +93,10 @@ for f in s.get("testFailures", []):
     print("  ✗ %s: %s" % (name, f.get("failureText", "").strip()))
 ' || echo "  (could not read result summary; see .build/logs/$name.log)"
 
+  local warnings
+  warnings="$(print_diagnostics "$log" warning)"
+  [[ -n "$warnings" ]] && echo "$warnings"
+
   if [[ -d "$SNAPSHOT_FAILURES" ]] && ls "$SNAPSHOT_FAILURES"/*.png >/dev/null 2>&1; then
     echo "  Visual diffs written to .build/snapshot-failures/ (open the .actual.png next to its .baseline.png)"
   fi
@@ -102,7 +108,32 @@ for f in s.get("testFailures", []):
 }
 
 cmd_test() { preflight; run_tests test "$@"; }
-cmd_snapshot() { preflight; run_tests snapshot VisualRegressionTests; }
+# Export every PNG the tests attached, named by snapshot (e.g. dial-hud-aqua.png),
+# so a passing render can be looked at too.
+export_renders() {
+  rm -rf "$SNAPSHOT_RENDERS" "$SNAPSHOT_RENDERS.raw"
+  xcrun xcresulttool export attachments --path "$RESULT_BUNDLE" \
+    --output-path "$SNAPSHOT_RENDERS.raw" >/dev/null 2>&1 || return 0
+  mkdir -p "$SNAPSHOT_RENDERS"
+  /usr/bin/python3 - "$SNAPSHOT_RENDERS.raw" "$SNAPSHOT_RENDERS" <<'PY'
+import json, os, re, shutil, sys
+raw, out = sys.argv[1], sys.argv[2]
+for test in json.load(open(os.path.join(raw, "manifest.json"))):
+    for a in test.get("attachments", []):
+        name = re.sub(r"_\d+_[0-9A-F-]{36}(?=\.png$)", "", a["suggestedHumanReadableName"])
+        shutil.copy(os.path.join(raw, a["exportedFileName"]), os.path.join(out, name))
+PY
+  rm -rf "$SNAPSHOT_RENDERS.raw"
+  echo "  Renders: .build/snapshots/ ($(ls "$SNAPSHOT_RENDERS" | wc -l | tr -d ' ') PNGs)"
+}
+
+cmd_snapshot() {
+  preflight
+  local status=0
+  ( run_tests snapshot VisualRegressionTests ) || status=$?
+  export_renders
+  return $status
+}
 
 cmd_record() {
   preflight

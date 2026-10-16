@@ -26,7 +26,7 @@ final class FlowTests: XCTestCase {
 
     var events: [PlaybackEvent] = []
     let exp = expectation(description: "started + counted observed")
-    Task {
+    _ = Task {
       var seenStarted = false
       var seenCounted = false
       for try await e in poller.stream() {
@@ -38,7 +38,7 @@ final class FlowTests: XCTestCase {
           seenStarted = true
         }
         if case .countedPlay = e {
-          try? engine.recordPlay(.init(
+          _ = try? engine.recordPlay(.init(
             playedAt: 1_700_000_000,
             trackUri: "spotify:track:NEW",
             msPlayed: 45_000,

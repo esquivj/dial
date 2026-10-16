@@ -482,7 +482,7 @@ final class BadgeResolverTests: XCTestCase {
       artistName: "Foals",
       albumName: "Antidotes")
 
-    try dbq.write { db in
+    _ = try dbq.write { db in
       try ArtistIdentityRepair.rebuildAliases(in: db)
     }
 
