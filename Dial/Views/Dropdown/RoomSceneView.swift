@@ -117,6 +117,7 @@ private struct HifiMusicNotes: View {
   let emphasis: Bool
   let ink: Color
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @Environment(\.dialFrozenDate) private var frozenDate
 
   var body: some View {
     Group {
@@ -125,7 +126,7 @@ private struct HifiMusicNotes: View {
           note(index: 0, progress: 0.58, emphasis: false)
         } else {
           TimelineView(.animation(minimumInterval: 1 / 10)) { timeline in
-            let time = timeline.date.timeIntervalSinceReferenceDate
+            let time = (frozenDate ?? timeline.date).timeIntervalSinceReferenceDate
             let noteCount = emphasis ? 3 : 2
             let cycle = emphasis ? 1.55 : 2.8
             let spacing = emphasis ? 0.24 : 0.43

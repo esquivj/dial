@@ -23,6 +23,7 @@ struct BulldogSprite: View {
 
   @State private var bob: CGFloat = 0
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @Environment(\.dialFrozenDate) private var frozenDate
 
   var body: some View {
     ZStack {
@@ -49,7 +50,7 @@ struct BulldogSprite: View {
       BulldogSpriteImage(assetName: assets[0], height: height)
     } else if assets.count > 1, let interval = Self.frameInterval(for: behavior) {
       TimelineView(.periodic(from: .now, by: interval)) { ctx in
-        let frame = Int(ctx.date.timeIntervalSinceReferenceDate / interval) % assets.count
+        let frame = Int((frozenDate ?? ctx.date).timeIntervalSinceReferenceDate / interval) % assets.count
         BulldogSpriteImage(assetName: assets[frame], height: height)
       }
     } else {
@@ -64,7 +65,7 @@ struct BulldogSprite: View {
       BulldogSpriteMatteImage(assetName: assets[0], height: height, color: color)
     } else if assets.count > 1, let interval = Self.frameInterval(for: behavior) {
       TimelineView(.periodic(from: .now, by: interval)) { ctx in
-        let frame = Int(ctx.date.timeIntervalSinceReferenceDate / interval) % assets.count
+        let frame = Int((frozenDate ?? ctx.date).timeIntervalSinceReferenceDate / interval) % assets.count
         BulldogSpriteMatteImage(assetName: assets[frame], height: height, color: color)
       }
     } else {
@@ -82,7 +83,7 @@ struct BulldogSprite: View {
   }
 
   private func syncBob() {
-    guard !reduceMotion, let bpm = Self.bpm(for: behavior) else {
+    guard !reduceMotion, frozenDate == nil, let bpm = Self.bpm(for: behavior) else {
       bob = 0
       return
     }
@@ -228,10 +229,11 @@ struct BulldogSprite: View {
 
 private struct SparklesOverlay: View {
   let size: CGFloat
+  @Environment(\.dialFrozenDate) private var frozenDate
 
   var body: some View {
     TimelineView(.periodic(from: .now, by: 0.22)) { ctx in
-      let phase = Int(ctx.date.timeIntervalSinceReferenceDate / 0.22) % 2
+      let phase = Int((frozenDate ?? ctx.date).timeIntervalSinceReferenceDate / 0.22) % 2
       VStack(spacing: max(1, size * 0.10)) {
         Text(phase == 0 ? "+" : "*")
         Text(phase == 0 ? "*" : "+")
@@ -246,10 +248,11 @@ private struct SparklesOverlay: View {
 
 private struct ThoughtDotsOverlay: View {
   let size: CGFloat
+  @Environment(\.dialFrozenDate) private var frozenDate
 
   var body: some View {
     TimelineView(.periodic(from: .now, by: 0.28)) { ctx in
-      let phase = Int(ctx.date.timeIntervalSinceReferenceDate / 0.28)
+      let phase = Int((frozenDate ?? ctx.date).timeIntervalSinceReferenceDate / 0.28)
       HStack(spacing: max(1, size * 0.14)) {
         ForEach(0..<3, id: \.self) { idx in
           let active = (phase + idx) % 3 == 0
@@ -267,10 +270,11 @@ private struct ThoughtDotsOverlay: View {
 
 private struct FeedingOverlay: View {
   let size: CGFloat
+  @Environment(\.dialFrozenDate) private var frozenDate
 
   var body: some View {
     TimelineView(.periodic(from: .now, by: 0.20)) { ctx in
-      let phase = Int(ctx.date.timeIntervalSinceReferenceDate / 0.20)
+      let phase = Int((frozenDate ?? ctx.date).timeIntervalSinceReferenceDate / 0.20)
       HStack(spacing: max(1, size * 0.10)) {
         ForEach(0..<3, id: \.self) { idx in
           let active = (phase + idx) % 3 == 0
@@ -287,10 +291,11 @@ private struct FeedingOverlay: View {
 
 private struct SleepOverlay: View {
   let size: CGFloat
+  @Environment(\.dialFrozenDate) private var frozenDate
 
   var body: some View {
     TimelineView(.periodic(from: .now, by: 0.65)) { ctx in
-      let phase = Int(ctx.date.timeIntervalSinceReferenceDate / 0.65) % 2
+      let phase = Int((frozenDate ?? ctx.date).timeIntervalSinceReferenceDate / 0.65) % 2
       Text("Z")
         .font(.system(size: max(8, size * 0.62), weight: .bold, design: .monospaced))
         .foregroundStyle(Color.black.opacity(phase == 0 ? 0.82 : 0.44))

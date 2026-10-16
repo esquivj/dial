@@ -372,8 +372,15 @@ final class VisualRegressionTests: XCTestCase {
     return coord
   }
 
+  /// Fixed "now" for fixtures that render dates, so baselines don't drift with
+  /// the calendar. Wed 2026-05-20 12:00 local time (the baselines' week of MAY 18).
+  private var fixtureNow: Int64 {
+    let components = DateComponents(year: 2026, month: 5, day: 20, hour: 12)
+    return Int64(Calendar(identifier: .gregorian).date(from: components)!.timeIntervalSince1970)
+  }
+
   private func seedWeeklyMemoryLog(in dbq: DatabaseQueue) throws -> [WeeklyMemoryRecord] {
-    let now = Int64(Date().timeIntervalSince1970)
+    let now = fixtureNow
     let currentBounds = StatsQueries.weekBounds(containing: now)
     let dao = WeeklyMemoriesDAO(dbq: dbq, now: { now })
     let fixtures: [(String, String, String, String, String?, DialThemeID, Int, Int64, Int, Int)] = [
@@ -571,7 +578,10 @@ final class VisualRegressionTests: XCTestCase {
   }
 
   private func render<V: View>(_ view: V, size: CGSize) throws -> CGImage {
-    let renderer = ImageRenderer(content: view.frame(width: size.width, height: size.height))
+    let frozen = Date(timeIntervalSince1970: TimeInterval(fixtureNow))
+    let renderer = ImageRenderer(content: view
+      .frame(width: size.width, height: size.height)
+      .environment(\.dialFrozenDate, frozen))
     renderer.proposedSize = ProposedViewSize(width: size.width, height: size.height)
     renderer.scale = 2
     renderer.isOpaque = false
@@ -665,6 +675,9 @@ final class VisualRegressionTests: XCTestCase {
 
     let differentRatio = Double(differentPixels) / Double(pixelCount)
     let meanChannelDelta = Double(totalDelta) / Double(pixelCount * 4)
+    if differentRatio > 0.002 || meanChannelDelta > 0.15 {
+      writeFailureArtifacts(actual: data, baseline: baselineData, name: name)
+    }
     XCTAssertLessThanOrEqual(
       differentRatio,
       0.002,
@@ -685,6 +698,18 @@ final class VisualRegressionTests: XCTestCase {
     URL(fileURLWithPath: #filePath)
       .deletingLastPathComponent()
       .appendingPathComponent("Snapshots/VisualRegression", isDirectory: true)
+  }
+
+  /// Drops the rendered and expected PNGs into `.build/snapshot-failures/` so a
+  /// failing snapshot can be inspected without digging through the .xcresult.
+  private func writeFailureArtifacts(actual: Data, baseline: Data, name: String) {
+    let directory = URL(fileURLWithPath: #filePath)
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+      .appendingPathComponent(".build/snapshot-failures", isDirectory: true)
+    try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    try? actual.write(to: directory.appendingPathComponent("\(name).actual.png"), options: .atomic)
+    try? baseline.write(to: directory.appendingPathComponent("\(name).baseline.png"), options: .atomic)
   }
 
   private var shouldRecordVisualSnapshots: Bool {
