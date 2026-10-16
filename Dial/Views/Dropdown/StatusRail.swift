@@ -2,7 +2,7 @@ import SwiftUI
 
 struct StatusRail: View {
   @Bindable var vm: MenubarStripViewModel
-  @Binding var showingGlossary: Bool
+  @Binding var showingInfoPanel: Bool
   /// History + Stats are reachable directly from the rail. The pet
   /// thumbnail moved out of StatusRail entirely — it's now in TrackHero
   /// at 48×48 (was 24×24 here, too small to read the pixel-art detail).
@@ -51,14 +51,14 @@ struct StatusRail: View {
         systemNavIcon(name: "gearshape.fill", help: "Open Settings", action: onOpenSettings)
         Button {
           withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) {
-            showingGlossary.toggle()
+            showingInfoPanel.toggle()
           }
         } label: {
-          statusIcon(showingGlossary ? "xmark.circle" : "info.circle")
+          statusIcon(showingInfoPanel ? "xmark.circle" : "info.circle")
         }
         .buttonStyle(.pressable)
-        .help(showingGlossary ? "Hide glossary" : "What do these badges mean?")
-        .accessibilityLabel(showingGlossary ? "Hide glossary" : "Show badge glossary")
+        .help(infoHelp)
+        .accessibilityLabel(showingInfoPanel ? "Hide info" : "Show current track explanation")
       }
       // Keep the live controls inside the shortened hardware pocket so the
       // rail does not visually cut through the corner screws.
@@ -151,5 +151,10 @@ struct StatusRail: View {
     default:
       return (Dial.Layout.StatusRail.iconSize, 0)
     }
+  }
+
+  private var infoHelp: String {
+    if showingInfoPanel { return "Hide info" }
+    return vm.track == nil ? "What do these badges mean?" : "Why this track?"
   }
 }

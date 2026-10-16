@@ -236,8 +236,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
       exit(1)
     }
 
-    let key = UserDefaults.standard.string(forKey: "settings.lastFMAPIKey")?
-      .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    let key = LastFMAPIKeyStorage.load()
     guard !key.isEmpty else {
       stderr("✗ Missing Last.fm API key. Save one in Settings first.")
       exit(1)
@@ -286,8 +285,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         #endif
         let auth = SpotifyAuthService(clientID: clientID, tokenStore: tokens)
         let client = SpotifyClient(tokenStore: tokens, refresh: { try await auth.refresh() })
-        let key = UserDefaults.standard.string(forKey: "settings.lastFMAPIKey")?
-          .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let key = LastFMAPIKeyStorage.load()
         let runner = EnrichmentBackfillRunner(
           dbq: dbq,
           client: client,

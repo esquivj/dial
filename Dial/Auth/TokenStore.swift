@@ -27,3 +27,74 @@ final class KeychainTokenStore: TokenStore {
   }
   func clear() throws { try keychain.remove(key) }
 }
+
+protocol SecretStringStore {
+  func save(_ value: String) throws
+  func load() throws -> String?
+  func clear() throws
+}
+
+final class KeychainSecretStringStore: SecretStringStore {
+  private let keychain: Keychain
+  private let key: String
+
+  init(service: String, key: String) {
+    self.keychain = Keychain(service: service).accessibility(.afterFirstUnlockThisDeviceOnly)
+    self.key = key
+  }
+
+  func save(_ value: String) throws {
+    try keychain.set(value, key: key)
+  }
+
+  func load() throws -> String? {
+    try keychain.get(key)
+  }
+
+  func clear() throws {
+    try keychain.remove(key)
+  }
+}
+
+enum LastFMAPIKeyStorage {
+  static let legacyDefaultsKey = "settings.lastFMAPIKey"
+
+  static func makeDefaultStore() -> SecretStringStore {
+    KeychainSecretStringStore(service: "com.dial.lastfm", key: "api-key")
+  }
+
+  static func load(
+    store: SecretStringStore = makeDefaultStore(),
+    defaults: UserDefaults = .standard
+  ) -> String {
+    if let stored = (try? store.load()) ?? nil, !stored.isEmpty {
+      defaults.removeObject(forKey: legacyDefaultsKey)
+      return stored
+    }
+
+    let legacy = defaults.string(forKey: legacyDefaultsKey)?
+      .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    guard !legacy.isEmpty else {
+      defaults.removeObject(forKey: legacyDefaultsKey)
+      return ""
+    }
+
+    try? store.save(legacy)
+    defaults.removeObject(forKey: legacyDefaultsKey)
+    return legacy
+  }
+
+  static func save(
+    _ value: String,
+    store: SecretStringStore = makeDefaultStore(),
+    defaults: UserDefaults = .standard
+  ) {
+    let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    if trimmed.isEmpty {
+      try? store.clear()
+    } else {
+      try? store.save(trimmed)
+    }
+    defaults.removeObject(forKey: legacyDefaultsKey)
+  }
+}

@@ -5,14 +5,14 @@ import os.log
 
 private let authLog = Logger(subsystem: "com.dial.Dial", category: "Auth")
 
-/// Auth-related errors that callers can pattern-match on. `refreshFailed`
-/// is the "token is permanently bad — user needs to reconnect" signal:
-/// PollingService treats it as fatal (terminates the stream), and
-/// AppCoordinator catches it to flip `settings.signedIn = false` so the
-/// dropdown surfaces the connect view instead of cycling silently forever
-/// on a revoked refresh token.
+/// Auth-related errors that callers can pattern-match on.
+/// `missingStoredToken` is the only clear sign we have no local auth state.
+/// `refreshRejected` means Spotify rejected a refresh attempt, but Dial keeps
+/// the token around so a transient auth edge does not force a full OAuth flow
+/// on every relaunch.
 enum SpotifyAuthError: Error, Equatable {
-  case refreshFailed
+  case missingStoredToken
+  case refreshRejected(Int)
   case invalidResponse
   case tokenEndpointStatus(Int)
 }
@@ -25,14 +25,17 @@ final class SpotifyAuthService: NSObject {
     "user-read-playback-state",
     "user-modify-playback-state",
     "user-read-recently-played",
+    "user-top-read",
     "user-library-read",
     "user-library-modify"
   ]
   private let tokenStore: TokenStore
+  private let session: URLSession
 
-  init(clientID: String, tokenStore: TokenStore) {
+  init(clientID: String, tokenStore: TokenStore, session: URLSession = .shared) {
     self.clientID = clientID
     self.tokenStore = tokenStore
+    self.session = session
   }
 
   @MainActor
@@ -49,7 +52,8 @@ final class SpotifyAuthService: NSObject {
       .init(name: "redirect_uri", value: redirectURI),
       .init(name: "code_challenge_method", value: "S256"),
       .init(name: "code_challenge", value: challenge),
-      .init(name: "scope", value: scopes.joined(separator: " "))
+      .init(name: "scope", value: scopes.joined(separator: " ")),
+      .init(name: "show_dialog", value: "true")
     ]
 
     guard let authURL = auth.url else { throw SpotifyAuthError.invalidResponse }
@@ -91,7 +95,7 @@ final class SpotifyAuthService: NSObject {
       "client_id":    clientID,
       "code_verifier": verifier
     ]).data(using: .utf8)
-    let (data, resp) = try await URLSession.shared.data(for: req)
+    let (data, resp) = try await session.data(for: req)
     guard let http = resp as? HTTPURLResponse else {
       throw SpotifyAuthError.invalidResponse
     }
@@ -115,7 +119,7 @@ final class SpotifyAuthService: NSObject {
     authLog.notice("refresh() called")
     guard let current = try tokenStore.load() else {
       authLog.error("refresh: no token in store")
-      throw SpotifyAuthError.refreshFailed
+      throw SpotifyAuthError.missingStoredToken
     }
     guard let url = URL(string: "https://accounts.spotify.com/api/token") else {
       throw SpotifyAuthError.invalidResponse
@@ -128,21 +132,18 @@ final class SpotifyAuthService: NSObject {
       "refresh_token": current.refreshToken,
       "client_id":     clientID
     ]).data(using: .utf8)
-    let (data, resp) = try await URLSession.shared.data(for: req)
+    let (data, resp) = try await session.data(for: req)
     guard let http = resp as? HTTPURLResponse else {
       throw SpotifyAuthError.invalidResponse
     }
 
-    // 4xx on the token endpoint = the refresh token is dead (revoked, expired,
-    // or the user disconnected Dial from their Spotify account web settings).
-    // Nothing we can do here will fix it; clear the stored token so we don't
-    // keep retrying with the same dead credential, and signal the caller to
-    // route to the connect-view path. 5xx is transient — let it propagate
-    // as a generic error so polling backoff handles it.
+    // Do not clear the refresh token here. Spotify can return a 4xx during
+    // auth edge cases, account/device churn, or request races; deleting the
+    // credential turns that into a guaranteed full reauth on every relaunch.
+    // The explicit Disconnect button remains the destructive path.
     if (400...499).contains(http.statusCode) {
-      authLog.error("refresh: 4xx status \(http.statusCode), clearing token")
-      try? tokenStore.clear()
-      throw SpotifyAuthError.refreshFailed
+      authLog.error("refresh: 4xx status \(http.statusCode), preserving token for retry")
+      throw SpotifyAuthError.refreshRejected(http.statusCode)
     }
     guard (200...299).contains(http.statusCode) else {
       throw SpotifyAuthError.tokenEndpointStatus(http.statusCode)

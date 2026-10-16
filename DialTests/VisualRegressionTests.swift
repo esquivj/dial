@@ -824,7 +824,7 @@ private struct SettingsMenuBarSnapshotHarness: View {
 
 private struct MainHUDSnapshotHarness: View {
   let context: SnapshotContext
-  @State private var showingGlossary = false
+  @State private var showingInfoPanel = false
 
   private var deviceShape: RoundedRectangle {
     RoundedRectangle(cornerRadius: Dial.Layout.Dropdown.cornerRadius, style: .continuous)
@@ -834,7 +834,7 @@ private struct MainHUDSnapshotHarness: View {
     VStack(spacing: Dial.Layout.Dropdown.shellSpacing) {
       StatusRail(
         vm: context.menubar,
-        showingGlossary: $showingGlossary,
+        showingInfoPanel: $showingInfoPanel,
         onOpenHistory: {},
         onOpenStats: {},
         onOpenSettings: {}

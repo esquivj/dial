@@ -75,6 +75,11 @@ final class RecentPlaysReconciler {
         skipped += 1
       }
     }
+    if !candidates.isEmpty {
+      try await dbq.write { db in
+        try ArtistIdentityRepair.rebuildAliases(in: db)
+      }
+    }
 
     let newestCandidateMs = candidates.map(\.playedAtMs).max()
     let cursorMs = max(afterMs ?? 0, newestCandidateMs ?? afterMs ?? 0)

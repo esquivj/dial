@@ -457,6 +457,56 @@ final class BadgeResolverTests: XCTestCase {
     XCTAssertNil(fourthAlbumPlay)
   }
 
+  func test_albumModeUsesArtistIdentityAliasAcrossImportAndLiveIds() throws {
+    let dbq = try InMemoryDatabase.make()
+    let anchor: Int64 = 1_700_000_000
+    let engine = PetEngine(dbq: dbq, clock: { anchor })
+    let plays = PlaysDAO(dbq: dbq)
+
+    try seedTrack(
+      dbq,
+      uri: "OLD_A",
+      artistUri: "artist:Foals",
+      artistName: "Foals",
+      albumName: "Antidotes")
+    try seedTrack(
+      dbq,
+      uri: "OLD_B",
+      artistUri: "artist:Foals",
+      artistName: "Foals",
+      albumName: "Antidotes")
+    try seedTrack(
+      dbq,
+      uri: "LIVE_C",
+      artistUri: "spotify:artist:foals",
+      artistName: "Foals",
+      albumName: "Antidotes")
+
+    try dbq.write { db in
+      try ArtistIdentityRepair.rebuildAliases(in: db)
+    }
+
+    try plays.insert(.init(
+      playedAt: anchor - 2,
+      trackUri: "OLD_A",
+      msPlayed: 60_000,
+      source: "import"))
+    try plays.insert(.init(
+      playedAt: anchor - 1,
+      trackUri: "OLD_B",
+      msPlayed: 60_000,
+      source: "import"))
+
+    try engine.recordPlay(.init(
+      playedAt: anchor,
+      trackUri: "LIVE_C",
+      msPlayed: 60_000,
+      source: "live"))
+
+    let kinds = try BadgeEventsDAO(dbq: dbq).recent().map(\.kind)
+    XCTAssertTrue(kinds.contains(.albumMode))
+  }
+
   func test_currentInsight_afterCountedPlay_surfacesMilestone() throws {
     let dbq = try InMemoryDatabase.make()
     let engine = PetEngine(dbq: dbq, clock: { 1_700_000_000 })

@@ -11,6 +11,15 @@ A native macOS menubar companion for Spotify. Shows what you're playing, what it
 - **Spotify OAuth (PKCE)** — Keychain-stored tokens, auto-refresh on 401.
 - **Extended Streaming History import** — drop your Spotify export folder on Settings; the importer is idempotent and caps imported XP at the companion threshold so a decade of history can't instantly max the pet.
 
+## Read your listening history from other apps
+
+Dial's saved archive has a separate read-only interface for apps and agents:
+[`integrations/dial_history/README.md`](integrations/dial_history/README.md).
+It provides a JSON command, authenticated local and cloud APIs, coverage information,
+and portable SQLite snapshots. The cloud copy stays readable while the Mac sleeps.
+After installation, start with
+`~/Music/Dial/manifest.json` or `dial-history status`.
+
 ## Build & run
 
 Requirements:

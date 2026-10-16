@@ -37,6 +37,7 @@ final class PollingService {
         // glitch (Wi-Fi blip, brief 5xx) doesn't permanently penalize
         // future polls.
         var consecutiveFailures = 0
+        var consecutiveRefreshRejections = 0
         pollingLog.notice("polling stream started, interval=\(self.interval)s")
         while !Task.isCancelled {
           do {
@@ -50,15 +51,27 @@ final class PollingService {
             }
             for e in interpret(cp) { continuation.yield(e) }
             consecutiveFailures = 0
+            consecutiveRefreshRejections = 0
           } catch {
-            // Auth permanently broken — surface to the caller. The refresh
-            // token is dead and cycling here at 60s forever just wastes
-            // battery while the menubar lies about being connected. Caller
-            // (AppCoordinator) handles this by marking signed-out so the
-            // dropdown flips to the connect view.
-            if (error as? SpotifyAuthError) == .refreshFailed {
-              continuation.finish(throwing: error)
-              return
+            // No local token means there is nothing to refresh. A rejected
+            // refresh token gets a short retry window, then surfaces as a
+            // connection-needs-attention state without deleting the credential.
+            if let authError = error as? SpotifyAuthError {
+              if authError == .missingStoredToken {
+                continuation.finish(throwing: error)
+                return
+              }
+              if case .refreshRejected = authError {
+                consecutiveRefreshRejections += 1
+                if consecutiveRefreshRejections >= 3 {
+                  continuation.finish(throwing: error)
+                  return
+                }
+              } else {
+                consecutiveRefreshRejections = 0
+              }
+            } else {
+              consecutiveRefreshRejections = 0
             }
             // Everything else: don't terminate the stream. Pre-fix, the
             // line here was `continuation.finish(throwing: error); return`,
@@ -101,12 +114,22 @@ final class PollingService {
         artUrl: item.album.images.first?.url,
         durationMs: item.duration_ms,
         at: clock()))
+      if let p = cp.progress_ms,
+         DedupRule.shouldCount(progressMs: p, durationMs: item.duration_ms) {
+        // First sighting is already past the count threshold. That usually
+        // means Dial relaunched mid-track, so don't duplicate the same play;
+        // recently-played reconciliation will repair any genuinely missed row.
+        counted = true
+      }
     }
     if let p = cp.progress_ms {
       out.append(.progress(ms: p))
-      if !counted, DedupRule.shouldCount(progressMs: p, durationMs: item.duration_ms) {
+      if cp.is_playing,
+         !counted,
+         DedupRule.shouldCount(progressMs: p, durationMs: item.duration_ms) {
         counted = true
-        out.append(.countedPlay(trackUri: item.uri, msPlayed: Int64(p), at: clock()))
+        let approximatePlayStartedAt = clock() - Int64(max(0, p) / 1000)
+        out.append(.countedPlay(trackUri: item.uri, msPlayed: Int64(p), at: approximatePlayStartedAt))
       }
     }
     if playbackState != cp.is_playing {

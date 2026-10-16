@@ -12,14 +12,14 @@ struct ReadoutsRow: View {
   var body: some View {
     HStack(spacing: 0) {
       Button(action: onOpenStats) {
-        Readout(label: "PLAYS · YTD",
+        Readout(label: "TRACK · YTD",
                 value: "\(vm.playsYTD)",
-                delta: vm.agg.firstListen ? "NEW" : "")
+                delta: playsDelta)
       }
       .buttonStyle(.pressable)
       .frame(maxWidth: .infinity)
-      .help("YTD plays include imported history, live plays, and recent catch-up. Dial merges clean, explicit, remaster, punctuation, and alternate Spotify URI variants by title plus first artist.")
-      .accessibilityLabel("Year to date plays \(vm.playsYTD)")
+      .help(playsHelp)
+      .accessibilityLabel("Year to date track plays \(vm.playsYTD)")
       ReadoutDivider()
       Button(action: onOpenStats) {
         Readout(label: "RANK · 7D",
@@ -78,6 +78,25 @@ struct ReadoutsRow: View {
   private var lastPlayedDelta: String {
     guard vm.track != nil, vm.agg.lastPlayedAt == nil else { return "" }
     return "NEW"
+  }
+
+  private var playsDelta: String {
+    if vm.agg.firstListen { return "NEW" }
+    guard vm.agg.albumPlaysYTD > vm.playsYTD else { return "" }
+    return "ALB \(compactCount(vm.agg.albumPlaysYTD))"
+  }
+
+  private var playsHelp: String {
+    let base = "Track YTD plays include imported history, live plays, and recent catch-up. Dial merges clean, explicit, remaster, punctuation, and alternate Spotify URI variants by title plus first artist."
+    guard vm.agg.albumPlaysYTD > vm.playsYTD else { return base }
+    return "\(base) Album YTD is \(vm.agg.albumPlaysYTD.formatted()) plays for \(vm.track?.albumName ?? "this album")."
+  }
+
+  private func compactCount(_ value: Int) -> String {
+    if value >= 1_000 {
+      return "\(value / 1_000)K"
+    }
+    return "\(value)"
   }
 }
 

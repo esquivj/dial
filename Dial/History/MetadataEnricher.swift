@@ -165,6 +165,7 @@ final class MetadataEnricher {
         enricherLog.warning("track \(idx + 1)/\(total) (\(uri, privacy: .public)) skipped: \(String(describing: error), privacy: .public)")
         if Self.isRateLimited(error) {
           enricherLog.error("pausing track backfill after Spotify rate limit")
+          await rebuildArtistIdentityAliasesBestEffort()
           return idx + 1
         }
         // Bail if the endpoint is consistently failing — better to stop
@@ -172,11 +173,13 @@ final class MetadataEnricher {
         // Next launch's enrichMissing() will re-attempt.
         if consecutiveFailures >= 20 {
           enricherLog.error("aborting backfill after \(consecutiveFailures) consecutive failures")
+          await rebuildArtistIdentityAliasesBestEffort()
           return idx + 1
         }
       }
       try await Task.sleep(nanoseconds: nominalDelay)
     }
+    await rebuildArtistIdentityAliasesBestEffort()
     enricherLog.notice("enrichMissing finished: \(total) tracks attempted")
     return total
   }
@@ -204,7 +207,7 @@ final class MetadataEnricher {
                  MAX(p.played_at) AS last_played
           FROM tracks t
           JOIN plays p ON p.track_uri = t.uri
-          CROSS JOIN json_each(t.artists_json) j
+          CROSS JOIN json_each(CASE WHEN json_valid(t.artists_json) = 1 THEN t.artists_json ELSE '[]' END) j
           WHERE t.artists_json IS NOT NULL
             AND json_valid(t.artists_json) = 1
           GROUP BY artist_uri
@@ -348,6 +351,17 @@ final class MetadataEnricher {
       genresJson: String(data: genresData, encoding: .utf8),
       imageUrl: meta.images.first?.url)
   }
+
+  private func rebuildArtistIdentityAliasesBestEffort() async {
+    do {
+      let count = try await dbq.write { db in
+        try ArtistIdentityRepair.rebuildAliases(in: db)
+      }
+      enricherLog.notice("artist identity aliases rebuilt: \(count)")
+    } catch {
+      enricherLog.warning("artist identity alias rebuild failed: \(String(describing: error), privacy: .public)")
+    }
+  }
 }
 
 private extension Array {
@@ -451,21 +465,29 @@ final class TagEnricher {
                  MAX(p.played_at) AS last_played
           FROM tracks t
           JOIN plays p ON p.track_uri = t.uri
-          CROSS JOIN json_each(t.artists_json) j
+          CROSS JOIN json_each(CASE WHEN json_valid(t.artists_json) = 1 THEN t.artists_json ELSE '[]' END) j
           WHERE t.artists_json IS NOT NULL
             AND json_valid(t.artists_json) = 1
           GROUP BY artist_uri
+        ),
+        resolved_track_artists AS (
+          SELECT COALESCE(alias.canonical_uri, ta.artist_uri) AS artist_uri,
+                 COALESCE(MAX(NULLIF(alias.canonical_name, '')), MAX(ta.artist_name)) AS artist_name,
+                 SUM(ta.play_count) AS play_count,
+                 MAX(ta.last_played) AS last_played
+          FROM track_artists ta
+          LEFT JOIN artist_identity_aliases alias ON alias.source_uri = ta.artist_uri
+          GROUP BY COALESCE(alias.canonical_uri, ta.artist_uri)
         )
         SELECT ta.artist_uri AS uri,
                COALESCE(NULLIF(a.name, ''), ta.artist_name) AS name
-        FROM track_artists ta
+        FROM resolved_track_artists ta
         LEFT JOIN artists a ON a.uri = ta.artist_uri
         LEFT JOIN tag_enrichment_state s
           ON s.entity_uri = ta.artist_uri
          AND s.entity_type = 'artist'
          AND s.provider = 'lastfm'
-        WHERE ta.artist_uri LIKE 'spotify:artist:%'
-          AND COALESCE(NULLIF(a.name, ''), ta.artist_name) IS NOT NULL
+        WHERE COALESCE(NULLIF(a.name, ''), ta.artist_name) IS NOT NULL
           AND COALESCE(NULLIF(a.name, ''), ta.artist_name) <> ''
           AND (
             s.entity_uri IS NULL
@@ -501,7 +523,7 @@ final class TagEnricher {
     let now = Int64(Date().timeIntervalSince1970)
     var seen = Set<String>()
     let candidates = candidates.filter { candidate in
-      candidate.uri.hasPrefix("spotify:artist:")
+      !candidate.uri.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         && !candidate.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         && seen.insert(candidate.uri).inserted
     }

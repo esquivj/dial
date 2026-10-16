@@ -189,19 +189,26 @@ struct StatsQueries {
             FROM normalized_artist_families naf
             WHERE naf.artist_uri = sag.artist_uri
           )
+        ),
+        primary_artists AS (
+          SELECT t.uri AS track_uri,
+                 COALESCE(alias.canonical_uri, json_extract(t.artists_json, '$[0].uri')) AS artist_uri
+          FROM tracks t
+          LEFT JOIN artist_identity_aliases alias
+            ON alias.source_uri = CASE WHEN json_valid(t.artists_json) = 1
+                                       THEN json_extract(t.artists_json, '$[0].uri')
+                                       ELSE NULL END
+          WHERE t.artists_json IS NOT NULL
+            AND json_valid(t.artists_json) = 1
         )
         SELECT ag.genre AS genre,
                COUNT(*) AS plays,
                COUNT(DISTINCT ag.artist_uri) AS artists,
                GROUP_CONCAT(DISTINCT ag.detail_tags) AS detail_tags
         FROM plays p
-        JOIN tracks t ON t.uri = p.track_uri
-        JOIN artist_genres ag ON ag.artist_uri =
-          CASE WHEN json_valid(t.artists_json) = 1
-               THEN json_extract(t.artists_json, '$[0].uri')
-               ELSE NULL END
-        WHERE t.artists_json IS NOT NULL
-          AND json_valid(t.artists_json) = 1
+        JOIN primary_artists pa ON pa.track_uri = p.track_uri
+        JOIN artist_genres ag ON ag.artist_uri = pa.artist_uri
+        WHERE 1 = 1
           \(rangeFilters.joined(separator: "\n          "))
         GROUP BY ag.genre
         ORDER BY plays DESC, artists DESC, genre ASC
@@ -342,12 +349,20 @@ struct StatsQueries {
       return try Int.fetchOne(db, sql: """
         WITH artist_first AS (
           SELECT COALESCE(
+                   NULLIF(LOWER(TRIM(alias.canonical_uri)), ''),
+                   CASE WHEN json_extract(t.artists_json, '$[0].uri') LIKE 'spotify:artist:%'
+                        THEN NULLIF(LOWER(TRIM(json_extract(t.artists_json, '$[0].uri'))), '')
+                        ELSE NULL END,
                    NULLIF(LOWER(TRIM(json_extract(t.artists_json, '$[0].name'))), ''),
                    json_extract(t.artists_json, '$[0].uri')
                  ) AS artist_key,
                  MIN(p.played_at) AS first_seen
           FROM plays p
           JOIN tracks t ON t.uri = p.track_uri
+          LEFT JOIN artist_identity_aliases alias
+            ON alias.source_uri = CASE WHEN json_valid(t.artists_json) = 1
+                                       THEN json_extract(t.artists_json, '$[0].uri')
+                                       ELSE NULL END
           WHERE t.artists_json IS NOT NULL
             AND json_valid(t.artists_json) = 1
           GROUP BY artist_key
@@ -466,16 +481,28 @@ struct StatsQueries {
       return try Row.fetchAll(db, sql: """
         WITH normalized AS (
           SELECT
-            NULLIF(TRIM(json_extract(t.artists_json, '$[0].uri')), '') AS artist_uri,
-            NULLIF(TRIM(json_extract(t.artists_json, '$[0].name')), '') AS artist_name,
             COALESCE(
+              NULLIF(alias.canonical_uri, ''),
+              NULLIF(TRIM(json_extract(t.artists_json, '$[0].uri')), '')
+            ) AS artist_uri,
+            COALESCE(
+              NULLIF(alias.canonical_name, ''),
+              NULLIF(TRIM(json_extract(t.artists_json, '$[0].name')), '')
+            ) AS artist_name,
+            COALESCE(
+              NULLIF(LOWER(TRIM(alias.canonical_name)), ''),
               NULLIF(LOWER(TRIM(json_extract(t.artists_json, '$[0].name'))), ''),
+              NULLIF(LOWER(TRIM(alias.canonical_uri)), ''),
               NULLIF(LOWER(TRIM(json_extract(t.artists_json, '$[0].uri'))), ''),
               'unknown'
             ) AS artist_key,
             p.played_at
           FROM plays p
           JOIN tracks t ON t.uri = p.track_uri
+          LEFT JOIN artist_identity_aliases alias
+            ON alias.source_uri = CASE WHEN json_valid(t.artists_json) = 1
+                                       THEN json_extract(t.artists_json, '$[0].uri')
+                                       ELSE NULL END
           WHERE t.artists_json IS NOT NULL
             AND json_valid(t.artists_json) = 1
             \(rangeFilters.joined(separator: "\n            "))
@@ -551,10 +578,25 @@ struct StatsQueries {
       // `totals()` call and the view's `try?` would silently fall back
       // to all zeros — making Stats look completely broken to the user.
       let artists = try Int.fetchOne(db, sql: """
-        SELECT COUNT(DISTINCT json_extract(artists_json, '$[0].uri'))
-        FROM plays p JOIN tracks t ON t.uri = p.track_uri
-        WHERE t.artists_json IS NOT NULL AND json_valid(t.artists_json) = 1
-          \(artistRangeFilter)
+        WITH primary_artists AS (
+          SELECT COALESCE(
+                   NULLIF(alias.canonical_uri, ''),
+                   NULLIF(TRIM(json_extract(t.artists_json, '$[0].uri')), '')
+                 ) AS artist_uri,
+                 p.played_at
+          FROM plays p
+          JOIN tracks t ON t.uri = p.track_uri
+          LEFT JOIN artist_identity_aliases alias
+            ON alias.source_uri = CASE WHEN json_valid(t.artists_json) = 1
+                                       THEN json_extract(t.artists_json, '$[0].uri')
+                                       ELSE NULL END
+          WHERE t.artists_json IS NOT NULL
+            AND json_valid(t.artists_json) = 1
+            \(artistRangeFilter)
+        )
+        SELECT COUNT(DISTINCT artist_uri)
+        FROM primary_artists
+        WHERE artist_uri IS NOT NULL
       """, arguments: statementArguments) ?? 0
       return Totals(
         plays: row?["plays"] ?? 0,
@@ -693,6 +735,9 @@ struct StatsQueries {
     let total: Int     // distinct spotify track URIs seen in plays
     let enriched: Int  // those with album_art_url populated in tracks
     let trackArtistResolved: Int
+    let trackArtistDirect: Int
+    let trackArtistAliased: Int
+    let artistIdentityAliases: Int
     let artistTotal: Int
     let artistEnriched: Int
     let tagArtistTotal: Int
@@ -707,6 +752,31 @@ struct StatsQueries {
     let lastResponseSaturated: Bool
     let consecutiveSaturated: Int
     let lastInsertedCount: Int
+  }
+
+  struct EnrichmentQueueHealth: Equatable {
+    let metadataFailed: Int
+    let metadataLimited: Int
+    let metadataPartial: Int
+    let metadataRetryReady: Int
+    let tagFailed: Int
+    let tagLimited: Int
+    let tagEmpty: Int
+    let tagRetryReady: Int
+    let staleTrackMetadata: Int
+    let staleArtistMetadata: Int
+
+    var retryReadyTotal: Int {
+      metadataRetryReady + tagRetryReady
+    }
+
+    var retryWaitingTotal: Int {
+      metadataFailed + metadataLimited + metadataPartial + tagFailed + tagLimited
+    }
+
+    var staleMetadataTotal: Int {
+      staleTrackMetadata + staleArtistMetadata
+    }
   }
 
   /// Counts distinct Spotify track URIs seen in `plays` and how many of
@@ -727,34 +797,52 @@ struct StatsQueries {
             WHEN t.artists_json IS NOT NULL
              AND json_valid(t.artists_json) = 1
              AND json_extract(t.artists_json, '$[0].uri') LIKE 'spotify:artist:%'
-            THEN p.track_uri END) AS track_artist_resolved
+            THEN p.track_uri END) AS track_artist_direct,
+          COUNT(DISTINCT CASE
+            WHEN t.artists_json IS NOT NULL
+             AND json_valid(t.artists_json) = 1
+             AND json_extract(t.artists_json, '$[0].uri') NOT LIKE 'spotify:artist:%'
+             AND alias.source_uri IS NOT NULL
+            THEN p.track_uri END) AS track_artist_aliased
         FROM plays p
         LEFT JOIN tracks t ON t.uri = p.track_uri
+        LEFT JOIN artist_identity_aliases alias
+          ON alias.source_uri = CASE WHEN json_valid(t.artists_json) = 1
+                                     THEN json_extract(t.artists_json, '$[0].uri')
+                                     ELSE NULL END
         WHERE p.track_uri LIKE 'spotify:track:%'
       """)
       let artistRow = try Row.fetchOne(db, sql: """
         WITH track_artists AS (
           SELECT DISTINCT
-                 json_extract(j.value, '$.uri') AS artist_uri
+                 COALESCE(alias.canonical_uri, json_extract(j.value, '$.uri')) AS artist_uri
           FROM tracks t
           JOIN plays p ON p.track_uri = t.uri
-          CROSS JOIN json_each(t.artists_json) j
+          CROSS JOIN json_each(CASE WHEN json_valid(t.artists_json) = 1 THEN t.artists_json ELSE '[]' END) j
+          LEFT JOIN artist_identity_aliases alias
+            ON alias.source_uri = json_extract(j.value, '$.uri')
           WHERE t.artists_json IS NOT NULL
             AND json_valid(t.artists_json) = 1
         )
         SELECT COUNT(*) AS total,
-               COUNT(CASE WHEN a.genres_json IS NOT NULL THEN 1 END) AS enriched
+               COUNT(CASE
+                 WHEN a.genres_json IS NOT NULL
+                  AND json_valid(a.genres_json) = 1
+                  AND json_array_length(a.genres_json) > 0
+                 THEN 1 END) AS enriched
         FROM track_artists ta
         LEFT JOIN artists a ON a.uri = ta.artist_uri
         WHERE ta.artist_uri LIKE 'spotify:artist:%'
       """)
       let tagRow = try Row.fetchOne(db, sql: """
         WITH track_artists AS (
-          SELECT json_extract(j.value, '$.uri') AS artist_uri,
-                 MAX(json_extract(j.value, '$.name')) AS artist_name
+          SELECT COALESCE(alias.canonical_uri, json_extract(j.value, '$.uri')) AS artist_uri,
+                 COALESCE(MAX(alias.canonical_name), MAX(json_extract(j.value, '$.name'))) AS artist_name
           FROM tracks t
           JOIN plays p ON p.track_uri = t.uri
-          CROSS JOIN json_each(t.artists_json) j
+          CROSS JOIN json_each(CASE WHEN json_valid(t.artists_json) = 1 THEN t.artists_json ELSE '[]' END) j
+          LEFT JOIN artist_identity_aliases alias
+            ON alias.source_uri = json_extract(j.value, '$.uri')
           WHERE t.artists_json IS NOT NULL
             AND json_valid(t.artists_json) = 1
           GROUP BY artist_uri
@@ -763,8 +851,7 @@ struct StatsQueries {
           SELECT ta.artist_uri
           FROM track_artists ta
           LEFT JOIN artists a ON a.uri = ta.artist_uri
-          WHERE ta.artist_uri LIKE 'spotify:artist:%'
-            AND COALESCE(NULLIF(a.name, ''), NULLIF(ta.artist_name, '')) IS NOT NULL
+          WHERE COALESCE(NULLIF(a.name, ''), NULLIF(ta.artist_name, '')) IS NOT NULL
         ),
         tagged_artists AS (
           SELECT DISTINCT entity_uri
@@ -781,10 +868,16 @@ struct StatsQueries {
          AND s.provider = 'lastfm'
         LEFT JOIN tagged_artists tagged ON tagged.entity_uri = ta.artist_uri
       """)
+      let aliasCount = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM artist_identity_aliases") ?? 0
+      let direct: Int = row?["track_artist_direct"] ?? 0
+      let aliased: Int = row?["track_artist_aliased"] ?? 0
       return EnrichmentProgress(
         total: row?["total"] ?? 0,
         enriched: row?["enriched"] ?? 0,
-        trackArtistResolved: row?["track_artist_resolved"] ?? 0,
+        trackArtistResolved: direct + aliased,
+        trackArtistDirect: direct,
+        trackArtistAliased: aliased,
+        artistIdentityAliases: aliasCount,
         artistTotal: artistRow?["total"] ?? 0,
         artistEnriched: artistRow?["enriched"] ?? 0,
         tagArtistTotal: tagRow?["total"] ?? 0,
@@ -814,6 +907,73 @@ struct StatsQueries {
         lastResponseSaturated: (row["last_response_saturated"] as Int) == 1,
         consecutiveSaturated: row["consecutive_saturated"],
         lastInsertedCount: row["last_inserted_count"])
+    }
+  }
+
+  func enrichmentQueueHealth(now: Int64 = Int64(Date().timeIntervalSince1970)) throws -> EnrichmentQueueHealth {
+    let retryFailedBefore = now - 86_400
+    let retryLimitedBefore = now - 900
+    let staleTrackBefore = now - 90 * 86_400
+    let staleArtistBefore = now - 60 * 86_400
+
+    return try dbq.read { db in
+      let metadata = try Row.fetchOne(db, sql: """
+        SELECT
+          COUNT(CASE WHEN status = 'failed' THEN 1 END) AS failed,
+          COUNT(CASE WHEN status = 'limited' THEN 1 END) AS limited,
+          COUNT(CASE WHEN status = 'partial' THEN 1 END) AS partial,
+          COUNT(CASE
+            WHEN status IN ('failed', 'partial') AND fetched_at <= ? THEN 1
+            WHEN status = 'limited' AND fetched_at <= ? THEN 1
+          END) AS retry_ready,
+          COUNT(CASE
+            WHEN entity_type = 'track'
+             AND status = 'success'
+             AND fetched_at <= ?
+            THEN 1
+          END) AS stale_track,
+          COUNT(CASE
+            WHEN entity_type = 'artist'
+             AND status = 'success'
+             AND fetched_at <= ?
+            THEN 1
+          END) AS stale_artist
+        FROM metadata_enrichment_state
+        WHERE provider = 'spotify'
+      """, arguments: [
+        retryFailedBefore,
+        retryLimitedBefore,
+        staleTrackBefore,
+        staleArtistBefore
+      ])
+
+      let tags = try Row.fetchOne(db, sql: """
+        SELECT
+          COUNT(CASE WHEN status = 'failed' THEN 1 END) AS failed,
+          COUNT(CASE WHEN status = 'limited' THEN 1 END) AS limited,
+          COUNT(CASE WHEN status = 'empty' THEN 1 END) AS empty,
+          COUNT(CASE
+            WHEN status = 'failed' AND fetched_at <= ? THEN 1
+            WHEN status = 'limited' AND fetched_at <= ? THEN 1
+          END) AS retry_ready
+        FROM tag_enrichment_state
+        WHERE provider = 'lastfm'
+      """, arguments: [
+        retryFailedBefore,
+        retryLimitedBefore
+      ])
+
+      return EnrichmentQueueHealth(
+        metadataFailed: metadata?["failed"] ?? 0,
+        metadataLimited: metadata?["limited"] ?? 0,
+        metadataPartial: metadata?["partial"] ?? 0,
+        metadataRetryReady: metadata?["retry_ready"] ?? 0,
+        tagFailed: tags?["failed"] ?? 0,
+        tagLimited: tags?["limited"] ?? 0,
+        tagEmpty: tags?["empty"] ?? 0,
+        tagRetryReady: tags?["retry_ready"] ?? 0,
+        staleTrackMetadata: metadata?["stale_track"] ?? 0,
+        staleArtistMetadata: metadata?["stale_artist"] ?? 0)
     }
   }
 

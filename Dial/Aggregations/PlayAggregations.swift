@@ -26,6 +26,14 @@ struct PlayAggregations {
     }
   }
 
+  func albumPlaysYTD(trackUri: String) throws -> Int {
+    let cutoff = Self.startOfYearEpoch(for: now())
+    return try dbq.read { db in
+      let identity = try trackIdentity(trackUri: trackUri, in: db)
+      return try albumPlayCount(identity: identity, since: cutoff, in: db)
+    }
+  }
+
   /// 1-based rank within last 7d among all tracks played in that window.
   /// Ties broken by most-recent play.
   func rank7d(trackUri: String) throws -> Int? {
@@ -218,9 +226,26 @@ private extension PlayAggregations {
   }
 
   func albumLifetimePlayCount(identity: TrackIdentity, in db: Database) throws -> Int {
+    try albumPlayCount(identity: identity, since: nil, in: db)
+  }
+
+  func albumPlayCount(identity: TrackIdentity, since cutoff: Int64?, in db: Database) throws -> Int {
     guard let albumName = identity.albumName,
           identity.artistUri != nil || identity.artistName != nil
     else { return 0 }
+
+    let timeClause = cutoff == nil ? "" : "AND p.played_at >= ?"
+    var arguments: [DatabaseValueConvertible] = [
+      albumName,
+      identity.artistUri,
+      identity.artistUri,
+      identity.artistName,
+      identity.artistName,
+    ]
+    if let cutoff {
+      arguments.append(cutoff)
+    }
+
     return try Int.fetchOne(db, sql: """
       SELECT COUNT(*)
       FROM plays p
@@ -234,13 +259,8 @@ private extension PlayAggregations {
           OR
           (? IS NOT NULL AND LOWER(TRIM(json_extract(t.artists_json, '$[0].name'))) = ?)
         )
-      """, arguments: [
-        albumName,
-        identity.artistUri,
-        identity.artistUri,
-        identity.artistName,
-        identity.artistName,
-      ]) ?? 0
+        \(timeClause)
+      """, arguments: StatementArguments(arguments)) ?? 0
   }
 
   func placeholders(for values: [String]) -> String {

@@ -114,12 +114,12 @@ struct GeneralSettingsTab: View {
                 HStack(spacing: 6) {
                   Text("Last.fm API key")
                     .font(SettingsType.rowTitle)
-                  SettingsHelpMark("Needed only if Last.fm tags are on. Dial stores this key locally.")
+                  SettingsHelpMark("Needed only if Last.fm tags are on. Dial stores this key in Keychain.")
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .layoutPriority(1)
                 Spacer()
-                TextField("API key", text: $vm.lastFMAPIKey)
+                SecureField("API key", text: $vm.lastFMAPIKey)
                   .textFieldStyle(.plain)
                   .font(SettingsType.mono)
                   .foregroundStyle(SettingsPalette.text)
@@ -130,10 +130,10 @@ struct GeneralSettingsTab: View {
                   .overlay(
                     RoundedRectangle(cornerRadius: Dial.Radius.control, style: .continuous)
                       .stroke(SettingsPalette.rule, lineWidth: 1))
-                  .help("Paste your Last.fm API key. Dial stores it locally and uses it only for tags.")
+                  .help("Paste your Last.fm API key. Dial stores it in Keychain and uses it only for tags.")
               }
               .frame(minHeight: 32)
-              .help("Needed only if Last.fm tags are on. Dial stores this key locally.")
+              .help("Needed only if Last.fm tags are on. Dial stores this key in Keychain.")
 
               SettingsActionRow {
                 Button("Analyze Now") {

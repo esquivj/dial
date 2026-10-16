@@ -67,6 +67,9 @@ final class Importer {
         rowsInserted: Int64(inserted),
         notes: nil)
       try entry.insert(db)
+      if inserted > 0 {
+        try ArtistIdentityRepair.rebuildAliases(in: db)
+      }
     }
     return inserted
   }

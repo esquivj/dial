@@ -216,10 +216,14 @@ enum BadgeResolver {
       SELECT COUNT(*)
       FROM plays p
       JOIN tracks t ON t.uri = p.track_uri
+      LEFT JOIN artist_identity_aliases alias
+        ON alias.source_uri = CASE WHEN json_valid(t.artists_json) = 1
+                                   THEN json_extract(t.artists_json, '$[0].uri')
+                                   ELSE NULL END
       WHERE t.artists_json IS NOT NULL
         AND json_valid(t.artists_json) = 1
         AND (
-          (? IS NOT NULL AND json_extract(t.artists_json, '$[0].uri') = ?)
+          (? IS NOT NULL AND COALESCE(alias.canonical_uri, json_extract(t.artists_json, '$[0].uri')) = ?)
           OR
           (? IS NOT NULL AND LOWER(TRIM(json_extract(t.artists_json, '$[0].name'))) = ?)
         )
@@ -238,12 +242,16 @@ enum BadgeResolver {
       SELECT COUNT(*)
       FROM plays p
       JOIN tracks t ON t.uri = p.track_uri
+      LEFT JOIN artist_identity_aliases alias
+        ON alias.source_uri = CASE WHEN json_valid(t.artists_json) = 1
+                                   THEN json_extract(t.artists_json, '$[0].uri')
+                                   ELSE NULL END
       WHERE t.album_name IS NOT NULL
         AND LOWER(TRIM(t.album_name)) = ?
         AND t.artists_json IS NOT NULL
         AND json_valid(t.artists_json) = 1
         AND (
-          (? IS NOT NULL AND json_extract(t.artists_json, '$[0].uri') = ?)
+          (? IS NOT NULL AND COALESCE(alias.canonical_uri, json_extract(t.artists_json, '$[0].uri')) = ?)
           OR
           (? IS NOT NULL AND LOWER(TRIM(json_extract(t.artists_json, '$[0].name'))) = ?)
         )
@@ -422,11 +430,18 @@ enum BadgeResolver {
     guard try albumRunLength(context: context, in: db) == 3 else { return false }
     let rows = try Row.fetchAll(db, sql: """
       SELECT t.album_name AS album_name,
-             CASE WHEN json_valid(t.artists_json) = 1
-                  THEN json_extract(t.artists_json, '$[0].uri')
-                  ELSE NULL END AS artist_uri
+             COALESCE(
+               alias.canonical_uri,
+               CASE WHEN json_valid(t.artists_json) = 1
+                    THEN json_extract(t.artists_json, '$[0].uri')
+                    ELSE NULL END
+             ) AS artist_uri
       FROM plays p
       LEFT JOIN tracks t ON t.uri = p.track_uri
+      LEFT JOIN artist_identity_aliases alias
+        ON alias.source_uri = CASE WHEN json_valid(t.artists_json) = 1
+                                   THEN json_extract(t.artists_json, '$[0].uri')
+                                   ELSE NULL END
       ORDER BY p.played_at DESC, p.id DESC
       LIMIT 4
       """)
@@ -440,11 +455,18 @@ enum BadgeResolver {
     guard let album = context.albumName, !album.isEmpty else { return 0 }
     let rows = try Row.fetchAll(db, sql: """
       SELECT t.album_name AS album_name,
-             CASE WHEN json_valid(t.artists_json) = 1
-                  THEN json_extract(t.artists_json, '$[0].uri')
-                  ELSE NULL END AS artist_uri
+             COALESCE(
+               alias.canonical_uri,
+               CASE WHEN json_valid(t.artists_json) = 1
+                    THEN json_extract(t.artists_json, '$[0].uri')
+                    ELSE NULL END
+             ) AS artist_uri
       FROM plays p
       LEFT JOIN tracks t ON t.uri = p.track_uri
+      LEFT JOIN artist_identity_aliases alias
+        ON alias.source_uri = CASE WHEN json_valid(t.artists_json) = 1
+                                   THEN json_extract(t.artists_json, '$[0].uri')
+                                   ELSE NULL END
       ORDER BY p.played_at DESC, p.id DESC
       LIMIT 20
       """)
@@ -579,11 +601,17 @@ private struct TrackContext {
     }
 
     let artist = decodeFirstArtist(track.artistsJson)
+    let alias = try artist.flatMap { artist in
+      try Row.fetchOne(
+        db,
+        sql: "SELECT canonical_uri, canonical_name FROM artist_identity_aliases WHERE source_uri = ?",
+        arguments: [artist.uri])
+    }
     return TrackContext(
       trackName: track.name,
       albumName: track.albumName,
-      artistName: artist?.name,
-      artistUri: artist?.uri)
+      artistName: alias?["canonical_name"] ?? artist?.name,
+      artistUri: alias?["canonical_uri"] ?? artist?.uri)
   }
 
   private static func decodeFirstArtist(_ json: String?) -> ArtistEntry? {

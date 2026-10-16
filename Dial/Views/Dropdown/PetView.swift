@@ -240,10 +240,20 @@ struct PetView: View {
 
     return Group {
       if let memory = weeklyMemory {
+        let color = weeklyMemoryColor(memory)
+        let artifactKind = ArtifactKind(memento: memory.memento) ?? .listeningCrate
         HStack(alignment: .center, spacing: 8) {
+          ArtifactSprite(kind: artifactKind, color: color, size: 24)
+            .frame(width: 29, height: 29)
+            .dialPrintedChip(
+              shape: RoundedRectangle(cornerRadius: Dial.Radius.pixel, style: .continuous),
+              color: color,
+              fillOpacity: 0.045,
+              edgeOpacity: 0.14)
+
           VStack(alignment: .leading, spacing: 2) {
             HStack(alignment: .firstTextBaseline, spacing: 5) {
-              Text("THIS WEEK")
+              Text("WEEKLY DROP")
                 .font(Dial.Typography.monoTiny)
                 .tracking(0.8)
                 .foregroundStyle(theme.textMuted.opacity(0.70))
@@ -251,7 +261,7 @@ struct PetView: View {
               Text(memory.trait.uppercased())
                 .font(Dial.Typography.monoTiny)
                 .tracking(0.8)
-                .foregroundStyle(weeklyMemoryColor(memory))
+                .foregroundStyle(color)
                 .lineLimit(1)
                 .minimumScaleFactor(0.78)
             }
@@ -272,10 +282,10 @@ struct PetView: View {
           .frame(maxWidth: .infinity, alignment: .leading)
 
           VStack(alignment: .trailing, spacing: 3) {
-            Text((memory.dominantGenre ?? memory.theme.label).uppercased())
+            Text("\(memory.playCount) \(memory.playCount == 1 ? "PLAY" : "PLAYS")")
               .font(Dial.Typography.monoTiny)
               .tracking(0.8)
-              .foregroundStyle(weeklyMemoryColor(memory).opacity(0.92))
+              .foregroundStyle(color.opacity(0.92))
               .lineLimit(1)
               .minimumScaleFactor(0.62)
 
@@ -295,7 +305,7 @@ struct PetView: View {
         .frame(height: Dial.Layout.PetScreen.weeklyMemoryHeight)
         .dialPrintedChip(
           shape: shape,
-          color: weeklyMemoryColor(memory),
+          color: color,
           fillOpacity: 0.045,
           edgeOpacity: 0.16)
         .help(weeklyMemoryHelp(memory))

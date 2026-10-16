@@ -18,4 +18,31 @@ final class DatabaseStackTests: XCTestCase {
     let count = try dbq.read { try PetState.fetchCount($0) }
     XCTAssertEqual(count, 1, "pet_state should seed a singleton row")
   }
+
+  func test_fileDatabase_isOwnerOnly() throws {
+    let directory = FileManager.default.temporaryDirectory
+      .appendingPathComponent("Dial.DatabaseStackTests.\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(
+      at: directory,
+      withIntermediateDirectories: true,
+      attributes: [.posixPermissions: 0o755])
+    defer { try? FileManager.default.removeItem(at: directory) }
+
+    let url = directory.appendingPathComponent("dial.sqlite")
+    _ = try DatabaseStack(url: url)
+
+    XCTAssertEqual(try posixPermissions(at: url), 0o600)
+    for suffix in ["-wal", "-shm"] {
+      let sidecar = URL(fileURLWithPath: "\(url.path)\(suffix)")
+      if FileManager.default.fileExists(atPath: sidecar.path) {
+        XCTAssertEqual(try posixPermissions(at: sidecar), 0o600, "bad permissions for \(sidecar.lastPathComponent)")
+      }
+    }
+  }
+
+  private func posixPermissions(at url: URL) throws -> Int {
+    let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+    let value = try XCTUnwrap(attributes[.posixPermissions] as? NSNumber)
+    return value.intValue & 0o777
+  }
 }

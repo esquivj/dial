@@ -50,10 +50,13 @@ struct SoundThemeResolver {
       artistName: artistName ?? "",
       albumName: albumName ?? "")
 
-    let artistUris = Self.dedupedArtistUris(artistUris)
-    guard !artistUris.isEmpty else { return metadata }
+    let inputArtistUris = Self.dedupedArtistUris(artistUris)
+    guard !inputArtistUris.isEmpty else { return metadata }
 
     return try dbq.read { db in
+      let artistUris = try ArtistIdentityRepair.resolvedArtistUris(inputArtistUris, in: db)
+      guard !artistUris.isEmpty else { return metadata }
+
       if let artistDecision = try Self.artistTagDecision(db: db, artistUris: artistUris) {
         return Self.resolveConflict(artistDecision: artistDecision, metadataDecision: metadata)
       }
@@ -205,11 +208,13 @@ struct SoundThemeResolver {
       ),
       recent_artists AS (
         SELECT rp.play_id,
-               json_extract(j.value, '$.uri') AS artist_uri,
-               json_extract(j.value, '$.name') AS artist_name
+               COALESCE(alias.canonical_uri, json_extract(j.value, '$.uri')) AS artist_uri,
+               COALESCE(alias.canonical_name, json_extract(j.value, '$.name')) AS artist_name
         FROM recent_plays rp
-        CROSS JOIN json_each(rp.artists_json) j
-        WHERE json_extract(j.value, '$.uri') LIKE 'spotify:artist:%'
+        CROSS JOIN json_each(CASE WHEN json_valid(rp.artists_json) = 1 THEN rp.artists_json ELSE '[]' END) j
+        LEFT JOIN artist_identity_aliases alias
+          ON alias.source_uri = json_extract(j.value, '$.uri')
+        WHERE NULLIF(TRIM(json_extract(j.value, '$.uri')), '') IS NOT NULL
       ),
       recent_artist_tags AS (
         SELECT nt.entity_uri AS artist_uri,
@@ -475,28 +480,48 @@ struct SoundThemeResolver {
   private static func artistPlayCount(db: Database, artistUris: [String]) throws -> Int {
     let artistUris = dedupedArtistUris(artistUris)
     guard !artistUris.isEmpty else { return 0 }
-    let placeholders = Array(repeating: "?", count: artistUris.count).joined(separator: ",")
     return try Int.fetchOne(db, sql: """
-      WITH artist_tracks AS (
+      WITH target(uri) AS (
+        SELECT value FROM json_each(?)
+      ),
+      target_sources AS (
+        SELECT uri FROM target
+        UNION
+        SELECT source_uri
+        FROM artist_identity_aliases
+        WHERE canonical_uri IN (SELECT uri FROM target)
+        UNION
+        SELECT canonical_uri
+        FROM artist_identity_aliases
+        WHERE source_uri IN (SELECT uri FROM target)
+      ),
+      artist_tracks AS (
         SELECT DISTINCT t.uri AS track_uri
-        FROM tracks t, json_each(t.artists_json) j
+        FROM tracks t,
+             json_each(CASE WHEN json_valid(t.artists_json) = 1 THEN t.artists_json ELSE '[]' END) j
         WHERE t.artists_json IS NOT NULL
           AND json_valid(t.artists_json) = 1
-          AND json_extract(j.value, '$.uri') IN (\(placeholders))
+          AND json_extract(j.value, '$.uri') IN (SELECT uri FROM target_sources)
       )
       SELECT COUNT(*)
       FROM plays p
       JOIN artist_tracks at ON at.track_uri = p.track_uri
-    """, arguments: StatementArguments(artistUris)) ?? 0
+    """, arguments: [try jsonArray(artistUris)]) ?? 0
   }
 
   private static func dedupedArtistUris(_ artistUris: [String]) -> [String] {
     var seen = Set<String>()
     return artistUris.filter { uri in
-      guard uri.hasPrefix("spotify:artist:"), !seen.contains(uri) else { return false }
+      let uri = uri.trimmingCharacters(in: .whitespacesAndNewlines)
+      guard !uri.isEmpty, !seen.contains(uri) else { return false }
       seen.insert(uri)
       return true
     }
+  }
+
+  private static func jsonArray(_ values: [String]) throws -> String {
+    let data = try JSONSerialization.data(withJSONObject: values)
+    return String(data: data, encoding: .utf8) ?? "[]"
   }
 
   private static func normalizedTagText(_ raw: String) -> String {

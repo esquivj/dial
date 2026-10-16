@@ -360,6 +360,10 @@ enum Migrations {
         """)
       }
     }
+
+    m.registerMigration("v15_artist_identity_aliases") { db in
+      try ArtistIdentityRepair.rebuildAliases(in: db)
+    }
     return m
   }
 }

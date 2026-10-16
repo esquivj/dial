@@ -229,6 +229,143 @@ final class StatsQueriesTests: XCTestCase {
     XCTAssertEqual(artists.first?.uri, "spotify:artist:juniorh")
   }
 
+  func test_artistIdentityRepairCreatesExactNameAliases() throws {
+    let dbq = try InMemoryDatabase.make()
+    let tracks = TracksDAO(dbq: dbq)
+
+    try tracks.upsert(.init(
+      uri: "spotify:track:imported",
+      name: "Imported",
+      albumName: nil,
+      albumArtUrl: nil,
+      durationMs: nil,
+      artistsJson: #"[{"name":"Junior H","uri":"artist:Junior_H"}]"#))
+    try tracks.upsert(.init(
+      uri: "spotify:track:live",
+      name: "Live",
+      albumName: nil,
+      albumArtUrl: nil,
+      durationMs: nil,
+      artistsJson: #"[{"name":"Junior H","uri":"spotify:artist:juniorh"}]"#))
+
+    let aliasCount = try dbq.write { db in
+      try ArtistIdentityRepair.rebuildAliases(in: db, now: 100)
+    }
+
+    XCTAssertEqual(aliasCount, 1)
+    let row = try dbq.read { db in
+      try Row.fetchOne(db, sql: """
+        SELECT source_uri, canonical_uri, canonical_name, confidence, reason
+        FROM artist_identity_aliases
+        WHERE source_uri = 'artist:Junior_H'
+      """)
+    }
+    XCTAssertEqual(row?["canonical_uri"], "spotify:artist:juniorh")
+    XCTAssertEqual(row?["canonical_name"], "Junior H")
+    let confidence: Double? = row?["confidence"]
+    XCTAssertEqual(confidence, 1.0)
+    XCTAssertEqual(row?["reason"], "exact_normalized_name")
+  }
+
+  func test_artistIdentityRepairSkipsAmbiguousCanonicalNames() throws {
+    let dbq = try InMemoryDatabase.make()
+    let tracks = TracksDAO(dbq: dbq)
+
+    try tracks.upsert(.init(
+      uri: "spotify:track:fallback",
+      name: "Fallback",
+      albumName: nil,
+      albumArtUrl: nil,
+      durationMs: nil,
+      artistsJson: #"[{"name":"Phoenix","uri":"artist:Phoenix"}]"#))
+    try tracks.upsert(.init(
+      uri: "spotify:track:one",
+      name: "One",
+      albumName: nil,
+      albumArtUrl: nil,
+      durationMs: nil,
+      artistsJson: #"[{"name":"Phoenix","uri":"spotify:artist:one"}]"#))
+    try tracks.upsert(.init(
+      uri: "spotify:track:two",
+      name: "Two",
+      albumName: nil,
+      albumArtUrl: nil,
+      durationMs: nil,
+      artistsJson: #"[{"name":"Phoenix","uri":"spotify:artist:two"}]"#))
+
+    let aliasCount = try dbq.write { db in
+      try ArtistIdentityRepair.rebuildAliases(in: db, now: 100)
+    }
+
+    XCTAssertEqual(aliasCount, 0)
+  }
+
+  func test_topGenresUsesCanonicalTagsThroughArtistAlias() throws {
+    let dbq = try InMemoryDatabase.make()
+    let plays = PlaysDAO(dbq: dbq)
+    let tracks = TracksDAO(dbq: dbq)
+
+    try tracks.upsert(.init(
+      uri: "spotify:track:imported",
+      name: "Imported Corrido",
+      albumName: nil,
+      albumArtUrl: nil,
+      durationMs: nil,
+      artistsJson: #"[{"name":"Junior H","uri":"artist:Junior_H"}]"#))
+    try tracks.upsert(.init(
+      uri: "spotify:track:canonical",
+      name: "Canonical Corrido",
+      albumName: nil,
+      albumArtUrl: nil,
+      durationMs: nil,
+      artistsJson: #"[{"name":"Junior H","uri":"spotify:artist:juniorh"}]"#))
+    try dbq.write { db in
+      try ArtistIdentityRepair.rebuildAliases(in: db, now: 100)
+      try db.execute(sql: """
+        INSERT INTO normalized_tags (entity_uri, entity_type, provider, family, raw_tag, score, updated_at)
+        VALUES ('spotify:artist:juniorh', 'artist', 'lastfm', 'corridos', 'corridos tumbados', 100, 10)
+      """)
+    }
+    try plays.insert(.init(playedAt: 1, trackUri: "spotify:track:imported", msPlayed: 180_000, source: "import"))
+    try plays.insert(.init(playedAt: 2, trackUri: "spotify:track:imported", msPlayed: 180_000, source: "import"))
+
+    let genres = try StatsQueries(dbq: dbq).topGenres(limit: 1)
+
+    XCTAssertEqual(genres.first?.genre, "corridos")
+    XCTAssertEqual(genres.first?.playCount, 2)
+    XCTAssertEqual(genres.first?.artistCount, 1)
+  }
+
+  func test_totalsCountsAliasedArtistsOnce() throws {
+    let dbq = try InMemoryDatabase.make()
+    let plays = PlaysDAO(dbq: dbq)
+    let tracks = TracksDAO(dbq: dbq)
+
+    try tracks.upsert(.init(
+      uri: "spotify:track:imported",
+      name: "Imported",
+      albumName: nil,
+      albumArtUrl: nil,
+      durationMs: nil,
+      artistsJson: #"[{"name":"Junior H","uri":"artist:Junior_H"}]"#))
+    try tracks.upsert(.init(
+      uri: "spotify:track:live",
+      name: "Live",
+      albumName: nil,
+      albumArtUrl: nil,
+      durationMs: nil,
+      artistsJson: #"[{"name":"Junior H","uri":"spotify:artist:juniorh"}]"#))
+    try dbq.write { db in
+      try ArtistIdentityRepair.rebuildAliases(in: db, now: 100)
+    }
+    try plays.insert(.init(playedAt: 1, trackUri: "spotify:track:imported", msPlayed: 180_000, source: "import"))
+    try plays.insert(.init(playedAt: 2, trackUri: "spotify:track:live", msPlayed: 180_000, source: "live"))
+
+    let totals = try StatsQueries(dbq: dbq).totals()
+
+    XCTAssertEqual(totals.uniqueArtists, 1)
+  }
+
   func test_soundTheme_reNormalizesRawTagsForCurrentRulebook() throws {
     let dbq = try InMemoryDatabase.make()
     try dbq.write { db in
@@ -329,6 +466,43 @@ final class StatsQueriesTests: XCTestCase {
 
     XCTAssertEqual(try queries.soundTheme(forArtistUri: "spotify:artist:badbunny"), .classic)
     XCTAssertEqual(try queries.soundTheme(forArtistUri: "spotify:artist:juniorh"), .classic)
+  }
+
+  func test_soundThemeUsesCanonicalTagsThroughArtistAlias() throws {
+    let dbq = try InMemoryDatabase.make()
+    let tracks = TracksDAO(dbq: dbq)
+
+    try tracks.upsert(.init(
+      uri: "spotify:track:fallback",
+      name: "Fallback Techno",
+      albumName: nil,
+      albumArtUrl: nil,
+      durationMs: nil,
+      artistsJson: #"[{"name":"Kettama","uri":"artist:Kettama"}]"#))
+    try tracks.upsert(.init(
+      uri: "spotify:track:canonical",
+      name: "Canonical Techno",
+      albumName: nil,
+      albumArtUrl: nil,
+      durationMs: nil,
+      artistsJson: #"[{"name":"Kettama","uri":"spotify:artist:kettama"}]"#))
+    try dbq.write { db in
+      try ArtistIdentityRepair.rebuildAliases(in: db, now: 100)
+      try db.execute(sql: """
+        INSERT INTO normalized_tags (entity_uri, entity_type, provider, family, raw_tag, score, updated_at)
+        VALUES ('spotify:artist:kettama', 'artist', 'lastfm', 'electronic', 'hard techno', 100, 10)
+      """)
+    }
+
+    let decision = try StatsQueries(dbq: dbq).soundThemeDecision(
+      forArtistUris: ["artist:Kettama"],
+      trackName: "Imported Techno",
+      artistName: "Kettama",
+      albumName: "",
+      allowRecentFallback: false)
+
+    XCTAssertEqual(decision?.theme, .slime)
+    XCTAssertEqual(decision?.source, .artistTags)
   }
 
   func test_soundTheme_defaultsMainstreamRapAndRnbToSmokeGel() throws {
@@ -987,11 +1161,48 @@ final class StatsQueriesTests: XCTestCase {
     XCTAssertEqual(progress.total, 2)
     XCTAssertEqual(progress.enriched, 1)
     XCTAssertEqual(progress.trackArtistResolved, 2)
+    XCTAssertEqual(progress.trackArtistDirect, 2)
+    XCTAssertEqual(progress.trackArtistAliased, 0)
+    XCTAssertEqual(progress.artistIdentityAliases, 0)
     XCTAssertEqual(progress.artistTotal, 2)
-    XCTAssertEqual(progress.artistEnriched, 1)
+    XCTAssertEqual(progress.artistEnriched, 0)
     XCTAssertEqual(progress.tagArtistTotal, 2)
     XCTAssertEqual(progress.tagArtistChecked, 1)
     XCTAssertEqual(progress.tagArtistTagged, 1)
+  }
+
+  func test_enrichmentProgressCountsIdentityAliasesAsResolved() throws {
+    let dbq = try InMemoryDatabase.make()
+    let plays = PlaysDAO(dbq: dbq)
+    let tracks = TracksDAO(dbq: dbq)
+
+    try tracks.upsert(.init(
+      uri: "spotify:track:imported",
+      name: "Imported",
+      albumName: nil,
+      albumArtUrl: nil,
+      durationMs: nil,
+      artistsJson: #"[{"name":"Junior H","uri":"artist:Junior_H"}]"#))
+    try tracks.upsert(.init(
+      uri: "spotify:track:canonical",
+      name: "Canonical",
+      albumName: nil,
+      albumArtUrl: nil,
+      durationMs: nil,
+      artistsJson: #"[{"name":"Junior H","uri":"spotify:artist:juniorh"}]"#))
+    try dbq.write { db in
+      try ArtistIdentityRepair.rebuildAliases(in: db, now: 100)
+    }
+    try plays.insert(.init(playedAt: 1, trackUri: "spotify:track:imported", msPlayed: 180_000, source: "import"))
+    try plays.insert(.init(playedAt: 2, trackUri: "spotify:track:canonical", msPlayed: 180_000, source: "live"))
+
+    let progress = try StatsQueries(dbq: dbq).enrichmentProgress()
+
+    XCTAssertEqual(progress.total, 2)
+    XCTAssertEqual(progress.trackArtistResolved, 2)
+    XCTAssertEqual(progress.trackArtistDirect, 1)
+    XCTAssertEqual(progress.trackArtistAliased, 1)
+    XCTAssertEqual(progress.artistIdentityAliases, 1)
   }
 
   func test_recentPlaySyncHealthSurfacesCatchUpState() throws {
@@ -1019,6 +1230,53 @@ final class StatsQueriesTests: XCTestCase {
     XCTAssertEqual(health?.lastResponseSaturated, true)
     XCTAssertEqual(health?.consecutiveSaturated, 2)
     XCTAssertEqual(health?.lastInsertedCount, 17)
+  }
+
+  func test_enrichmentQueueHealthSurfacesRetryAndStaleBacklog() throws {
+    let dbq = try InMemoryDatabase.make()
+    let now: Int64 = 1_800_000_000
+    try dbq.write { db in
+      try db.execute(sql: """
+        INSERT INTO metadata_enrichment_state (entity_uri, entity_type, provider, status, fetched_at, error)
+        VALUES
+          ('spotify:track:stale', 'track', 'spotify', 'success', ?, NULL),
+          ('spotify:artist:fresh', 'artist', 'spotify', 'success', ?, NULL),
+          ('spotify:track:failed', 'track', 'spotify', 'failed', ?, 'server'),
+          ('spotify:track:partial', 'track', 'spotify', 'partial', ?, 'missing artist'),
+          ('spotify:artist:limited', 'artist', 'spotify', 'limited', ?, '429')
+      """, arguments: [
+        now - 91 * 86_400,
+        now - 10 * 86_400,
+        now - 2 * 86_400,
+        now - 600,
+        now - 1_800
+      ])
+      try db.execute(sql: """
+        INSERT INTO tag_enrichment_state (entity_uri, entity_type, provider, status, fetched_at, error)
+        VALUES
+          ('spotify:artist:tag-failed', 'artist', 'lastfm', 'failed', ?, 'server'),
+          ('spotify:artist:tag-limited', 'artist', 'lastfm', 'limited', ?, '429'),
+          ('spotify:artist:tag-empty', 'artist', 'lastfm', 'empty', ?, NULL)
+      """, arguments: [
+        now - 2 * 86_400,
+        now - 600,
+        now - 1_000
+      ])
+    }
+
+    let health = try StatsQueries(dbq: dbq).enrichmentQueueHealth(now: now)
+
+    XCTAssertEqual(health.metadataFailed, 1)
+    XCTAssertEqual(health.metadataLimited, 1)
+    XCTAssertEqual(health.metadataPartial, 1)
+    XCTAssertEqual(health.metadataRetryReady, 2)
+    XCTAssertEqual(health.tagFailed, 1)
+    XCTAssertEqual(health.tagLimited, 1)
+    XCTAssertEqual(health.tagEmpty, 1)
+    XCTAssertEqual(health.tagRetryReady, 1)
+    XCTAssertEqual(health.retryReadyTotal, 3)
+    XCTAssertEqual(health.staleTrackMetadata, 1)
+    XCTAssertEqual(health.staleArtistMetadata, 0)
   }
 
   func test_statsSnapshotCarriesCurrentWeeklyMemoryForStatsSurface() async throws {

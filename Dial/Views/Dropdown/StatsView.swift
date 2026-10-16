@@ -1,6 +1,7 @@
 // Dial/Views/Dropdown/StatsView.swift
 import SwiftUI
 import GRDB
+import Foundation
 
 enum StatsViewPlacement {
   case legacyPanel
@@ -564,55 +565,73 @@ private struct WeeklyMemoryStatsCard: View {
   var body: some View {
     let memoryTheme = DialTheme.palette(for: memory.theme)
     let accent = memoryTheme.accent
+    let artifactKind = ArtifactKind(memento: memory.memento) ?? .listeningCrate
 
-    HStack(alignment: .center, spacing: 10) {
-      VStack(alignment: .leading, spacing: 3) {
-        HStack(alignment: .firstTextBaseline, spacing: 6) {
-          Text("THIS WEEK")
-            .font(Dial.Typography.monoTiny)
-            .tracking(1.0)
-            .foregroundStyle(theme.textMuted.opacity(0.72))
+    VStack(alignment: .leading, spacing: 8) {
+      HStack(alignment: .center, spacing: 10) {
+        ArtifactSprite(kind: artifactKind, color: accent, size: 26)
+          .frame(width: 32, height: 32)
+          .dialPrintedChip(
+            shape: RoundedRectangle(cornerRadius: Dial.Radius.pixel, style: .continuous),
+            color: accent,
+            fillOpacity: 0.04,
+            edgeOpacity: 0.14)
 
-          Text(memory.trait.uppercased())
-            .font(Dial.Typography.monoTiny)
-            .tracking(1.0)
-            .foregroundStyle(accent)
+        VStack(alignment: .leading, spacing: 3) {
+          HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Text("WEEKLY DROP")
+              .font(Dial.Typography.monoTiny)
+              .tracking(1.0)
+              .foregroundStyle(theme.textMuted.opacity(0.72))
+
+            Text(memory.trait.uppercased())
+              .font(Dial.Typography.monoTiny)
+              .tracking(1.0)
+              .foregroundStyle(accent)
+              .lineLimit(1)
+              .minimumScaleFactor(0.75)
+          }
+
+          Text(memory.memento.uppercased())
+            .font(Dial.Typography.monoLabel)
+            .tracking(1.1)
+            .foregroundStyle(theme.textPrimary)
             .lineLimit(1)
-            .minimumScaleFactor(0.75)
+            .minimumScaleFactor(0.78)
+
+          Text(memory.recapLine)
+            .font(Dial.Typography.monoSmall)
+            .foregroundStyle(theme.textMuted.opacity(0.72))
+            .lineLimit(1)
+            .minimumScaleFactor(0.64)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
 
-        Text(memory.memento.uppercased())
-          .font(Dial.Typography.monoLabel)
-          .tracking(1.1)
-          .foregroundStyle(theme.textPrimary)
-          .lineLimit(1)
-          .minimumScaleFactor(0.78)
+        VStack(alignment: .trailing, spacing: 3) {
+          Text((memory.dominantGenre ?? memory.theme.label).uppercased())
+            .font(Dial.Typography.monoTiny)
+            .tracking(0.8)
+            .foregroundStyle(accent.opacity(0.95))
+            .lineLimit(1)
+            .minimumScaleFactor(0.62)
 
-        Text(memory.recapLine)
-          .font(Dial.Typography.monoSmall)
-          .foregroundStyle(theme.textMuted.opacity(0.72))
-          .lineLimit(1)
-          .minimumScaleFactor(0.64)
+          Text(roomObjectLabel(memory.roomObjectName))
+            .font(Dial.Typography.monoTiny)
+            .tracking(0.8)
+            .foregroundStyle(theme.textPrimary.opacity(0.80))
+            .lineLimit(2)
+            .multilineTextAlignment(.trailing)
+            .minimumScaleFactor(0.66)
+        }
+        .frame(width: 90, alignment: .trailing)
       }
-      .frame(maxWidth: .infinity, alignment: .leading)
 
-      VStack(alignment: .trailing, spacing: 3) {
-        Text((memory.dominantGenre ?? memory.theme.label).uppercased())
-          .font(Dial.Typography.monoTiny)
-          .tracking(0.8)
-          .foregroundStyle(accent.opacity(0.95))
-          .lineLimit(1)
-          .minimumScaleFactor(0.62)
-
-        Text(roomObjectLabel(memory.roomObjectName))
-          .font(Dial.Typography.monoTiny)
-          .tracking(0.8)
-          .foregroundStyle(theme.textPrimary.opacity(0.80))
-          .lineLimit(2)
-          .multilineTextAlignment(.trailing)
-          .minimumScaleFactor(0.66)
+      HStack(spacing: 6) {
+        memoryStat(label: "PLAYS", value: "\(memory.playCount)")
+        memoryStat(label: "TIME", value: listeningTimeLabel(memory.listeningMs))
+        memoryStat(label: "ARTISTS", value: "\(memory.uniqueArtists)")
+        memoryStat(label: "NEW", value: "\(memory.newArtists)")
       }
-      .frame(width: 90, alignment: .trailing)
     }
     .padding(EdgeInsets(top: 8, leading: 9, bottom: 8, trailing: 9))
     .dialPrintedChip(
@@ -629,6 +648,33 @@ private struct WeeklyMemoryStatsCard: View {
   private var helpText: String {
     let genre = memory.dominantGenre ?? memory.theme.label
     return "\(memory.trait): \(memory.recapLine) Memento: \(memory.memento). Room object: \(roomObjectLabel(memory.roomObjectName)). Dominant sound: \(genre)."
+  }
+
+  private func memoryStat(label: String, value: String) -> some View {
+    HStack(alignment: .firstTextBaseline, spacing: 4) {
+      Text(label)
+        .font(Dial.Typography.monoTiny)
+        .tracking(0.8)
+        .foregroundStyle(theme.textMuted.opacity(0.70))
+      Text(value)
+        .font(Dial.Typography.monoSmall)
+        .foregroundStyle(theme.textPrimary.opacity(0.86))
+        .lineLimit(1)
+        .minimumScaleFactor(0.72)
+    }
+    .frame(maxWidth: .infinity)
+    .padding(.vertical, 4)
+    .background(theme.surface.opacity(0.28))
+    .clipShape(RoundedRectangle(cornerRadius: Dial.Radius.pixel, style: .continuous))
+  }
+
+  private func listeningTimeLabel(_ ms: Int64) -> String {
+    let minutes = max(0, ms / 60_000)
+    if minutes < 60 { return "\(minutes)m" }
+    let hours = Double(minutes) / 60
+    return hours < 10
+      ? String(format: "%.1fh", hours)
+      : "\(Int(hours.rounded()))h"
   }
 }
 

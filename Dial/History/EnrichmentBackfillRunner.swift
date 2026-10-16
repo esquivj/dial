@@ -136,7 +136,7 @@ final class EnrichmentBackfillRunner {
                  MAX(p.played_at) AS last_played
           FROM tracks t
           JOIN plays p ON p.track_uri = t.uri
-          CROSS JOIN json_each(t.artists_json) j
+          CROSS JOIN json_each(CASE WHEN json_valid(t.artists_json) = 1 THEN t.artists_json ELSE '[]' END) j
           WHERE t.artists_json IS NOT NULL
             AND json_valid(t.artists_json) = 1
           GROUP BY artist_uri
@@ -168,12 +168,14 @@ final class EnrichmentBackfillRunner {
     let eligibleTags = try await dbq.read { db in
       try Int.fetchOne(db, sql: """
         WITH track_artists AS (
-          SELECT json_extract(j.value, '$.uri') AS artist_uri,
-                 json_extract(j.value, '$.name') AS artist_name,
+          SELECT COALESCE(alias.canonical_uri, json_extract(j.value, '$.uri')) AS artist_uri,
+                 COALESCE(MAX(alias.canonical_name), MAX(json_extract(j.value, '$.name'))) AS artist_name,
                  MAX(p.played_at) AS last_played
           FROM tracks t
           JOIN plays p ON p.track_uri = t.uri
-          CROSS JOIN json_each(t.artists_json) j
+          CROSS JOIN json_each(CASE WHEN json_valid(t.artists_json) = 1 THEN t.artists_json ELSE '[]' END) j
+          LEFT JOIN artist_identity_aliases alias
+            ON alias.source_uri = json_extract(j.value, '$.uri')
           WHERE t.artists_json IS NOT NULL
             AND json_valid(t.artists_json) = 1
           GROUP BY artist_uri
@@ -185,8 +187,7 @@ final class EnrichmentBackfillRunner {
           ON s.entity_uri = ta.artist_uri
          AND s.entity_type = 'artist'
          AND s.provider = 'lastfm'
-        WHERE ta.artist_uri LIKE 'spotify:artist:%'
-          AND COALESCE(NULLIF(a.name, ''), ta.artist_name) IS NOT NULL
+        WHERE COALESCE(NULLIF(a.name, ''), ta.artist_name) IS NOT NULL
           AND COALESCE(NULLIF(a.name, ''), ta.artist_name) <> ''
           AND (
             s.entity_uri IS NULL

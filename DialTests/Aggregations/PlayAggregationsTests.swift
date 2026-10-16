@@ -45,6 +45,43 @@ final class PlayAggregationsTests: XCTestCase {
     XCTAssertEqual(try agg.playsYTD(trackUri: "B"), 4)
   }
 
+  func test_albumPlaysYTD_countsSameAlbumAndArtistContext() throws {
+    let plays = PlaysDAO(dbq: dbq)
+    let tracks = TracksDAO(dbq: dbq)
+    let now: Int64 = 1_700_000_000
+
+    try tracks.upsert(.init(
+      uri: "spotify:track:iceman-a",
+      name: "Make Them Know",
+      albumName: "ICEMAN",
+      albumArtUrl: nil,
+      durationMs: nil,
+      artistsJson: #"[{"name":"Drake","uri":"spotify:artist:drake"}]"#))
+    try tracks.upsert(.init(
+      uri: "spotify:track:iceman-b",
+      name: "Shabang",
+      albumName: "ICEMAN",
+      albumArtUrl: nil,
+      durationMs: nil,
+      artistsJson: #"[{"name":"Drake","uri":"artist:Drake"}]"#))
+    try tracks.upsert(.init(
+      uri: "spotify:track:other-artist",
+      name: "Other ICEMAN",
+      albumName: "ICEMAN",
+      albumArtUrl: nil,
+      durationMs: nil,
+      artistsJson: #"[{"name":"Not Drake","uri":"artist:not-drake"}]"#))
+
+    try plays.insert(.init(playedAt: now - 60, trackUri: "spotify:track:iceman-a", msPlayed: 200_000, source: "live"))
+    try plays.insert(.init(playedAt: now - 120, trackUri: "spotify:track:iceman-b", msPlayed: 200_000, source: "live"))
+    try plays.insert(.init(playedAt: now - 180, trackUri: "spotify:track:iceman-b", msPlayed: 200_000, source: "recent"))
+    try plays.insert(.init(playedAt: now - 370 * 86_400, trackUri: "spotify:track:iceman-b", msPlayed: 200_000, source: "import"))
+    try plays.insert(.init(playedAt: now - 240, trackUri: "spotify:track:other-artist", msPlayed: 200_000, source: "live"))
+
+    XCTAssertEqual(try agg.playsYTD(trackUri: "spotify:track:iceman-a"), 1)
+    XCTAssertEqual(try agg.albumPlaysYTD(trackUri: "spotify:track:iceman-a"), 3)
+  }
+
   func test_rank7d_ranksByCountDesc() throws {
     XCTAssertEqual(try agg.rank7d(trackUri: "A"), 1)
     XCTAssertEqual(try agg.rank7d(trackUri: "B"), 2)

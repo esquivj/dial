@@ -1,0 +1,10 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "buildCommand": "",
+  "outputDirectory": "public",
+  "functions": {
+    "api/index.py": {"includeFiles": "lib/**", "maxDuration": 60}
+  },
+  "rewrites": [{"source": "/:path*", "destination": "/api/index?__dial_path=:path*"}]
+}

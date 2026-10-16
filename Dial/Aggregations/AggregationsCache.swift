@@ -11,6 +11,7 @@ private let aggregationsLog = Logger(subsystem: "com.dial.Dial", category: "Aggr
 final class AggregationsCache {
   struct Snapshot {
     var playsYTD: Int = 0
+    var albumPlaysYTD: Int = 0
     var rank7d: Int? = nil
     var lastPlayedAt: Int64? = nil
     var firstListen: Bool = false
@@ -23,6 +24,7 @@ final class AggregationsCache {
   }
 
   var playsYTD: Int = 0
+  var albumPlaysYTD: Int = 0
   var rank7d: Int? = nil
   var lastPlayedAt: Int64? = nil
   var firstListen: Bool = false
@@ -47,6 +49,7 @@ final class AggregationsCache {
     do {
       return Snapshot(
         playsYTD: try trackUri.flatMap { try agg.playsYTD(trackUri: $0) } ?? 0,
+        albumPlaysYTD: try trackUri.flatMap { try agg.albumPlaysYTD(trackUri: $0) } ?? 0,
         rank7d: try trackUri.flatMap { try agg.rank7d(trackUri: $0) },
         lastPlayedAt: try trackUri.flatMap { try agg.lastPlayedAt(trackUri: $0, before: currentPlayAt) },
         firstListen: try trackUri.flatMap { try agg.firstListen(trackUri: $0) } ?? false,
@@ -66,6 +69,7 @@ final class AggregationsCache {
 
   func apply(_ snapshot: Snapshot) {
     playsYTD = snapshot.playsYTD
+    albumPlaysYTD = snapshot.albumPlaysYTD
     rank7d = snapshot.rank7d
     lastPlayedAt = snapshot.lastPlayedAt
     firstListen = snapshot.firstListen

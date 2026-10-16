@@ -108,15 +108,21 @@ final class AppCoordinator {
         for try await event in self.poller.stream() {
           await self.handle(event, source: .poll)
         }
-      } catch let error as SpotifyAuthError where error == .refreshFailed {
-        // Refresh token is dead — user disconnected Dial from Spotify on
-        // the web, or the grant otherwise expired. Flip the UI back to
-        // the connect view so the user knows to reconnect. Polling stays
-        // stopped (loop exited via thrown stream) and a future signIn()
-        // will re-call start() with the now-cleared pollingStarted guard.
-        coordLog.error("auth revoked; surfacing connect view")
+      } catch let error as SpotifyAuthError where error == .missingStoredToken {
+        // No token exists locally. This is the real signed-out path; refresh
+        // rejections keep the credential and retry inside PollingService.
+        coordLog.error("missing Spotify token; surfacing connect view")
         await MainActor.run { [weak self] in
           self?.settings.markSignedOut()
+        }
+      } catch let error as SpotifyAuthError {
+        if case let .refreshRejected(status) = error {
+          coordLog.error("Spotify refresh rejected with status \(status); preserving token and surfacing reconnect view")
+          await MainActor.run { [weak self] in
+            self?.settings.markConnectionNeedsAttention()
+          }
+        } else {
+          coordLog.error("polling auth error: \(String(describing: error), privacy: .public)")
         }
       } catch {
         coordLog.error("polling error: \(String(describing: error), privacy: .public)")
@@ -837,7 +843,9 @@ final class AppCoordinator {
     artistName: String? = nil,
     albumName: String? = nil
   ) -> SoundThemeDecision? {
-    let artistUris = artistUris.filter { $0.hasPrefix("spotify:artist:") }
+    let artistUris = artistUris
+      .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+      .filter { !$0.isEmpty }
     let queries = StatsQueries(dbq: dbq)
     return try? queries.soundThemeDecision(
       forArtistUris: artistUris,

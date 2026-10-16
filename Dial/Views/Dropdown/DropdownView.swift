@@ -17,7 +17,7 @@ final class DropdownVisibility {
 struct DropdownView: View {
   @Bindable var coord: AppCoordinator
   @Bindable var visibility: DropdownVisibility
-  @State private var showingGlossary = false
+  @State private var showingInfoPanel = false
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   private var deviceShape: RoundedRectangle {
@@ -261,11 +261,11 @@ struct DropdownView: View {
   }
 
   private var infoScreenTopNudge: CGFloat {
-    showingGlossary && isHUDScreen ? 6 : 0
+    showingInfoPanel && isHUDScreen ? 6 : 0
   }
 
   private var infoScreenHeightBonus: CGFloat {
-    showingGlossary && isHUDScreen ? 6 : 0
+    showingInfoPanel && isHUDScreen ? 6 : 0
   }
 
   private var hudBottomPadding: CGFloat {
@@ -279,7 +279,7 @@ struct DropdownView: View {
     if isHUDScreen {
       StatusRail(
         vm: coord.menubar,
-        showingGlossary: $showingGlossary,
+        showingInfoPanel: $showingInfoPanel,
         onOpenHistory: openHistory,
         onOpenStats: openStats,
         onOpenSettings: openSettings
@@ -297,7 +297,7 @@ struct DropdownView: View {
         menubar: coord.menubar,
         client: coord.client)
         .frame(height: Dial.Layout.Dropdown.hudTransportHeight)
-        .id(showingGlossary ? "transport-glossary" : "transport-hud")
+        .id(showingInfoPanel ? "transport-info" : "transport-hud")
         .background { transportTrayBacking }
         .padding(.horizontal, Dial.Layout.Transport.panelHorizontalPadding)
         .modifier(EntranceAppear(enabled: entranceMotionEnabled, delay: 0.20))
@@ -344,15 +344,15 @@ struct DropdownView: View {
   }
 
   private var screenUsesScanlines: Bool {
-    coord.dropdownScreen == .hud && !showingGlossary
+    coord.dropdownScreen == .hud && !showingInfoPanel
   }
 
   /// What lives inside the "screen" area — glossary overlay or one of the
   /// three top-level screens. Extracted so the LCD overlays apply uniformly.
   @ViewBuilder
   private var screenContent: some View {
-    if showingGlossary && isHUDScreen {
-      glossaryViewport
+    if showingInfoPanel && isHUDScreen {
+      infoViewport
         .transition(.opacity.combined(with: .move(edge: .leading)))
     } else {
       switch coord.dropdownScreen {
@@ -396,8 +396,23 @@ struct DropdownView: View {
       .padding(.top, infoScrollViewportTopInset)
   }
 
+  @ViewBuilder
+  private var infoViewport: some View {
+    if coord.nowPlaying.track != nil {
+      CurrentTrackWhyPanel(
+        vm: coord.nowPlaying,
+        badgeInsight: coord.settings.showBadgesInHUD ? activeBadgeInsight : nil,
+        onOpenStats: openStats,
+        onOpenHistory: openHistory
+      )
+      .padding(.top, infoScrollViewportTopInset)
+    } else {
+      glossaryViewport
+    }
+  }
+
   private var infoScrollViewportTopInset: CGFloat {
-    showingGlossary && isHUDScreen ? 24 : 0
+    showingInfoPanel && isHUDScreen ? 24 : 0
   }
 
   private var hudBody: some View {
@@ -492,7 +507,7 @@ struct DropdownView: View {
 
   private var connectView: some View {
     ConnectSetupView(
-      showingGlossary: $showingGlossary,
+      showingGlossary: $showingInfoPanel,
       onConnect: { Task { try? await coord.signIn() } },
       onOpenSettings: openSettings)
   }
@@ -503,21 +518,21 @@ struct DropdownView: View {
 
   private func openHistory() {
     withAnimation(screenTransitionAnimation) {
-      showingGlossary = false
+      showingInfoPanel = false
       coord.dropdownScreen = .history
     }
   }
 
   private func openStats() {
     withAnimation(screenTransitionAnimation) {
-      showingGlossary = false
+      showingInfoPanel = false
       coord.dropdownScreen = .stats
     }
   }
 
   private func openPet() {
     withAnimation(screenTransitionAnimation) {
-      showingGlossary = false
+      showingInfoPanel = false
       coord.dropdownScreen = .pet
     }
   }

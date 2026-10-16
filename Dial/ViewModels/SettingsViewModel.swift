@@ -214,6 +214,7 @@ final class SettingsViewModel {
   let auth: SpotifyAuthService
   let dbq: DatabaseQueue
   private let tokenStore: TokenStore
+  private let lastFMAPIKeyStore: SecretStringStore
   private let defaults: UserDefaults
   var signedIn: Bool
   var importProgress: Double = 0
@@ -335,18 +336,25 @@ final class SettingsViewModel {
     didSet { defaults.set(lastFMTagEnrichmentEnabled, forKey: Key.lastFMTagEnrichmentEnabled) }
   }
   var lastFMAPIKey: String {
-    didSet { defaults.set(lastFMAPIKey, forKey: Key.lastFMAPIKey) }
+    didSet {
+      LastFMAPIKeyStorage.save(
+        lastFMAPIKey,
+        store: lastFMAPIKeyStore,
+        defaults: defaults)
+    }
   }
 
   init(
     auth: SpotifyAuthService,
     dbq: DatabaseQueue,
     tokenStore: TokenStore,
+    lastFMAPIKeyStore: SecretStringStore = LastFMAPIKeyStorage.makeDefaultStore(),
     defaults: UserDefaults = .standard
   ) {
     self.auth = auth
     self.dbq = dbq
     self.tokenStore = tokenStore
+    self.lastFMAPIKeyStore = lastFMAPIKeyStore
     self.defaults = defaults
     self.menuBarDisplayMode = Self.enumValue(
       MenuBarDisplayMode.self, key: Key.menuBarDisplayMode, default: .albumArtTrackArtist, defaults: defaults
@@ -404,7 +412,9 @@ final class SettingsViewModel {
       Key.backgroundEnrichmentEnabled, default: true, defaults: defaults)
     self.lastFMTagEnrichmentEnabled = Self.boolValue(
       Key.lastFMTagEnrichmentEnabled, default: false, defaults: defaults)
-    self.lastFMAPIKey = defaults.string(forKey: Key.lastFMAPIKey) ?? ""
+    self.lastFMAPIKey = LastFMAPIKeyStorage.load(
+      store: lastFMAPIKeyStore,
+      defaults: defaults)
 
     // Read keychain once on launch so the UI reflects sign-in state immediately.
     self.signedIn = ((try? tokenStore.load()) ?? nil) != nil
@@ -415,6 +425,13 @@ final class SettingsViewModel {
 
   /// Flip after a successful `auth.signIn()`.
   func markSignedIn() { signedIn = true }
+
+  /// Show the reconnect UI without destroying the stored refresh token.
+  /// Used after repeated Spotify refresh rejections so the next launch can
+  /// still retry instead of forcing OAuth immediately.
+  func markConnectionNeedsAttention() {
+    signedIn = false
+  }
 
   /// Clear the keychain token and flip the flag. Used by the Disconnect button.
   func markSignedOut() {
@@ -607,7 +624,7 @@ final class SettingsViewModel {
     static let spectrumPeakMarkers = "settings.spectrumPeakMarkers"
     static let backgroundEnrichmentEnabled = "settings.backgroundEnrichmentEnabled"
     static let lastFMTagEnrichmentEnabled = "settings.lastFMTagEnrichmentEnabled"
-    static let lastFMAPIKey = "settings.lastFMAPIKey"
+    static let lastFMAPIKey = LastFMAPIKeyStorage.legacyDefaultsKey
   }
 
   private static func boolValue(
