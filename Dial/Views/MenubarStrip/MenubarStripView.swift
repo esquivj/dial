@@ -369,6 +369,7 @@ private struct MenubarTickerText: View {
     .frame(width: width, height: MenuBarTextMetrics.lineHeight, alignment: .leading)
     .clipped()
     .background(measuredContent)
+    .accessibilityElement(children: .ignore)
     .accessibilityLabel(accessibilityLabel)
     .onAppear { cycleStart = Date() }
     .onChange(of: accessibilityLabel) { _, _ in cycleStart = Date() }
