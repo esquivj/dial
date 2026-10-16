@@ -45,7 +45,7 @@ struct StatsQueries {
                  ''
                ) AS artist,
                t.album_name, t.album_art_url
-        FROM plays p
+        FROM counted_plays p
         LEFT JOIN tracks t ON t.uri = p.track_uri
         ORDER BY p.played_at DESC
         LIMIT ?
@@ -95,7 +95,7 @@ struct StatsQueries {
                     THEN json_extract(t.artists_json, '$[0].name')
                     ELSE NULL END AS artist_name,
                COUNT(*) AS c
-        FROM plays p
+        FROM counted_plays p
         LEFT JOIN tracks t ON t.uri = p.track_uri
         \(filter)
         GROUP BY p.track_uri
@@ -205,7 +205,7 @@ struct StatsQueries {
                COUNT(*) AS plays,
                COUNT(DISTINCT ag.artist_uri) AS artists,
                GROUP_CONCAT(DISTINCT ag.detail_tags) AS detail_tags
-        FROM plays p
+        FROM counted_plays p
         JOIN primary_artists pa ON pa.track_uri = p.track_uri
         JOIN artist_genres ag ON ag.artist_uri = pa.artist_uri
         WHERE 1 = 1
@@ -330,7 +330,7 @@ struct StatsQueries {
       if let until { arguments.append(until) }
       return try Int.fetchOne(db, sql: """
         SELECT COUNT(*)
-        FROM plays
+        FROM counted_plays
         WHERE played_at >= ?
           \(untilFilter)
           AND (
@@ -357,7 +357,7 @@ struct StatsQueries {
                    json_extract(t.artists_json, '$[0].uri')
                  ) AS artist_key,
                  MIN(p.played_at) AS first_seen
-          FROM plays p
+          FROM counted_plays p
           JOIN tracks t ON t.uri = p.track_uri
           LEFT JOIN artist_identity_aliases alias
             ON alias.source_uri = CASE WHEN json_valid(t.artists_json) = 1
@@ -497,7 +497,7 @@ struct StatsQueries {
               'unknown'
             ) AS artist_key,
             p.played_at
-          FROM plays p
+          FROM counted_plays p
           JOIN tracks t ON t.uri = p.track_uri
           LEFT JOIN artist_identity_aliases alias
             ON alias.source_uri = CASE WHEN json_valid(t.artists_json) = 1
@@ -567,7 +567,7 @@ struct StatsQueries {
         SELECT COUNT(*) AS plays,
                COALESCE(SUM(ms_played), 0) AS total_ms,
                COUNT(DISTINCT track_uri) AS uniq_tracks
-        FROM plays
+        FROM counted_plays
         \(playsFilter)
       """, arguments: statementArguments)
       // Artists live in a different table, so this stays as a separate
@@ -584,7 +584,7 @@ struct StatsQueries {
                    NULLIF(TRIM(json_extract(t.artists_json, '$[0].uri')), '')
                  ) AS artist_uri,
                  p.played_at
-          FROM plays p
+          FROM counted_plays p
           JOIN tracks t ON t.uri = p.track_uri
           LEFT JOIN artist_identity_aliases alias
             ON alias.source_uri = CASE WHEN json_valid(t.artists_json) = 1
@@ -627,7 +627,7 @@ struct StatsQueries {
       let rows = try Row.fetchAll(db, sql: """
         SELECT CAST(strftime('%w', played_at, 'unixepoch', 'localtime') AS INTEGER) AS dow,
                COUNT(*) AS c
-        FROM plays
+        FROM counted_plays
         \(filter)
         GROUP BY dow
       """, arguments: arguments)
@@ -636,7 +636,7 @@ struct StatsQueries {
         let count: Int = row["c"]
         return (day, count)
       })
-      let firstPlay = try Int64.fetchOne(db, sql: "SELECT MIN(played_at) FROM plays")
+      let firstPlay = try Int64.fetchOne(db, sql: "SELECT MIN(played_at) FROM counted_plays")
       let start = since ?? firstPlay ?? now
       let occurrences = Self.weekdayOccurrences(from: min(start, now), through: now)
       let labels = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"]
@@ -671,7 +671,7 @@ struct StatsQueries {
       let rows = try Row.fetchAll(db, sql: """
         SELECT strftime('%Y-%m-%d', played_at, 'unixepoch', 'localtime') AS day,
                COUNT(*) AS c
-        FROM plays
+        FROM counted_plays
         WHERE played_at >= ? AND played_at <= ?
         GROUP BY day
       """, arguments: [startEpoch, now])

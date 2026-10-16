@@ -11,7 +11,7 @@ struct PlayAggregations {
     return try dbq.read { db in
       let uris = try matchingTrackUris(trackUri: trackUri, in: db)
       return try Int.fetchOne(db,
-        sql: "SELECT COUNT(*) FROM plays WHERE track_uri IN (\(placeholders(for: uris))) AND played_at > ?",
+        sql: "SELECT COUNT(*) FROM counted_plays WHERE track_uri IN (\(placeholders(for: uris))) AND played_at > ?",
         arguments: statementArguments(uris, appending: [cutoff])) ?? 0
     }
   }
@@ -21,7 +21,7 @@ struct PlayAggregations {
     return try dbq.read { db in
       let uris = try matchingTrackUris(trackUri: trackUri, in: db)
       return try Int.fetchOne(db,
-        sql: "SELECT COUNT(*) FROM plays WHERE track_uri IN (\(placeholders(for: uris))) AND played_at >= ?",
+        sql: "SELECT COUNT(*) FROM counted_plays WHERE track_uri IN (\(placeholders(for: uris))) AND played_at >= ?",
         arguments: statementArguments(uris, appending: [cutoff])) ?? 0
     }
   }
@@ -52,7 +52,7 @@ struct PlayAggregations {
       let uris = try matchingTrackUris(trackUri: trackUri, in: db)
       return try Int64.fetchOne(db, sql: """
         SELECT played_at
-        FROM plays
+        FROM counted_plays
         WHERE track_uri IN (\(placeholders(for: uris)))
           AND played_at < ?
         ORDER BY played_at DESC, id DESC
@@ -81,10 +81,10 @@ extension PlayAggregations {
     try dbq.read { db in
       let uris = try matchingTrackUris(trackUri: trackUri, in: db)
       let imports = try Int.fetchOne(db,
-        sql: "SELECT COUNT(*) FROM plays WHERE track_uri IN (\(placeholders(for: uris))) AND source = 'import'",
+        sql: "SELECT COUNT(*) FROM counted_plays WHERE track_uri IN (\(placeholders(for: uris))) AND source = 'import'",
         arguments: StatementArguments(uris)) ?? 0
       let live = try Int.fetchOne(db,
-        sql: "SELECT COUNT(*) FROM plays WHERE track_uri IN (\(placeholders(for: uris))) AND source = 'live'",
+        sql: "SELECT COUNT(*) FROM counted_plays WHERE track_uri IN (\(placeholders(for: uris))) AND source = 'live'",
         arguments: StatementArguments(uris)) ?? 0
       guard imports == 0 && live == 1 else { return false }
       return try !isKnownCatalogContext(trackUri: trackUri, in: db)
@@ -111,7 +111,7 @@ extension PlayAggregations {
 
       let latest = try Int64.fetchAll(db, sql: """
         SELECT played_at
-        FROM plays
+        FROM counted_plays
         WHERE track_uri IN (\(placeholders(for: uris)))
         ORDER BY played_at DESC, id DESC
         LIMIT 2
@@ -208,7 +208,7 @@ private extension PlayAggregations {
     guard identity.artistUri != nil || identity.artistName != nil else { return 0 }
     return try Int.fetchOne(db, sql: """
       SELECT COUNT(*)
-      FROM plays p
+      FROM counted_plays p
       JOIN tracks t ON t.uri = p.track_uri
       WHERE t.artists_json IS NOT NULL
         AND json_valid(t.artists_json) = 1
@@ -248,7 +248,7 @@ private extension PlayAggregations {
 
     return try Int.fetchOne(db, sql: """
       SELECT COUNT(*)
-      FROM plays p
+      FROM counted_plays p
       JOIN tracks t ON t.uri = p.track_uri
       WHERE t.album_name IS NOT NULL
         AND LOWER(TRIM(t.album_name)) = ?
@@ -290,7 +290,7 @@ extension PlayAggregations {
     let cutoff = now() - 3600
     return try dbq.read { db in
       try Row.fetchAll(db, sql: """
-        SELECT played_at, track_uri, ms_played FROM plays
+        SELECT played_at, track_uri, ms_played FROM counted_plays
         WHERE played_at > ? ORDER BY played_at DESC
       """, arguments: [cutoff]).map { row in
         SessionPlay(playedAt: row["played_at"], trackUri: row["track_uri"], msPlayed: row["ms_played"])
@@ -322,7 +322,7 @@ extension PlayAggregations {
           ) AS artist_key
         )
         SELECT COUNT(*)
-        FROM plays p
+        FROM counted_plays p
         JOIN tracks t ON t.uri = p.track_uri
         WHERE json_valid(t.artists_json) = 1
           AND COALESCE(
@@ -358,7 +358,7 @@ extension PlayAggregations {
                    json_extract(t.artists_json, '$[0].uri')
                  ) AS artist_key,
                  p.played_at
-          FROM plays p
+          FROM counted_plays p
           JOIN tracks t ON t.uri = p.track_uri
           WHERE p.played_at > ?
             AND t.artists_json IS NOT NULL

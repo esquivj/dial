@@ -364,6 +364,24 @@ enum Migrations {
     m.registerMigration("v15_artist_identity_aliases") { db in
       try ArtistIdentityRepair.rebuildAliases(in: db)
     }
+
+    // Stats, ranks and badges read `counted_plays`, which applies the live
+    // DedupRule (>=30s or >=50% of a known duration) to imported streaming
+    // history. Skips stay in `plays` untouched; only what counts changes.
+    m.registerMigration("v16_counted_plays_view") { db in
+      try db.execute(sql: """
+        CREATE VIEW counted_plays AS
+        SELECT p.*
+        FROM plays p
+        WHERE p.source != 'import'
+           OR p.ms_played >= 30000
+           OR EXISTS (
+             SELECT 1 FROM tracks t
+             WHERE t.uri = p.track_uri
+               AND t.duration_ms > 0
+               AND p.ms_played * 2 >= t.duration_ms)
+        """)
+    }
     return m
   }
 }

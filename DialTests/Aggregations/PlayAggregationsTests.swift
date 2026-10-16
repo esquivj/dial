@@ -45,6 +45,31 @@ final class PlayAggregationsTests: XCTestCase {
     XCTAssertEqual(try agg.playsYTD(trackUri: "B"), 4)
   }
 
+  func test_importedSkipsDoNotCountButLongEnoughImportsDo() throws {
+    let plays = PlaysDAO(dbq: dbq)
+    let tracks = TracksDAO(dbq: dbq)
+    let now: Int64 = 1_700_000_000
+    try tracks.upsert(.init(uri: "SHORT", name: "Short", albumName: nil, albumArtUrl: nil, durationMs: 40_000,
+                            artistsJson: nil))
+    try tracks.upsert(.init(uri: "D", name: "D", albumName: nil, albumArtUrl: nil, durationMs: nil,
+                            artistsJson: nil))
+    // Imported 5s skip: kept in plays, not counted.
+    try plays.insert(.init(playedAt: now - 3600, trackUri: "D", msPlayed: 5_000, source: "import"))
+    // Imported 30s listen: counted.
+    try plays.insert(.init(playedAt: now - 7200, trackUri: "D", msPlayed: 30_000, source: "import"))
+    // Imported 20s of a 40s track (>=50% of known duration): counted.
+    try plays.insert(.init(playedAt: now - 3600, trackUri: "SHORT", msPlayed: 20_000, source: "import"))
+    // Imported 19s of a 40s track: a skip.
+    try plays.insert(.init(playedAt: now - 7200, trackUri: "SHORT", msPlayed: 19_000, source: "import"))
+    // Live plays already passed DedupRule before insert, so they always count.
+    try plays.insert(.init(playedAt: now - 10_800, trackUri: "SHORT", msPlayed: 20_000, source: "live"))
+
+    XCTAssertEqual(try agg.plays30d(trackUri: "D"), 1)
+    XCTAssertEqual(try agg.plays30d(trackUri: "SHORT"), 2)
+    let stored = try dbq.read { db in try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM plays WHERE track_uri IN ('D', 'SHORT')") }
+    XCTAssertEqual(stored, 5, "Skips stay in the archive")
+  }
+
   func test_albumPlaysYTD_countsSameAlbumAndArtistContext() throws {
     let plays = PlaysDAO(dbq: dbq)
     let tracks = TracksDAO(dbq: dbq)

@@ -27,7 +27,7 @@ Full logs are in `.build/logs/`. Don't pass your own `-derivedDataPath` to a new
 | `Dial/Spotify`, `Dial/Auth` | Web API client, rate-limit gate, desktop playback observer; PKCE OAuth with Keychain tokens |
 | `Dial/Polling` | `PollingService` turns playback state into events; `DedupRule` decides when a play counts |
 | `Dial/History` | Extended Streaming History import (`Importer`, `EndsongFile`), recently-played reconciliation, metadata enrichment/backfill |
-| `Dial/Store` | GRDB `DatabaseStack`, `Migrations` (v1…v15), `DAO/` and `Models/` |
+| `Dial/Store` | GRDB `DatabaseStack`, `Migrations` (v1…v16), `DAO/` and `Models/` |
 | `Dial/Aggregations` | All stats SQL (`StatsQueries`, `PlayAggregations`), badges (`BadgeResolver`), sound themes, track/artist identity merging |
 | `Dial/Pet` | `PetEngine` (records plays, XP, stages, tricks), behaviors, streaks |
 | `Dial/Audio` | Screen-audio capture + FFT for the spectrum visualizer |
@@ -44,14 +44,14 @@ Full logs are in `.build/logs/`. Don't pass your own `-derivedDataPath` to a new
 
 - **The HUD shape is locked.** Read `HUD_LOOK_LOCK.md` before any change inside the dropdown. Don't change `Dial.Layout.Dropdown` sizes, the shell art, or element placement unless the user explicitly asks. Never fix a shell or art problem by moving UI. The panel and its snapshots are 440×440, and the rounded shell fills that square edge to edge by design.
 - **`project.yml` is the source of truth.** `Dial.xcodeproj` is generated and gitignored. `dev.sh` regenerates it, so new Swift files are picked up automatically. New resource folders must be added to `project.yml` with `buildPhase: resources`, or they silently won't ship.
-- **Migrations are append-only.** Add `v16_…` at the end of `Migrations.swift`; never edit a shipped migration.
+- **Migrations are append-only.** Add `v17_…` at the end of `Migrations.swift`; never edit a shipped migration.
 - **Play counting** has four layers:
   1. `DedupRule`: a live play counts at ≥30 s or ≥50% of the track.
   2. `PollingService`: counts once per track change.
   3. `PetEngine.recordPlay`: dedups `live` and `recent` plays against nearby rows.
   4. The unique `(played_at, track_uri, ms_played)` index.
 
-  `Importer` inserts streaming-history rows directly, with no threshold, and stats count every row. This is a known open question, so don't "fix" it without asking.
+  `Importer` inserts every streaming-history row, skips included, so the archive stays complete. **Stats, ranks and badges read the `counted_plays` view** (migration v16), which drops imported rows under 30 s unless they cover ≥50% of a known duration. New user-facing queries should read `counted_plays`. Use `plays` only for archive, enrichment and dedup work.
 - **Theme ids are not display names:** `ember` displays as "Magenta", and `classic` as "Smoke Gel".
 
 ## Verifying a UI change without a human

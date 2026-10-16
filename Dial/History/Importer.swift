@@ -58,7 +58,10 @@ final class Importer {
           continue   // duplicate — skip
         }
         inserted += 1
-        try BadgeResolver.recordMemories(for: play, mode: .imported, in: db)
+        // Skips stay in the archive but never earn badges (see counted_plays).
+        if DedupRule.shouldCount(progressMs: Int(r.msPlayed), durationMs: 0) {
+          try BadgeResolver.recordMemories(for: play, mode: .imported, in: db)
+        }
         try applyXPInTxn(for: play, in: db)
       }
       var entry = ImportLogEntry(

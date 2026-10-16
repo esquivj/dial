@@ -23,7 +23,7 @@ final class PollingServiceTests: XCTestCase {
     var events: [PlaybackEvent] = []
     let exp = expectation(description: "events received")
     exp.expectedFulfillmentCount = 1
-    Task {
+    _ = Task {
       var seenStarted = false
       var seenCounted = false
       for try await e in svc.stream() {
@@ -59,7 +59,7 @@ final class PollingServiceTests: XCTestCase {
     let svc = PollingService(client: client, interval: 0, clock: { 1_700_000_000 })
     var events: [PlaybackEvent] = []
     let exp = expectation(description: "two poll observations received")
-    Task {
+    _ = Task {
       for try await e in svc.stream() {
         events.append(e)
         if events.count >= 5 {

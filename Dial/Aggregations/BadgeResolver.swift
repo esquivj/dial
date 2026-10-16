@@ -206,7 +206,7 @@ enum BadgeResolver {
     let uris = try matchingTrackUris(trackUri: trackUri, context: context, in: db)
     return try Int.fetchOne(
       db,
-      sql: "SELECT COUNT(*) FROM plays WHERE track_uri IN (\(placeholders(for: uris)))",
+      sql: "SELECT COUNT(*) FROM counted_plays WHERE track_uri IN (\(placeholders(for: uris)))",
       arguments: StatementArguments(uris)) ?? 0
   }
 
@@ -214,7 +214,7 @@ enum BadgeResolver {
     let normalizedName = context.normalizedArtistName
     return try Int.fetchOne(db, sql: """
       SELECT COUNT(*)
-      FROM plays p
+      FROM counted_plays p
       JOIN tracks t ON t.uri = p.track_uri
       LEFT JOIN artist_identity_aliases alias
         ON alias.source_uri = CASE WHEN json_valid(t.artists_json) = 1
@@ -240,7 +240,7 @@ enum BadgeResolver {
     let normalizedName = context.normalizedArtistName
     return try Int.fetchOne(db, sql: """
       SELECT COUNT(*)
-      FROM plays p
+      FROM counted_plays p
       JOIN tracks t ON t.uri = p.track_uri
       LEFT JOIN artist_identity_aliases alias
         ON alias.source_uri = CASE WHEN json_valid(t.artists_json) = 1
@@ -298,7 +298,7 @@ enum BadgeResolver {
 
     guard let prior = try Int64.fetchOne(db, sql: """
       SELECT MAX(played_at)
-      FROM plays
+      FROM counted_plays
       WHERE track_uri IN (\(placeholders(for: uris)))
         \(exclusion)
         AND played_at < ?
@@ -379,7 +379,7 @@ enum BadgeResolver {
     let uris = try matchingTrackUris(trackUri: play.trackUri, context: context, in: db)
     let plays30d = try trackCount30d ?? Int.fetchOne(
       db,
-      sql: "SELECT COUNT(*) FROM plays WHERE track_uri IN (\(placeholders(for: uris))) AND played_at > ?",
+      sql: "SELECT COUNT(*) FROM counted_plays WHERE track_uri IN (\(placeholders(for: uris))) AND played_at > ?",
       arguments: statementArguments(uris, appending: [cutoff30])) ?? 0
     guard plays30d >= 10 else { return false }
 
@@ -397,7 +397,7 @@ enum BadgeResolver {
     guard try repeatRunLength(matching: uris, in: db) == 3 else { return false }
     let rows = try String.fetchAll(db, sql: """
       SELECT track_uri
-      FROM plays
+      FROM counted_plays
       ORDER BY played_at DESC, id DESC
       LIMIT 4
       """)
@@ -414,7 +414,7 @@ enum BadgeResolver {
     let uriSet = Set(uris)
     let rows = try String.fetchAll(db, sql: """
       SELECT track_uri
-      FROM plays
+      FROM counted_plays
       ORDER BY played_at DESC, id DESC
       LIMIT 20
       """)
@@ -436,7 +436,7 @@ enum BadgeResolver {
                     THEN json_extract(t.artists_json, '$[0].uri')
                     ELSE NULL END
              ) AS artist_uri
-      FROM plays p
+      FROM counted_plays p
       LEFT JOIN tracks t ON t.uri = p.track_uri
       LEFT JOIN artist_identity_aliases alias
         ON alias.source_uri = CASE WHEN json_valid(t.artists_json) = 1
@@ -461,7 +461,7 @@ enum BadgeResolver {
                     THEN json_extract(t.artists_json, '$[0].uri')
                     ELSE NULL END
              ) AS artist_uri
-      FROM plays p
+      FROM counted_plays p
       LEFT JOIN tracks t ON t.uri = p.track_uri
       LEFT JOIN artist_identity_aliases alias
         ON alias.source_uri = CASE WHEN json_valid(t.artists_json) = 1
@@ -509,7 +509,7 @@ enum BadgeResolver {
 
     let priorRows = try Int64.fetchAll(db, sql: """
       SELECT played_at
-      FROM plays
+      FROM counted_plays
       WHERE track_uri IN (\(placeholders(for: uris)))
         \(exclusion)
         AND played_at <= ?
@@ -549,7 +549,7 @@ enum BadgeResolver {
     let uris = try matchingTrackUris(trackUri: trackUri, context: context, in: db)
     let plays30d = try Int.fetchOne(
       db,
-      sql: "SELECT COUNT(*) FROM plays WHERE track_uri IN (\(placeholders(for: uris))) AND played_at > ?",
+      sql: "SELECT COUNT(*) FROM counted_plays WHERE track_uri IN (\(placeholders(for: uris))) AND played_at > ?",
       arguments: statementArguments(uris, appending: [cutoff30])) ?? 0
     guard plays30d >= 10 else { return nil }
 

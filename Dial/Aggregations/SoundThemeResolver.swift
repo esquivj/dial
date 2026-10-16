@@ -198,7 +198,7 @@ struct SoundThemeResolver {
         SELECT p.id AS play_id,
                p.played_at,
                t.artists_json
-        FROM plays p
+        FROM counted_plays p
         JOIN tracks t ON t.uri = p.track_uri
         WHERE p.played_at >= ?
           AND t.artists_json IS NOT NULL
@@ -488,7 +488,7 @@ struct SoundThemeResolver {
           AND json_extract(j.value, '$.uri') IN (SELECT uri FROM target_sources)
       )
       SELECT COUNT(*)
-      FROM plays p
+      FROM counted_plays p
       JOIN artist_tracks at ON at.track_uri = p.track_uri
     """, arguments: [try jsonArray(artistUris)]) ?? 0
   }
