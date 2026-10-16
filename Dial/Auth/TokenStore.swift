@@ -60,7 +60,14 @@ enum LastFMAPIKeyStorage {
   static let legacyDefaultsKey = "settings.lastFMAPIKey"
 
   static func makeDefaultStore() -> SecretStringStore {
-    KeychainSecretStringStore(service: "com.dial.lastfm", key: "api-key")
+    let keychain = KeychainSecretStringStore(service: "com.dial.lastfm", key: "api-key")
+    // DEBUG builds (what scripts/install.sh ships) use a file so rebuilds don't
+    // re-trigger the keychain prompt; see FileSecretStringStore.
+    #if DEBUG
+    return FileSecretStringStore(filename: "lastfm-api-key", fallback: keychain)
+    #else
+    return keychain
+    #endif
   }
 
   static func load(

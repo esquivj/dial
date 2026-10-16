@@ -1,9 +1,9 @@
 // Dial/Auth/FileTokenStore.swift
 import Foundation
 
-/// Plain-file token storage used in DEBUG builds. Each Xcode rebuild re-signs
-/// the binary with a new ad-hoc cert; macOS keychain treats each new signature
-/// as an untrusted requester and prompts on every launch. The keychain prompt
+/// Plain-file token storage used in DEBUG builds. Keychain items created by an
+/// app without an Apple team ID are tied to that exact binary, so every rebuild
+/// makes macOS prompt for the keychain password again. The keychain prompt
 /// loop makes dev miserable — we trade it for a 0o600 JSON file.
 ///
 /// The file lives at `~/Library/Application Support/Dial/spotify-token.json`,
