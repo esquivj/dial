@@ -1,6 +1,6 @@
 # Dial QA Checklist
 
-Manual smoke tests to run before tagging a release. Pair with `xcodebuild test` for the automated layer.
+Manual smoke tests to run before tagging a release. Pair with `scripts/dev.sh test` for the automated layer.
 
 ## First-run / onboarding
 
@@ -12,15 +12,17 @@ Manual smoke tests to run before tagging a release. Pair with `xcodebuild test` 
 
 - [ ] Play a track in Spotify; within ~3 s the strip updates with the title.
 - [ ] Pause Spotify → strip switches to "Paused" + pet sits down with droopy ears.
-- [ ] Reach 30 s of a play → `PLAYS · 30D` ticks up by 1 in the dropdown.
+- [ ] Reach 30 s (or half the track) → `TRACK · YTD` ticks up by 1 in the dropdown.
 - [ ] Skip to a brand-new track → dropdown shows `FIRST LISTEN` chip; pet plays exclamation animation.
 
 ## Badges
 
-- [ ] Brand-new track → `FIRST LISTEN` (amber chip).
-- [ ] Replay a track that was last heard 90+ days ago (seed via SQLite if needed) → `REDISCOVERED` (ivory chip).
-- [ ] Run a track to ≥10 plays in 30 d AND rank 7d ≤ 5 → `ON STREAK` (orange chip).
-- [ ] Verify priority: when a track qualifies for multiple badges, only the highest-priority one shows (`firstListen > rediscovered > onStreak`).
+There are 11 badge kinds (`BadgeMemoryKind` in `Dial/Store/Models/BadgeEvent.swift`); rules live in `Dial/Aggregations/BadgeResolver.swift`. Spot-check the main ones:
+
+- [ ] Brand-new track → `FIRST LISTEN` chip in the track hero.
+- [ ] First track by an artist never heard before → `NEW ARTIST`.
+- [ ] Replay a track last heard 90+ days ago (seed via SQLite if needed) → `REDISCOVERED`.
+- [ ] When a track qualifies for several badges, only the highest-priority one shows.
 
 ## Pet
 
@@ -44,15 +46,16 @@ Manual smoke tests to run before tagging a release. Pair with `xcodebuild test` 
 - [ ] When paused: strip shows "Paused" in muted ivory.
 - [ ] No layout jitter when track title length changes substantially.
 
-## Dropdown (320×360)
+## Dropdown (440×440)
 
-- [ ] Status rail: amber hairline + pet (2× scale) + "NOW PLAYING" + progress timer.
-- [ ] Track hero: 52 px album art + title + artist · album.
-- [ ] Readouts row: PLAYS · 30D and RANK · 7D as big amber numerals; deltas in tiny mono.
-- [ ] Badge row: hidden when none of the three triggers fire.
-- [ ] Artist context: `#N · 7D` rank + lifetime count.
-- [ ] Session timeline: bars for last 60 min, current bar full amber + glow.
-- [ ] Controls: ⏮ ⏯ ⏭ work; HISTORY / STATS labels visible (drill-downs are stubbed in v1).
+Check the shell against the visual checklist in `HUD_LOOK_LOCK.md` first.
+
+- [ ] Top rail: "NOW PLAYING" status + History, Stats, Settings and Info buttons, all opening their screens.
+- [ ] Track hero: album art, title, artist, album, like button, badge chip, pet window.
+- [ ] Readouts: `TRACK · YTD`, `RANK · 7D`, `LAST · PLAYED`.
+- [ ] Spectrum visualizer animates while playing (needs Screen Recording permission).
+- [ ] Transport: scrubber with elapsed/total time; shuffle, previous, play/pause, next, repeat all work.
+- [ ] Pet, Stats and History screens fit inside the shell with the lip, rails and screws still visible.
 
 ## History import
 
@@ -63,8 +66,8 @@ Manual smoke tests to run before tagging a release. Pair with `xcodebuild test` 
 
 ## Regression
 
-- [ ] All `xcodebuild test` cases pass (currently 57).
-- [ ] Snapshot tests pass on a fresh `xcodegen generate` + clean build.
+- [ ] `scripts/dev.sh test` passes with 0 failures.
+- [ ] `scripts/dev.sh snapshot` passes.
 - [ ] Spot-check stats in dropdown vs. SQLite via `sqlite3 ~/Library/Application\ Support/Dial/dial.sqlite`.
 - [ ] Quit + relaunch → state survives (XP, stage, streak persist).
 

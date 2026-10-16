@@ -5,7 +5,7 @@ A native macOS menubar companion for Spotify. Shows what you're playing, what it
 ## What's in it
 
 - **Menubar strip** — tiny pixel pet + current track + 30-day play count. Pet bobs to BPM and reacts to events (first listen pops, rediscovery floats thought-dots, streak dances).
-- **Dropdown HUD** (320×360) — instrument-panel readouts: `PLAYS · YTD`, `RANK · 7D`, contextual badge chip, artist rank, last-60-min session timeline, transport controls.
+- **Dropdown HUD** (440×440 smoked-plastic device, shape locked in `HUD_LOOK_LOCK.md`) — track hero with badge chip and pet window, readouts `TRACK · YTD`, `RANK · 7D`, `LAST · PLAYED`, live spectrum visualizer, transport controls. Pet, Stats and History screens open from the top rail.
 - **Pet system** — 6 life stages (egg → elder), blend XP from listening time + variety + streaks, 7 animated behaviors with priority resolution.
 - **Local SQLite store** — every counted play, plus tracks/artists/imports_log/pet_state. WAL journal mode, 500 ms busy timeout.
 - **Spotify OAuth (PKCE)** — Keychain-stored tokens, auto-refresh on 401.
@@ -29,12 +29,12 @@ Requirements:
 - [xcodegen](https://github.com/yonaskolb/XcodeGen): `brew install xcodegen`
 
 ```bash
-git clone <this-repo> && cd dial
-./scripts/setup.sh        # installs deps check + generates Dial.xcodeproj from project.yml
-open Dial.xcodeproj       # ⌘R to run
+./scripts/create-cert.sh  # once per machine: the "Dial Local Dev" signing cert every build uses
+./scripts/dev.sh build    # generates Dial.xcodeproj from project.yml and builds
+./scripts/dev.sh install  # build, copy to /Applications/Dial.app, relaunch
 ```
 
-The Xcode project is generated from `project.yml` (committed) — never edit `Dial.xcodeproj` by hand. After adding new Swift files, re-run `xcodegen generate`.
+The Xcode project is generated from `project.yml` (committed) — never edit `Dial.xcodeproj` by hand. `dev.sh` regenerates it on every run; if you work in Xcode directly, run `xcodegen generate` after adding files. Coding agents: start with `AGENTS.md`.
 
 ## Spotify Developer setup
 
@@ -46,10 +46,11 @@ The Xcode project is generated from `project.yml` (committed) — never edit `Di
 ## Tests
 
 ```bash
-xcodebuild -project Dial.xcodeproj -scheme Dial -destination 'platform=macOS' test
+./scripts/dev.sh test       # full suite (store, aggregations, auth, polling, pet engine, views)
+./scripts/dev.sh snapshot   # visual regression screenshots only
 ```
 
-Currently 73 tests covering store, aggregations, auth, polling, pet engine, sprite rendering, and end-to-end flow.
+Screenshot baselines live in `DialTests/Snapshots/VisualRegression/`. Re-record with `./scripts/dev.sh record` only after checking the new images; see `AGENTS.md`.
 
 ## Manual QA
 
@@ -57,5 +58,5 @@ See `docs/qa-checklist.md`.
 
 ## Design / plan docs
 
-- Spec: `docs/superpowers/specs/2026-04-24-dial-design.md`
-- Plan: `docs/superpowers/plans/2026-04-24-dial.md`
+- Current design system: `DESIGN.md`; HUD shape lock: `HUD_LOOK_LOCK.md`; product intent: `PRODUCT.md`.
+- Original v1 spec and plan (historical; colours, fonts and sizes are outdated): `docs/superpowers/`.

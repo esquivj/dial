@@ -105,7 +105,7 @@ Important: `hudRailContentYOffset = 6` is an optical correction. Do not "fix" it
   "content": { "x": 15, "y": 15, "width": 410, "height": 410, "radius": 30 },
   "shell": { "x": 2, "y": 2, "width": 436, "height": 436, "radius": 36 },
   "rail": { "x": 50, "y": 25, "width": 340, "height": 34, "radius": 10 },
-  "hudLcd": { "x": 24, "y": 68, "width": 392, "height": 246, "radius": 10 },
+  "hudLcd": { "x": 21, "y": 68, "width": 398, "height": 246, "radius": 10 },
   "hudTransport": { "x": 24, "y": 326, "width": 392, "height": 74, "radius": 8 },
   "hudNoTransportLcd": { "x": 24, "y": 68, "width": 392, "height": 348, "radius": 10 },
   "fullLcd": { "x": 24, "y": 24, "width": 392, "height": 392, "radius": 11 },
@@ -181,21 +181,14 @@ For a shell-only restore, regenerate assets first:
 python3 scripts/generate-hardware-assets.py
 ```
 
-Build the app:
+Check the HUD screenshots, then build, install and relaunch the local app:
 
 ```bash
-xcodebuild -project Dial.xcodeproj -scheme Dial -configuration Debug build
+scripts/dev.sh snapshot
+scripts/dev.sh install
 ```
 
-Install/relaunch the local app:
-
-```bash
-rm -rf /Applications/Dial.app
-/usr/bin/ditto ~/Library/Developer/Xcode/DerivedData/Dial-dovdrsveecvppcfpkxbonieehptx/Build/Products/Debug/Dial.app /Applications/Dial.app
-open -a /Applications/Dial.app
-```
-
-Only run `xcodegen generate` if resource files are added or removed from the project definition. Normal shell regeneration should not require project regeneration.
+`dev.sh` regenerates the Xcode project on every run, so added or removed resource files are picked up automatically.
 
 ## If It Breaks
 

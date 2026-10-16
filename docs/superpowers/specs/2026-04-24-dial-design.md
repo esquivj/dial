@@ -1,3 +1,5 @@
+> **Historical (v1, April 2026).** Colours, fonts, sizes and the module map here are outdated. Current sources: `DESIGN.md`, `HUD_LOOK_LOCK.md`, `AGENTS.md`.
+
 # Dial — Design Document
 
 **Status:** Draft

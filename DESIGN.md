@@ -82,8 +82,8 @@ components:
     backgroundColor: "{colors.ground}"
     textColor: "{colors.text-primary}"
     rounded: "{rounded.device}"
-    width: "360px"
-    height: "360px"
+    width: "440px"
+    height: "440px"
   lcd-panel:
     backgroundColor: "{colors.subtle}"
     textColor: "{colors.text-primary}"
@@ -214,8 +214,8 @@ Dial uses material layering, not generic card shadows. Depth comes from transluc
 ## 5. Components
 
 ### Popup Shell
-- **Shape:** continuous device shell, `28px` radius.
-- **Size:** default dropdown is `360px` by `360px`.
+- **Shape:** continuous device shell, `36px` radius.
+- **Size:** default dropdown is `440px` by `440px` (`Dial.Layout.Dropdown`; locked by `HUD_LOOK_LOCK.md`).
 - **Material:** smoke-gel plastic with dark translucent ground, subtle dust texture, white top rim, black inner lip, and glassy edge depth.
 - **Rule:** the shell should feel molded. If it reads like a rounded app popover, sharpen or simplify it.
 
@@ -247,7 +247,7 @@ Dial uses material layering, not generic card shadows. Depth comes from transluc
 
 ### Readouts
 - **Shape:** one shared raised rail with `8px` corners and internal dividers.
-- **Content:** Plays YTD, Rank 7D, Last Played.
+- **Content:** Track YTD (plays of this track this year), Rank 7D, Last Played.
 - **Typography:** labels use pixel label, values use mono numeric text.
 - **Rule:** readouts should feel like hardware cells, not dashboard cards.
 
