@@ -292,7 +292,9 @@ final class VisualRegressionTests: XCTestCase {
             artworkCache: coord.artworkCache)
         }
         .environment(\._accessibilityReduceMotion, state.reduceMotion)
-        .preferredColorScheme(scheme)
+        // preferredColorScheme doesn't reach the environment inside
+        // ImageRenderer; a real status item gets it from the menu bar.
+        .environment(\.colorScheme, scheme)
         let image = try render(view, size: menubarGridBarSize)
         let name = "\(state.name)-\(scheme == .dark ? "dark" : "light")-bar"
         try pngData(for: image).write(to: outputDirectory.appendingPathComponent("\(name).png"), options: .atomic)
