@@ -241,6 +241,124 @@ final class VisualRegressionTests: XCTestCase {
     XCTAssertGreaterThan(opaquePixelCount(in: image), 35_000, "Stats screen rendered blank.")
   }
 
+  /// Renders every HUD and menu bar state in `StateGridFixtures` to
+  /// `.build/state-grid/` plus a full-size contact sheet. Skipped unless
+  /// `.build/state-grid/.render` exists; `scripts/dev.sh grid` creates it.
+  func test_renderStateGrid() async throws {
+    let outputDirectory = URL(fileURLWithPath: #filePath)
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+      .appendingPathComponent(".build/state-grid", isDirectory: true)
+    guard FileManager.default.fileExists(atPath: outputDirectory.appendingPathComponent(".render").path) else {
+      throw XCTSkip("Run scripts/dev.sh grid to render the state grid.")
+    }
+    let fixtures = StateGridFixtures(
+      artworkURL: try StateGridFixtures.makeArtworkFile().absoluteString,
+      now: fixtureNow)
+
+    var hudTiles: [StateGridTile] = []
+    for state in StateGridFixtures.hudStates {
+      let coord = try makeStateGridCoordinator()
+      state.configure(coord, fixtures)
+      _ = await coord.artworkCache.load(coord.nowPlaying.track?.artUrl)
+      let visibility = DropdownVisibility()
+      visibility.isVisible = true
+      let view = DropdownView(coord: coord, visibility: visibility)
+        .environment(\._accessibilityReduceMotion, state.reduceMotion)
+        .preferredColorScheme(.dark)
+      let size = CGSize(width: DropdownLayout.width, height: DropdownLayout.height)
+      let image = state.needsHostingView ? try renderHosted(view, size: size) : try render(view, size: size)
+      try pngData(for: image).write(to: outputDirectory.appendingPathComponent("\(state.name).png"), options: .atomic)
+      hudTiles.append(StateGridTile(name: state.name, caption: state.caption, section: state.section, image: image))
+    }
+
+    var menubarTiles: [StateGridTile] = []
+    for state in StateGridFixtures.menubarStates {
+      let coord = try makeStateGridCoordinator()
+      state.configure(coord, fixtures)
+      coord.settings.menuBarDisplayMode = state.mode
+      coord.settings.showAlbumArtInMenuBar = true
+      coord.settings.showProgressInMenuBar = true
+      coord.settings.menuBarTitleWidth = 220
+      coord.nowPlaying.soundTheme = state.themeID
+      _ = await coord.artworkCache.load(coord.nowPlaying.track?.artUrl)
+      for scheme in [ColorScheme.dark, .light] {
+        let view = MenubarGridBar(scheme: scheme) {
+          MenubarStripView(
+            vm: coord.menubar,
+            settings: coord.settings,
+            pet: coord.pet,
+            nowPlaying: coord.nowPlaying,
+            artworkCache: coord.artworkCache)
+        }
+        .environment(\._accessibilityReduceMotion, state.reduceMotion)
+        .preferredColorScheme(scheme)
+        let image = try render(view, size: menubarGridBarSize)
+        let name = "\(state.name)-\(scheme == .dark ? "dark" : "light")-bar"
+        try pngData(for: image).write(to: outputDirectory.appendingPathComponent("\(name).png"), options: .atomic)
+        menubarTiles.append(StateGridTile(
+          name: name,
+          caption: "\(state.caption) · \(scheme == .dark ? "dark" : "light") menu bar",
+          section: "Menu bar strip",
+          image: image))
+      }
+    }
+
+    let sheet = StateGridSheet(hudTiles: hudTiles, menubarTiles: menubarTiles)
+    let renderer = ImageRenderer(content: sheet)
+    renderer.scale = 2
+    guard let sheetImage = renderer.cgImage else {
+      XCTFail("Could not render the state-grid contact sheet.")
+      return
+    }
+    try pngData(for: sheetImage).write(to: outputDirectory.appendingPathComponent("contact-sheet.png"), options: .atomic)
+  }
+
+  /// Offscreen NSHostingView render at 2x. Slower than ImageRenderer but it
+  /// draws ScrollView content, which ImageRenderer leaves blank on macOS.
+  private func renderHosted<V: View>(_ view: V, size: CGSize) throws -> CGImage {
+    let frozen = Date(timeIntervalSince1970: TimeInterval(fixtureNow))
+    let hosting = NSHostingView(rootView: view
+      .frame(width: size.width, height: size.height)
+      .environment(\.dialFrozenDate, frozen))
+    hosting.frame = CGRect(origin: .zero, size: size)
+    let window = NSWindow(
+      contentRect: hosting.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+    window.isOpaque = false
+    window.backgroundColor = .clear
+    window.contentView = hosting
+    window.orderFrontRegardless()
+    defer { window.orderOut(nil) }
+    for _ in 0..<5 {
+      hosting.layoutSubtreeIfNeeded()
+      RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+    }
+    guard let rep = NSBitmapImageRep(
+      bitmapDataPlanes: nil, pixelsWide: Int(size.width * 2), pixelsHigh: Int(size.height * 2),
+      bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+      colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)
+    else { throw NSError(domain: "Dial.VisualRegression", code: 4) }
+    rep.size = size
+    hosting.cacheDisplay(in: hosting.bounds, to: rep)
+    guard let image = rep.cgImage else { throw NSError(domain: "Dial.VisualRegression", code: 5) }
+    return image
+  }
+
+  /// AppCoordinator with an in-memory DB and throwaway defaults, so grid
+  /// renders never write into the real app's settings.
+  private func makeStateGridCoordinator() throws -> AppCoordinator {
+    let dbq = try InMemoryDatabase.make()
+    let tokenStore = SnapshotTokenStore()
+    let auth = SpotifyAuthService(clientID: "state-grid", tokenStore: tokenStore)
+    let client = SpotifyClient(tokenStore: tokenStore, refresh: { try tokenStore.requireToken() })
+    return AppCoordinator(
+      dbq: dbq,
+      client: client,
+      auth: auth,
+      tokenStore: tokenStore,
+      defaults: UserDefaults(suiteName: "Dial.StateGrid.\(UUID().uuidString)")!)
+  }
+
   private func makeSnapshotContext(themeID: DialThemeID) throws -> SnapshotContext {
     let dbq = try InMemoryDatabase.make()
     let tokenStore = SnapshotTokenStore()
@@ -789,6 +907,121 @@ private struct MarketingMenubarConfig {
   let showProgress: Bool
   let petStage: PetStage
   let plays: Int
+}
+
+private struct StateGridTile {
+  let name: String
+  let caption: String
+  let section: String
+  let image: CGImage
+}
+
+/// A slice of menu bar: the strip sits on a dark or light bar the way it
+/// would on a dark or light desktop.
+private let menubarGridBarSize = CGSize(width: 440, height: 28)
+
+private struct MenubarGridBar<Content: View>: View {
+  let scheme: ColorScheme
+  @ViewBuilder let content: () -> Content
+
+  var body: some View {
+    HStack(spacing: 0) {
+      content()
+        .fixedSize()
+      Spacer(minLength: 0)
+    }
+    .padding(.leading, 12)
+    .frame(width: menubarGridBarSize.width, height: menubarGridBarSize.height)
+    .background(scheme == .dark ? Color(white: 0.16) : Color(white: 0.93))
+  }
+}
+
+/// Light-background contact sheet. Tiles render at 1:1 point size (2x pixels).
+private struct StateGridSheet: View {
+  let hudTiles: [StateGridTile]
+  let menubarTiles: [StateGridTile]
+
+  private let columns = 4
+  private let gap: CGFloat = 28
+
+  private var sections: [(String, [StateGridTile])] {
+    var order: [String] = []
+    var bySection: [String: [StateGridTile]] = [:]
+    for tile in hudTiles {
+      if bySection[tile.section] == nil { order.append(tile.section) }
+      bySection[tile.section, default: []].append(tile)
+    }
+    return order.map { ($0, bySection[$0] ?? []) }
+  }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 36) {
+      VStack(alignment: .leading, spacing: 6) {
+        Text("Dial · state grid")
+          .font(.system(size: 30, weight: .semibold))
+        Text("Rendered by scripts/dev.sh grid · fixture date Wed 2026-05-20 · every tile at 1:1 size")
+          .font(.system(size: 15))
+          .foregroundStyle(Color.black.opacity(0.55))
+      }
+      ForEach(Array(sections.enumerated()), id: \.offset) { _, section in
+        sectionView(title: section.0) {
+          let rows = stride(from: 0, to: section.1.count, by: columns).map {
+            Array(section.1[$0..<min($0 + columns, section.1.count)])
+          }
+          VStack(alignment: .leading, spacing: gap) {
+            ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+              HStack(alignment: .top, spacing: gap) {
+                ForEach(row, id: \.name) { tile in
+                  tileView(tile, size: CGSize(width: DropdownLayout.width, height: DropdownLayout.height))
+                }
+              }
+            }
+          }
+        }
+      }
+      sectionView(title: "Menu bar strip") {
+        let pairs = stride(from: 0, to: menubarTiles.count, by: 2).map {
+          Array(menubarTiles[$0..<min($0 + 2, menubarTiles.count)])
+        }
+        VStack(alignment: .leading, spacing: 18) {
+          ForEach(Array(pairs.enumerated()), id: \.offset) { _, pair in
+            HStack(alignment: .top, spacing: gap) {
+              ForEach(pair, id: \.name) { tile in
+                tileView(tile, size: menubarGridBarSize)
+              }
+            }
+          }
+        }
+      }
+    }
+    .padding(40)
+    .frame(width: CGFloat(columns) * DropdownLayout.width + CGFloat(columns - 1) * gap + 80, alignment: .leading)
+    .background(Color(red: 0.965, green: 0.96, blue: 0.95))
+    .foregroundStyle(Color.black.opacity(0.86))
+    .environment(\.colorScheme, .light)
+  }
+
+  private func sectionView<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
+    VStack(alignment: .leading, spacing: 14) {
+      Text(title.uppercased())
+        .font(.system(size: 15, weight: .bold))
+        .tracking(1.2)
+        .foregroundStyle(Color.black.opacity(0.6))
+      content()
+    }
+  }
+
+  private func tileView(_ tile: StateGridTile, size: CGSize) -> some View {
+    VStack(alignment: .leading, spacing: 6) {
+      Text(tile.caption)
+        .font(.system(size: 14, weight: .medium))
+      Text(tile.name + ".png")
+        .font(.system(size: 11, design: .monospaced))
+        .foregroundStyle(Color.black.opacity(0.45))
+      Image(decorative: tile.image, scale: 2)
+        .frame(width: size.width, height: size.height)
+    }
+  }
 }
 
 private struct SettingsMenuBarSnapshotHarness: View {

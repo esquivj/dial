@@ -200,6 +200,13 @@ final class VisualizerEngine: @unchecked Sendable {
     bandCount = count
     state = .running
   }
+
+  /// Test hook for rendering the permission/offline overlays without
+  /// touching ScreenCaptureKit.
+  @MainActor
+  func setPreviewState(_ previewState: State) {
+    state = previewState
+  }
   #endif
 
   @MainActor
