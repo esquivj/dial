@@ -142,6 +142,25 @@ final class StatusBarController {
     }()
 
     item.length = max(30, min(320, width))
+    updateStatusItemAccessibility()
+  }
+
+  /// The visible strip is a SwiftUI view inside the button, so VoiceOver
+  /// needs the button itself to say what it is and what's playing.
+  private func updateStatusItemAccessibility() {
+    guard let button = item.button, let coord else { return }
+    let track = coord.menubar.track
+    let summary: String
+    switch coord.menubar.state {
+    case .nothingPlaying:
+      summary = "Dial, nothing playing"
+    case .playing, .paused:
+      let parts = [track?.name, track?.artistName].compactMap { $0 }.filter { !$0.isEmpty }
+      let prefix = coord.menubar.state == .paused ? "Dial, paused" : "Dial, now playing"
+      summary = parts.isEmpty ? prefix : "\(prefix): \(parts.joined(separator: " by "))"
+    }
+    button.setAccessibilityLabel(summary)
+    button.setAccessibilityHelp("Click to open Dial. Right-click for more options.")
   }
 
   private func currentTitleTextWidth(max maxWidth: CGFloat) -> CGFloat {

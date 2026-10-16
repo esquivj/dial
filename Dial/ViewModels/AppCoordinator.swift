@@ -75,7 +75,13 @@ final class AppCoordinator {
   /// upstream is broken. `nil` until the first successful poll lands.
   var lastSuccessfulPoll: Date?
 
-  init(dbq: DatabaseQueue, client: SpotifyClient, auth: SpotifyAuthService, tokenStore: TokenStore) {
+  init(
+    dbq: DatabaseQueue,
+    client: SpotifyClient,
+    auth: SpotifyAuthService,
+    tokenStore: TokenStore,
+    defaults: UserDefaults = .standard
+  ) {
     self.dbq = dbq
     self.client = client
     self.engine = PetEngine(dbq: dbq)
@@ -84,7 +90,7 @@ final class AppCoordinator {
     self.nowPlaying = NowPlayingViewModel(agg: aggCache)
     self.menubar = MenubarStripViewModel()
     self.pet = PetViewModel()
-    let settings = SettingsViewModel(auth: auth, dbq: dbq, tokenStore: tokenStore)
+    let settings = SettingsViewModel(auth: auth, dbq: dbq, tokenStore: tokenStore, defaults: defaults)
     self.settings = settings
     self.backgroundEnrichment = BackgroundEnrichmentCoordinator(dbq: dbq, client: client, settings: settings)
     self.artworkCache = ArtworkCache()

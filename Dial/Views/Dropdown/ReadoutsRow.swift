@@ -13,7 +13,7 @@ struct ReadoutsRow: View {
     HStack(spacing: 0) {
       Button(action: onOpenStats) {
         Readout(label: "TRACK · YTD",
-                value: "\(vm.playsYTD)",
+                value: vm.playsYTD.formatted(),
                 delta: playsDelta)
       }
       .buttonStyle(.pressable)

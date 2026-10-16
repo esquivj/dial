@@ -36,7 +36,7 @@ struct StatusRail: View {
           // just a soft edge softening.
           .shadow(color: (trackPulse ? theme.memoryAccent : theme.accent).opacity(0.55), radius: 3)
           .animation(.easeOut(duration: 0.5), value: trackPulse)
-        Text("NOW PLAYING")
+        Text(railLabel)
           .font(Dial.Typography.monoLabel)
           .tracking(1.4)
           .foregroundStyle(theme.accent)
@@ -151,6 +151,13 @@ struct StatusRail: View {
     default:
       return (Dial.Layout.StatusRail.iconSize, 0)
     }
+  }
+
+  /// Same states DropdownView uses to pick the idle screen, so the rail never
+  /// claims "NOW PLAYING" over the READY panel or a paused track.
+  private var railLabel: String {
+    if vm.track == nil || vm.state == .nothingPlaying { return "STANDBY" }
+    return vm.state == .paused ? "PAUSED" : "NOW PLAYING"
   }
 
   private var infoHelp: String {

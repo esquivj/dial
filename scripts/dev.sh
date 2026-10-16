@@ -9,12 +9,14 @@
 #   scripts/dev.sh test [Class[/test]]   # full suite, or only the named tests
 #   scripts/dev.sh snapshot              # visual regression tests only
 #   scripts/dev.sh record                # re-record visual baselines (review the PNGs!)
+#   scripts/dev.sh grid                  # render every HUD/menu bar state + contact sheet
 #   scripts/dev.sh install [--no-open]   # build, copy to /Applications, relaunch
 #
 # Output is a short summary. Full logs: .build/logs/<command>.log
 # Test results bundle: .build/results/test.xcresult
 # Failed visual snapshots: .build/snapshot-failures/<name>.{actual,baseline}.png
 # Every render from `snapshot` (pass or fail): .build/snapshots/<name>.png
+# State grid from `grid`: .build/state-grid/<state>.png + contact-sheet.png
 
 set -euo pipefail
 
@@ -26,6 +28,7 @@ LOG_DIR="$REPO_ROOT/.build/logs"
 RESULT_BUNDLE="$REPO_ROOT/.build/results/test.xcresult"
 SNAPSHOT_FAILURES="$REPO_ROOT/.build/snapshot-failures"
 SNAPSHOT_RENDERS="$REPO_ROOT/.build/snapshots"
+STATE_GRID="$REPO_ROOT/.build/state-grid"
 RECORD_FLAG="$REPO_ROOT/DialTests/Snapshots/VisualRegression/.record"
 CERT_NAME="Dial Local Dev"
 
@@ -146,6 +149,19 @@ cmd_record() {
   git status --short -- DialTests/Snapshots/VisualRegression
 }
 
+# Not a regression check: renders every state in DialTests/StateGridFixtures.swift
+# so a person (or agent) can look at them side by side.
+cmd_grid() {
+  preflight
+  rm -rf "$STATE_GRID"
+  mkdir -p "$STATE_GRID"
+  touch "$STATE_GRID/.render"
+  trap 'rm -f "$STATE_GRID/.render"' EXIT
+  run_tests grid VisualRegressionTests/test_renderStateGrid
+  rm -f "$STATE_GRID/.render"
+  echo "  State grid: .build/state-grid/ ($(ls "$STATE_GRID"/*.png | wc -l | tr -d ' ') PNGs). Open contact-sheet.png."
+}
+
 cmd_install() { exec "$REPO_ROOT/scripts/install.sh" "$@"; }
 
 case "${1:-}" in
@@ -153,6 +169,7 @@ case "${1:-}" in
   test)     shift; cmd_test "$@" ;;
   snapshot) shift; cmd_snapshot "$@" ;;
   record)   shift; cmd_record "$@" ;;
+  grid)     shift; cmd_grid "$@" ;;
   install)  shift; cmd_install "$@" ;;
-  *) sed -n '3,17p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+  *) sed -n '3,19p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
 esac

@@ -75,5 +75,10 @@ struct Marquee: View {
           }
         )
     )
+    // While scrolling there are two visible copies of the text (plus the
+    // hidden measurer); VoiceOver should hear the title once.
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel(text)
+    .accessibilityAddTraits(.isStaticText)
   }
 }

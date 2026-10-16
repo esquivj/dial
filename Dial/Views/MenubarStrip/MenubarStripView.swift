@@ -20,9 +20,17 @@ struct MenubarStripView: View {
 
   @State private var trackFlash = false
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @Environment(\.colorScheme) private var colorScheme
 
   private var theme: DialTheme {
     DialTheme.palette(for: settings.hudColorMode.resolvedTheme(soundTheme: nowPlaying.soundTheme))
+  }
+
+  /// The strip sits on the system menu bar, which turns light or dark with
+  /// the desktop. Dark keeps the original white/ivory ink; a light bar gets
+  /// near-black ink so the text doesn't vanish.
+  private func ink(_ dark: Color, light lightOpacity: Double) -> Color {
+    colorScheme == .light ? Color.black.opacity(lightOpacity) : dark
   }
 
   var body: some View {
@@ -128,7 +136,7 @@ struct MenubarStripView: View {
     case .playing:
       trackArtistLine
     case .paused:
-      dynamicMenuBarText(pausedTrackArtistString, foreground: Dial.Palette.textMuted)
+      dynamicMenuBarText(pausedTrackArtistString, foreground: ink(Dial.Palette.textMuted, light: 0.5))
     case .nothingPlaying:
       brandMenuBarText
     }
@@ -140,7 +148,7 @@ struct MenubarStripView: View {
 
     return Group {
       if title.isEmpty || artist.isEmpty {
-        dynamicMenuBarText(trackArtistString, foreground: Color.white.opacity(0.93))
+        dynamicMenuBarText(trackArtistString, foreground: ink(Color.white.opacity(0.93), light: 0.85))
       } else {
         dynamicMenuBarPair(primary: title, secondary: artist, widthKey: trackArtistString)
       }
@@ -161,9 +169,9 @@ struct MenubarStripView: View {
   private var titleText: some View {
     switch vm.state {
     case .playing:
-      dynamicMenuBarText(vm.track?.name ?? "", foreground: Dial.Palette.textPrimary)
+      dynamicMenuBarText(vm.track?.name ?? "", foreground: ink(Dial.Palette.textPrimary, light: 0.85))
     case .paused:
-      dynamicMenuBarText(pausedTitleString, foreground: Dial.Palette.textMuted)
+      dynamicMenuBarText(pausedTitleString, foreground: ink(Dial.Palette.textMuted, light: 0.5))
     case .nothingPlaying:
       brandMenuBarText
     }
@@ -182,9 +190,9 @@ struct MenubarStripView: View {
   private func dynamicMenuBarPair(primary: String, secondary: String, widthKey: String) -> some View {
     MenubarTickerText(
       segments: [
-        .init(text: primary, foreground: Color.white.opacity(0.94)),
-        .init(text: " • ", foreground: theme.accent.opacity(0.70)),
-        .init(text: secondary, foreground: Dial.Palette.textMuted.opacity(0.88)),
+        .init(text: primary, foreground: ink(Color.white.opacity(0.94), light: 0.85)),
+        .init(text: " • ", foreground: ink(theme.accent.opacity(0.70), light: 0.35)),
+        .init(text: secondary, foreground: ink(Dial.Palette.textMuted.opacity(0.88), light: 0.55)),
       ],
       width: menuBarTextWidth(for: widthKey),
       accessibilityLabel: widthKey)
@@ -199,7 +207,7 @@ struct MenubarStripView: View {
       .font(.custom("GeistPixel-Square", size: MenuBarTextMetrics.brandFontSize))
       .kerning(MenuBarTextMetrics.brandKerning)
       .lineLimit(1)
-      .foregroundStyle(Color.white.opacity(0.96))
+      .foregroundStyle(ink(Color.white.opacity(0.96), light: 0.85))
       .frame(width: MenuBarTextMetrics.brandWidth, height: MenuBarTextMetrics.lineHeight, alignment: .leading)
       .clipped()
   }
@@ -255,7 +263,13 @@ struct MenubarStripView: View {
   @ViewBuilder
   private var petIcon: some View {
     if settings.petEnabled {
-      BulldogSprite(stage: pet.stage, behavior: pet.behavior, height: Metrics.pet)
+      // The sprite is black line art; the white matte fills its body so it
+      // still reads on a dark menu bar.
+      BulldogSprite(
+        stage: pet.stage,
+        behavior: pet.behavior,
+        height: Metrics.pet,
+        matteColor: Color.white.opacity(0.92))
         .frame(width: Metrics.iconSlot, height: Metrics.iconSlot)
     } else {
       brandIdleIcon
@@ -264,7 +278,7 @@ struct MenubarStripView: View {
 
   private var brandIdleIcon: some View {
     DialThickIcon("brand.sparkles", size: Metrics.brandSymbol)
-      .foregroundStyle(Color.white.opacity(0.96))
+      .foregroundStyle(ink(Color.white.opacity(0.96), light: 0.85))
       .frame(width: Metrics.iconSlot, height: Metrics.iconSlot)
       .accessibilityHidden(true)
   }
@@ -355,6 +369,7 @@ private struct MenubarTickerText: View {
     .frame(width: width, height: MenuBarTextMetrics.lineHeight, alignment: .leading)
     .clipped()
     .background(measuredContent)
+    .accessibilityElement(children: .ignore)
     .accessibilityLabel(accessibilityLabel)
     .onAppear { cycleStart = Date() }
     .onChange(of: accessibilityLabel) { _, _ in cycleStart = Date() }
