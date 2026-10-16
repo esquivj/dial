@@ -150,6 +150,10 @@ struct HistoryView: View {
   }
 
   private var headerCount: String {
+    // "LAST 0" read like a broken counter on a fresh archive.
+    if rows.isEmpty {
+      return loaded ? "0 PLAYS" : ""
+    }
     if rows.count >= totalPlays {
       return "LAST \(rows.count)"
     }
