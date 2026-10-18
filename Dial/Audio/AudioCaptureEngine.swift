@@ -18,7 +18,18 @@ import ScreenCaptureKit
 ///     to the UI as "tap to enable").
 ///   - No display available (extremely rare; usually means the user is in
 ///     a degenerate state like a remote session).
-final class AudioCaptureEngine: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked Sendable {
+/// What `VisualizerEngine` needs from a capture source. `AudioCaptureEngine`
+/// is the only production conformer; tests drive the engine's start/stop
+/// lifecycle with a fake.
+protocol AudioCapturing: AnyObject, Sendable {
+  var onSamples: (@Sendable ([Float]) -> Void)? { get set }
+  var shouldProcessSamples: (@Sendable () -> Bool)? { get set }
+  var onStop: (@Sendable (Error) -> Void)? { get set }
+  func start() async throws
+  func stop() async
+}
+
+final class AudioCaptureEngine: NSObject, AudioCapturing, SCStreamOutput, SCStreamDelegate, @unchecked Sendable {
   enum CaptureError: Error {
     case noDisplay
     case formatUnavailable

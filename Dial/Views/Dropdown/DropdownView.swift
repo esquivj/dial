@@ -461,14 +461,12 @@ struct DropdownView: View {
         // shows the actual audio in real time via ScreenCaptureKit + FFT.
         // The 60-min play log still lives in HistoryView for users who want it.
         //
-        // Long-lived engine: `.task` fires start() every appear, but the engine
-        // is idempotent and keeps the SCStream running across dropdown closes.
-        // Avoids re-prompting for Screen Recording permission on every open.
+        // `.task` fires start() every appear; the engine is idempotent and
+        // restarts a stream it parked while the dropdown was closed.
         //
         // Visibility throttle: attach/detach gate FFT processing on whether
-        // the view is mounted, so when the popover is closed the engine stops
-        // burning CPU on FFT work nobody is observing. Stream stays alive
-        // either way (permission stability > tiny capture cost).
+        // the view is mounted, and the engine stops the SCStream once the
+        // dropdown has been closed for a few seconds.
         if coord.settings.showVisualizerInHUD {
           PixelGridVisualizer(engine: coord.visualizer)
             .modifier(EntranceAppear(enabled: entranceMotionEnabled, delay: entranceAnimationDelay(2)))
