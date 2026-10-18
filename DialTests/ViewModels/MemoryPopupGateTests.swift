@@ -216,6 +216,17 @@ final class MemoryPopupCoordinatorTests: XCTestCase {
     XCTAssertTrue(presenter.shown.isEmpty)
   }
 
+  func test_doesNotPresentWhileTheFocusFilterIsOn() throws {
+    let (coord, presenter) = try makeCoordinator(insight: BadgeInsight(kind: .firstListen, detail: "x"))
+    let suite = "Dial.MemoryPopup.Focus.\(UUID().uuidString)"
+    defer { UserDefaults().removePersistentDomain(forName: suite) }
+    let state = FocusFilterState(defaults: UserDefaults(suiteName: suite)!)
+    state.apply(hideMemoryPopups: true)
+    coord.focusStatus = SystemFocusStatus(state: state)
+    coord.considerMemoryPopup(uri: "spotify:track:1", moment: .trackStarted)
+    XCTAssertTrue(presenter.shown.isEmpty)
+  }
+
   func test_doesNotPresentWhenToggledOff() throws {
     let (coord, presenter) = try makeCoordinator(insight: BadgeInsight(kind: .firstListen, detail: "x"))
     coord.settings.showMemoryPopups = false

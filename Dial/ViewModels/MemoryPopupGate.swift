@@ -128,12 +128,30 @@ protocol FocusStatusProviding {
   var isFocusActive: Bool { get }
 }
 
-/// Always reports "no Focus" for now. macOS only reports Focus state to
-/// apps through `INFocusStatusCenter`, which needs the restricted
-/// Communication Notifications entitlement (not available to the
-/// self-signed "Dial Local Dev" build), and the Focus database under
-/// ~/Library/DoNotDisturb is privacy-protected. A Focus filter
-/// (App Intents `SetFocusFilterIntent`) is the likely way to fill this in.
+/// What Dial's Focus filter last told it. `DialFocusFilter.perform()`
+/// writes here when a Focus with the filter turns on or off. Lives in
+/// UserDefaults because the system may launch Dial just to run the filter.
+struct FocusFilterState {
+  static let hidesMemoryPopupsKey = "focusFilterHidesMemoryPopups"
+
+  var defaults: UserDefaults = .standard
+
+  var hidesMemoryPopups: Bool { defaults.bool(forKey: Self.hidesMemoryPopupsKey) }
+
+  /// `nil` is what the system passes when the Focus turns off (the filter's
+  /// parameter goes back to its unset default), so only `true` hides pop-ups.
+  func apply(hideMemoryPopups: Bool?) {
+    defaults.set(hideMemoryPopups == true, forKey: Self.hidesMemoryPopupsKey)
+  }
+}
+
+/// Reports a Focus as on while a Focus that has Dial's filter (System
+/// Settings › Focus › Focus filters) is on. macOS has no other way to tell
+/// this build about Focus: `INFocusStatusCenter` needs the restricted
+/// Communication Notifications entitlement, which the self-signed
+/// "Dial Local Dev" build can't carry, and ~/Library/DoNotDisturb is
+/// privacy-protected. A Focus without the filter is invisible to Dial.
 struct SystemFocusStatus: FocusStatusProviding {
-  var isFocusActive: Bool { false }
+  var state = FocusFilterState()
+  var isFocusActive: Bool { state.hidesMemoryPopups }
 }

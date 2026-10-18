@@ -73,6 +73,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         openSettings()
       }
       runPerfAutomationIfRequested(coord: coord)
+      Task { await DialFocusFilter.syncState() }
     } catch {
       NSLog("[Dial] bootstrap failed: \(error)")
     }
