@@ -255,6 +255,11 @@ final class SettingsViewModel {
   var showBadgesInHUD: Bool {
     didSet { defaults.set(showBadgesInHUD, forKey: Key.showBadgesInHUD) }
   }
+  /// Drop a small LCD strip from the menu bar item when a new track starts
+  /// and it carries a real memory (first listen, rediscovered, 100th play…).
+  var showMemoryPopups: Bool {
+    didSet { defaults.set(showMemoryPopups, forKey: Key.showMemoryPopups) }
+  }
   var showVisualizerInHUD: Bool {
     didSet { defaults.set(showVisualizerInHUD, forKey: Key.showVisualizerInHUD) }
   }
@@ -317,6 +322,13 @@ final class SettingsViewModel {
   var milestoneBadgesEnabled: Bool {
     didSet { defaults.set(milestoneBadgesEnabled, forKey: Key.milestoneBadgesEnabled) }
   }
+  var enabledBadgeCategories: Set<BadgeCategory> {
+    var categories: Set<BadgeCategory> = []
+    if discoveryBadgesEnabled { categories.insert(.discovery) }
+    if patternBadgesEnabled { categories.insert(.pattern) }
+    if milestoneBadgesEnabled { categories.insert(.milestone) }
+    return categories
+  }
   var spectrumStyle: SpectrumStyle {
     didSet { defaults.set(spectrumStyle.rawValue, forKey: Key.spectrumStyle) }
   }
@@ -370,6 +382,7 @@ final class SettingsViewModel {
       DefaultDropdownScreen.self, key: Key.defaultDropdownScreen, default: .hud, defaults: defaults)
     self.showReadoutsInHUD = Self.boolValue(Key.showReadoutsInHUD, default: true, defaults: defaults)
     self.showBadgesInHUD = Self.boolValue(Key.showBadgesInHUD, default: true, defaults: defaults)
+    self.showMemoryPopups = Self.boolValue(Key.showMemoryPopups, default: true, defaults: defaults)
     self.showVisualizerInHUD = Self.boolValue(Key.showVisualizerInHUD, default: true, defaults: defaults)
     self.showTransportInHUD = Self.boolValue(Key.showTransportInHUD, default: true, defaults: defaults)
     self.animationLevel = Self.enumValue(
@@ -452,6 +465,7 @@ final class SettingsViewModel {
     defaultDropdownScreen = .hud
     showReadoutsInHUD = true
     showBadgesInHUD = true
+    showMemoryPopups = true
     showVisualizerInHUD = true
     showTransportInHUD = true
     animationLevel = .normal
@@ -595,6 +609,7 @@ final class SettingsViewModel {
     static let defaultDropdownScreen = "settings.defaultDropdownScreen"
     static let showReadoutsInHUD = "settings.showReadoutsInHUD"
     static let showBadgesInHUD = "settings.showBadgesInHUD"
+    static let showMemoryPopups = "settings.showMemoryPopups"
     static let showVisualizerInHUD = "settings.showVisualizerInHUD"
     static let showTransportInHUD = "settings.showTransportInHUD"
     static let animationLevel = "settings.animationLevel"

@@ -51,6 +51,12 @@ final class AppCoordinator {
   private var networkWasSatisfied = false
   private var currentTrackCountedAt: Int64?
   private var playbackReducer = PlaybackStateReducer()
+  private var memoryPopupGate = MemoryPopupGate()
+
+  /// Shows the track-change memory pop-up. Set by `StatusBarController`;
+  /// while it's nil no pop-up can show.
+  weak var memoryPopupPresenter: MemoryPopupPresenting?
+  var focusStatus: FocusStatusProviding = SystemFocusStatus()
 
   var backgroundEnrichmentPhase: BackgroundEnrichmentPhase { backgroundEnrichment.phase }
   var backgroundEnrichmentMessage: String { backgroundEnrichment.message }
@@ -445,6 +451,7 @@ final class AppCoordinator {
       await MainActor.run {
         if trackChanged {
           currentTrackCountedAt = nil
+          resetMemoryPopup(forTrack: uri)
           menubar.setOptimisticProgress(0)
           clearAmbientTrick()
         }
@@ -567,6 +574,7 @@ final class AppCoordinator {
           self.menubar.playsYTD = self.aggCache.playsYTD
           self.updatePetMemoryText()
           self.resolvePetBehavior()
+          self.considerMemoryPopup(uri: uri, moment: .trackStarted)
         }
         postRenderApplyPerf?.end()
 
@@ -607,6 +615,7 @@ final class AppCoordinator {
       let visiblePublishPerf = beginPollInterval("playback.visible_publish")
       await MainActor.run {
         currentTrackCountedAt = nil
+        resetMemoryPopup(forTrack: nil)
         clearAmbientTrick()
         nowPlaying.track = nil
         nowPlaying.playsYTD = 0
@@ -731,6 +740,7 @@ final class AppCoordinator {
           pet.isEating = true
           resolvePetBehavior()
           scheduleAmbientTrickIfNeeded()
+          considerMemoryPopup(uri: uri, moment: .playCounted)
         }
       } else {
         coordLog.notice("ignored duplicate live play: \(uri, privacy: .public) (\(ms)ms)")
@@ -985,6 +995,36 @@ final class AppCoordinator {
         coordLog.warning("current artist tag warmup failed: \(String(describing: error), privacy: .public)")
       }
     }
+  }
+
+  // MARK: - Memory pop-up
+
+  /// A new track (or nothing) is playing: it gets one fresh chance at a pop-up.
+  @MainActor
+  func resetMemoryPopup(forTrack uri: String?) {
+    memoryPopupGate.trackStarted(uri: uri)
+  }
+
+  /// Called once the current track's badge insight is fresh: right after
+  /// the track starts, and again when its play counts.
+  @MainActor
+  func considerMemoryPopup(uri: String, moment: MemoryPopupGate.Moment) {
+    guard let track = nowPlaying.track, track.uri == uri else { return }
+    let content = MemoryPopupContent(
+      insight: aggCache.currentBadgeInsight,
+      trackName: track.name,
+      artistName: track.artistName,
+      lastPlayedAt: aggCache.lastPlayedAt,
+      enabledCategories: settings.enabledBadgeCategories)
+    let conditions = MemoryPopupGate.Conditions(
+      enabled: settings.showMemoryPopups,
+      hudOpen: memoryPopupPresenter?.isHUDOpen ?? true,
+      focusActive: content != nil && focusStatus.isFocusActive)
+    guard let shown = memoryPopupGate.decide(
+      uri: uri, content: content, moment: moment, conditions: conditions)
+    else { return }
+    let theme = DialTheme.palette(for: settings.hudColorMode.resolvedTheme(soundTheme: nowPlaying.soundTheme))
+    memoryPopupPresenter?.presentMemoryPopup(shown, theme: theme)
   }
 
   private func updatePetMemoryText() {
