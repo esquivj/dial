@@ -215,6 +215,7 @@ final class SettingsViewModel {
   let dbq: DatabaseQueue
   private let tokenStore: TokenStore
   private let lastFMAPIKeyStore: SecretStringStore
+  private let lastFMSharedSecretStore: SecretStringStore
   private let defaults: UserDefaults
   var signedIn: Bool
   var importProgress: Double = 0
@@ -343,18 +344,39 @@ final class SettingsViewModel {
         defaults: defaults)
     }
   }
+  /// Signs Last.fm scrobble and auth calls. Paired with the API key.
+  var lastFMSharedSecret: String {
+    didSet {
+      let trimmed = lastFMSharedSecret.trimmingCharacters(in: .whitespacesAndNewlines)
+      if trimmed.isEmpty {
+        try? lastFMSharedSecretStore.clear()
+      } else {
+        try? lastFMSharedSecretStore.save(trimmed)
+      }
+    }
+  }
+
+  /// Both halves of the Last.fm API account, or nil if either is missing.
+  var lastFMCredentials: LastFMCredentials? {
+    let key = lastFMAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
+    let secret = lastFMSharedSecret.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !key.isEmpty, !secret.isEmpty else { return nil }
+    return LastFMCredentials(apiKey: key, sharedSecret: secret)
+  }
 
   init(
     auth: SpotifyAuthService,
     dbq: DatabaseQueue,
     tokenStore: TokenStore,
     lastFMAPIKeyStore: SecretStringStore = LastFMAPIKeyStorage.makeDefaultStore(),
+    lastFMSharedSecretStore: SecretStringStore = LastFMSecretStorage.makeSharedSecretStore(),
     defaults: UserDefaults = .standard
   ) {
     self.auth = auth
     self.dbq = dbq
     self.tokenStore = tokenStore
     self.lastFMAPIKeyStore = lastFMAPIKeyStore
+    self.lastFMSharedSecretStore = lastFMSharedSecretStore
     self.defaults = defaults
     self.menuBarDisplayMode = Self.enumValue(
       MenuBarDisplayMode.self, key: Key.menuBarDisplayMode, default: .albumArtTrackArtist, defaults: defaults
@@ -415,6 +437,7 @@ final class SettingsViewModel {
     self.lastFMAPIKey = LastFMAPIKeyStorage.load(
       store: lastFMAPIKeyStore,
       defaults: defaults)
+    self.lastFMSharedSecret = ((try? lastFMSharedSecretStore.load()) ?? nil) ?? ""
 
     // Read keychain once on launch so the UI reflects sign-in state immediately.
     self.signedIn = ((try? tokenStore.load()) ?? nil) != nil

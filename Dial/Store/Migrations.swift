@@ -382,6 +382,34 @@ enum Migrations {
                AND p.ms_played * 2 >= t.duration_ms)
         """)
     }
+
+    // Last.fm scrobble queue. One row per live play (`play_id` is unique),
+    // so a play can't be queued or sent twice, even across relaunches.
+    // Rows stay after sending as the "last scrobbled" record.
+    m.registerMigration("v17_lastfm_scrobble_queue") { db in
+      try db.create(table: "lastfm_scrobbles") { t in
+        t.autoIncrementedPrimaryKey("id")
+        t.column("play_id", .integer).notNull().unique()
+          .references("plays", onDelete: .cascade)
+        t.column("track_uri", .text).notNull()
+        t.column("artist", .text).notNull()
+        t.column("track", .text).notNull()
+        t.column("album", .text)
+        t.column("duration_ms", .integer)
+        t.column("played_at", .integer).notNull()
+        t.column("queued_at", .integer).notNull()
+        // pending | sent | ignored
+        t.column("state", .text).notNull().defaults(to: "pending")
+        t.column("attempts", .integer).notNull().defaults(to: 0)
+        t.column("next_attempt_at", .integer).notNull().defaults(to: 0)
+        t.column("last_error", .text)
+        t.column("sent_at", .integer)
+      }
+      try db.create(
+        index: "lastfm_scrobbles_by_state",
+        on: "lastfm_scrobbles",
+        columns: ["state", "next_attempt_at", "played_at"])
+    }
     return m
   }
 }

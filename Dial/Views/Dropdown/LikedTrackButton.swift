@@ -146,6 +146,9 @@ struct LikedTrackButton: View {
       }
       let confirmed = try await client.libraryContains(uri: uri)
       await MainActor.run {
+        if confirmed == shouldLike {
+          menubar.onUserLikedChange?(uri, confirmed)
+        }
         guard menubar.track?.uri == uri else { return }
         menubar.likedTrackState = confirmed ? .liked : .notLiked
       }

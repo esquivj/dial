@@ -86,6 +86,8 @@ struct GeneralSettingsTab: View {
         }
       }
 
+      LastFMSettingsSection(vm: vm, lastFM: coord.lastFM)
+
       SettingsSection("ANALYSIS") {
         VStack(alignment: .leading, spacing: SettingsLayout.controlGap) {
           SettingsToggle(
@@ -102,38 +104,13 @@ struct GeneralSettingsTab: View {
             VStack(spacing: SettingsLayout.controlGap) {
               SettingsToggle(
                 title: "Use Last.fm tags",
-                detail: "Adds genre-style tags that help Dial choose themes and weekly traits.",
+                detail: "Adds genre-style tags that help Dial choose themes and weekly traits. Uses the API key under Last.fm.",
                 isOn: Binding(
                   get: { vm.lastFMTagEnrichmentEnabled },
                   set: { value in
                     vm.lastFMTagEnrichmentEnabled = value
                     coord.restartBackgroundEnrichmentNow()
                   }))
-
-              HStack(alignment: .center, spacing: 12) {
-                HStack(spacing: 6) {
-                  Text("Last.fm API key")
-                    .font(SettingsType.rowTitle)
-                  SettingsHelpMark("Needed only if Last.fm tags are on. Dial stores this key in Keychain.")
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .layoutPriority(1)
-                Spacer()
-                SecureField("API key", text: $vm.lastFMAPIKey)
-                  .textFieldStyle(.plain)
-                  .font(SettingsType.mono)
-                  .foregroundStyle(SettingsPalette.text)
-                  .padding(.horizontal, 9)
-                  .frame(width: SettingsLayout.textFieldWidth, height: 28)
-                  .background(SettingsPalette.control)
-                  .clipShape(RoundedRectangle(cornerRadius: Dial.Radius.control, style: .continuous))
-                  .overlay(
-                    RoundedRectangle(cornerRadius: Dial.Radius.control, style: .continuous)
-                      .stroke(SettingsPalette.rule, lineWidth: 1))
-                  .help("Paste your Last.fm API key. Dial stores it in Keychain and uses it only for tags.")
-              }
-              .frame(minHeight: 32)
-              .help("Needed only if Last.fm tags are on. Dial stores this key in Keychain.")
 
               SettingsActionRow {
                 Button("Analyze Now") {
