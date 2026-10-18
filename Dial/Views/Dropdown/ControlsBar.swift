@@ -179,7 +179,10 @@ private struct PlaybackScrubber: View {
   private var isSeekable: Bool { menubar.hasSeekableTrack }
 
   var body: some View {
-    TimelineView(.periodic(from: .now, by: 0.25)) { context in
+    // Interpolated progress only moves while playing. Paused or idle, the
+    // label and fill change only when the view model does, which re-renders
+    // the body anyway, so the timeline stops ticking.
+    TimelineView(ScrubberTickSchedule(ticking: menubar.state == .playing)) { context in
       let progress = displayedProgress(at: context.date)
       let currentFraction = progressFraction(progress)
 
@@ -607,6 +610,26 @@ private struct ToyUtilityStyle: ButtonStyle {
         .animation(reduceMotion ? nil : .easeOut(duration: 0.10), value: pressed)
         .animation(reduceMotion ? nil : .easeOut(duration: 0.16), value: hovering)
         .onHover { hovering = $0 }
+    }
+  }
+}
+
+/// `.periodic(by: 0.25)` while playing; a single entry otherwise.
+private struct ScrubberTickSchedule: TimelineSchedule {
+  let ticking: Bool
+
+  func entries(from startDate: Date, mode: TimelineScheduleMode) -> AnyIterator<Date> {
+    guard ticking else {
+      var emitted = false
+      return AnyIterator {
+        defer { emitted = true }
+        return emitted ? nil : startDate
+      }
+    }
+    var next = startDate
+    return AnyIterator {
+      defer { next = next.addingTimeInterval(0.25) }
+      return next
     }
   }
 }
