@@ -36,9 +36,11 @@ struct LikedTrackButton: View {
     .accessibilityLabel(likedAccessibilityLabel)
   }
 
-  private var canToggleLiked: Bool {
-    menubar.hasLibraryTrack && menubar.likedTrackState != .checking
+  private var controller: LikedTrackController {
+    LikedTrackController(menubar: menubar, library: client, onReconnect: onReconnect)
   }
+
+  private var canToggleLiked: Bool { controller.canToggle }
 
   private var likedSymbol: String {
     switch menubar.likedTrackState {
@@ -108,57 +110,6 @@ struct LikedTrackButton: View {
   }
 
   private func toggleLiked() {
-    guard let uri = menubar.track?.uri, canToggleLiked else { return }
-    let previous = menubar.likedTrackState
-
-    if previous == .needsReconnect {
-      menubar.likedTrackState = .checking
-      Task {
-        do {
-          try await onReconnect()
-          let sameTrack = await MainActor.run { menubar.track?.uri == uri }
-          guard sameTrack else { return }
-          await writeLikedState(uri: uri, shouldLike: true, previous: .notLiked)
-        } catch {
-          await MainActor.run {
-            guard menubar.track?.uri == uri else { return }
-            menubar.likedTrackState = .needsReconnect
-          }
-        }
-      }
-      return
-    }
-
-    let shouldLike = previous != .liked
-    menubar.likedTrackState = shouldLike ? .liked : .notLiked
-
-    Task {
-      await writeLikedState(uri: uri, shouldLike: shouldLike, previous: previous)
-    }
-  }
-
-  private func writeLikedState(uri: String, shouldLike: Bool, previous: LikedTrackState) async {
-    do {
-      if shouldLike {
-        try await client.saveToLibrary(uri: uri)
-      } else {
-        try await client.removeFromLibrary(uri: uri)
-      }
-      let confirmed = try await client.libraryContains(uri: uri)
-      await MainActor.run {
-        guard menubar.track?.uri == uri else { return }
-        menubar.likedTrackState = confirmed ? .liked : .notLiked
-      }
-    } catch SpotifyAPIError.httpStatus(403) {
-      await MainActor.run {
-        guard menubar.track?.uri == uri else { return }
-        menubar.likedTrackState = .needsReconnect
-      }
-    } catch {
-      await MainActor.run {
-        guard menubar.track?.uri == uri else { return }
-        menubar.likedTrackState = previous
-      }
-    }
+    controller.toggle()
   }
 }

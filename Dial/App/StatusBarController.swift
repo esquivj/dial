@@ -39,6 +39,7 @@ final class StatusBarController {
   private let panel: DropdownPanel
   private let panelVisibility = DropdownVisibility()
   private let memoryPopup = MemoryPopupController()
+  private var hotkeys: HotkeyController?
   private weak var coord: AppCoordinator?
 
   /// Click + key dismiss monitors. Allocated lazily when the panel
@@ -91,6 +92,7 @@ final class StatusBarController {
       self.showPanel(screen: self.coord?.settings.defaultDropdownScreen.screen ?? .hud)
     }
     coord.memoryPopupPresenter = self
+    startHotkeys(coord: coord)
   }
 
   // MARK: - Click routing
@@ -488,5 +490,34 @@ extension StatusBarController: MemoryPopupPresenting {
     else { return }
     let anchor = buttonWindow.convertToScreen(button.convert(button.bounds, to: nil))
     memoryPopup.show(content, theme: theme, below: anchor, on: buttonWindow.screen)
+  }
+}
+
+// MARK: - Global hotkeys
+
+extension StatusBarController {
+  /// Called from `init`, which AppKit runs on the main thread.
+  fileprivate func startHotkeys(coord: AppCoordinator) {
+    hotkeys = MainActor.assumeIsolated {
+      let router = HotkeyActionRouter(
+        menubar: coord.menubar,
+        transport: coord.client,
+        library: coord.client,
+        onReconnect: { [weak coord] in try await coord?.reconnectForLibraryAccess() },
+        openHUD: { [weak self] in self?.togglePanel() },
+        flash: { [weak self] content in self?.presentHotkeyFlash(content) })
+      return HotkeyController(settings: coord.settings.hotkeys, router: router)
+    }
+  }
+
+  /// The HUD already shows play state and likes, so no flash while it's open.
+  private func presentHotkeyFlash(_ content: HotkeyFlashContent) {
+    guard !panel.isVisible,
+          let coord,
+          let button = item.button,
+          let buttonWindow = button.window
+    else { return }
+    let anchor = buttonWindow.convertToScreen(button.convert(button.bounds, to: nil))
+    memoryPopup.flash(content, theme: coord.readoutTheme, below: anchor, on: buttonWindow.screen)
   }
 }
