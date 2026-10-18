@@ -83,6 +83,9 @@ targets:
         # capture is gated by Screen Recording TCC even when no video frames
         # are consumed.
         NSScreenCaptureUsageDescription: "Dial captures system audio to render a real-time spectrum visualizer for music playback. Audio never leaves your machine."
+        # Shown in the macOS "Dial wants access to control Spotify" prompt the
+        # first time Dial reads the Spotify desktop app (LocalSpotifySource).
+        NSAppleEventsUsageDescription: "Dial reads the current track and play state from the Spotify app, so the HUD updates instantly and checks Spotify's servers less often. Dial doesn't change anything in Spotify."
         CFBundleURLTypes:
           - CFBundleURLName: com.dial.callback
             CFBundleURLSchemes: [dial]
@@ -95,6 +98,9 @@ targets:
         # whatever folder the user picks. Hardened runtime stays on.
         com.apple.security.app-sandbox: false
         com.apple.security.network.client: true
+        # Hardened runtime blocks outgoing Apple Events without this. Dial
+        # sends them only to the Spotify desktop app, to read what's playing.
+        com.apple.security.automation.apple-events: true
         # Allow loading Xcode's debug-build helper dylib (Dial.debug.dylib)
         # under hardened runtime. Without this entitlement, library
         # validation rejects the dylib when the main app is signed with our

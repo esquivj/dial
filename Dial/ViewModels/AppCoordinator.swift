@@ -75,6 +75,10 @@ final class AppCoordinator {
   /// upstream is broken. `nil` until the first successful poll lands.
   var lastSuccessfulPoll: Date?
 
+  /// Which feed answers for now-playing: the Spotify app (local, instant)
+  /// or the Web API. Settings uses it to explain a denied Automation grant.
+  var playbackSource: PlaybackSourceStatus = .webAPI(.noLocalSource)
+
   init(
     dbq: DatabaseQueue,
     client: SpotifyClient,
@@ -86,7 +90,10 @@ final class AppCoordinator {
     self.client = client
     self.engine = PetEngine(dbq: dbq)
     self.aggCache = AggregationsCache(agg: PlayAggregations(dbq: dbq))
-    self.poller = PollingService(client: client, interval: 2.0)
+    self.poller = PollingService(
+      client: client,
+      interval: 2.0,
+      localSource: SpotifyAppleEventsSource())
     self.nowPlaying = NowPlayingViewModel(agg: aggCache)
     self.menubar = MenubarStripViewModel()
     self.pet = PetViewModel()
@@ -106,6 +113,9 @@ final class AppCoordinator {
     startRecentPlayObservers()
     guard !pollingStarted else { return }
     pollingStarted = true
+    poller.onStatusChange = { [weak self] status in
+      DispatchQueue.main.async { self?.playbackSource = status }
+    }
     startRecentPlayRepair(reason: "launch", delay: 8)
     startPeriodicRecentPlaySync()
     Task { [weak self] in
@@ -279,6 +289,12 @@ final class AppCoordinator {
     guard !desktopObserverStarted else { return }
     desktopObserverStarted = true
     desktopPlaybackObserver.start { [weak self] events in
+      guard let self else { return }
+      // The notification is the cue to read the Spotify app now. When the
+      // app is readable that read carries the same data, so the raw payload
+      // is only used while Dial is on the Web API (e.g. access turned off).
+      self.poller.wake()
+      guard !self.playbackSource.readsSpotifyApp else { return }
       Task { [weak self] in
         guard let self else { return }
         for event in events {
@@ -367,8 +383,8 @@ final class AppCoordinator {
     }
     defer { endPerf() }
 
-    // Keep the Settings heartbeat tied to the Web API poller. Desktop
-    // notifications are a faster local UI path, not proof the API is healthy.
+    // Keep the Settings heartbeat tied to the poll loop (Spotify app reads
+    // or the Web API). Raw desktop notifications aren't proof it's alive.
     if source == .poll {
       lastSuccessfulPoll = Date()
     }

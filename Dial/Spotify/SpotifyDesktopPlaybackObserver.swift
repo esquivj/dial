@@ -1,9 +1,10 @@
 import Foundation
 
 /// Spotify's macOS app posts a distributed notification whenever local
-/// playback changes. It is much faster than waiting for the Web API poll,
-/// so Dial uses it as a UI latency path while the normal poller remains the
-/// source of truth for counted plays, shuffle/repeat, and remote playback.
+/// playback changes. Dial uses it as the cue to read the Spotify app right
+/// away (`PollingService.wake()`). Its payload only feeds the HUD directly
+/// while the app can't be read (Automation access off), as a latency path in
+/// front of the Web API poll, which then stays the source of counted plays.
 final class SpotifyDesktopPlaybackObserver: NSObject {
   static let notificationName = Notification.Name("com.spotify.client.PlaybackStateChanged")
 
