@@ -130,6 +130,29 @@ final class VisualRegressionTests: XCTestCase {
     XCTAssertEqual(playCenter - previousCenter, nextCenter - playCenter, accuracy: 0.001)
   }
 
+  /// The track-change memory pop-up in the default Smoke Gel theme, on a
+  /// light desktop so the bezel edge is checked where it's hardest to see.
+  func test_memoryPopupRendersReadoutStrip() throws {
+    let content = MemoryPopupContent(
+      kind: .rediscovered,
+      label: "REDISCOVERED",
+      line: "Last played Mar 2023",
+      trackName: "Kiss Me Thru the Phone",
+      artistName: "Soulja Boy")
+    let size = CGSize(width: MemoryPopupView.size.width + 40, height: MemoryPopupView.size.height + 40)
+    let view = ZStack {
+      Color(red: 0.86, green: 0.87, blue: 0.89)
+      MemoryPopupView(content: content)
+    }
+    .environment(\.dialTheme, .classic)
+    .preferredColorScheme(.dark)
+
+    let image = try render(view, size: size)
+    let snapshotName = "dial-memory-popup"
+    try attach(image, name: snapshotName)
+    try assertMatchesBaseline(image, name: snapshotName)
+  }
+
   func test_petScreenRendersCompactLivingMemoryLog() throws {
     let context = try makeSnapshotContext(themeID: .slime)
     let memories = try seedWeeklyMemoryLog(in: context.dbq)

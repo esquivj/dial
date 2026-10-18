@@ -38,6 +38,7 @@ final class StatusBarController {
   private let item: NSStatusItem
   private let panel: DropdownPanel
   private let panelVisibility = DropdownVisibility()
+  private let memoryPopup = MemoryPopupController()
   private weak var coord: AppCoordinator?
 
   /// Click + key dismiss monitors. Allocated lazily when the panel
@@ -84,6 +85,12 @@ final class StatusBarController {
     }
 
     observeStatusItemLength()
+
+    memoryPopup.onClick = { [weak self] in
+      guard let self, !self.panel.isVisible else { return }
+      self.showPanel(screen: self.coord?.settings.defaultDropdownScreen.screen ?? .hud)
+    }
+    coord.memoryPopupPresenter = self
   }
 
   // MARK: - Click routing
@@ -240,6 +247,7 @@ final class StatusBarController {
       coord?.dropdownScreen = screen
     }
     guard let button = item.button, let buttonWindow = button.window else { return }
+    memoryPopup.dismiss(animated: false)
     panelVisibility.isVisible = true
 
     let buttonFrameInWindow = button.convert(button.bounds, to: nil)
@@ -465,5 +473,20 @@ final class StatusBarController {
 
   @objc private func quitApp() {
     NSApp.terminate(nil)
+  }
+}
+
+// MARK: - Memory pop-up
+
+extension StatusBarController: MemoryPopupPresenting {
+  var isHUDOpen: Bool { panel.isVisible }
+
+  func presentMemoryPopup(_ content: MemoryPopupContent, theme: DialTheme) {
+    guard !panel.isVisible,
+          let button = item.button,
+          let buttonWindow = button.window
+    else { return }
+    let anchor = buttonWindow.convertToScreen(button.convert(button.bounds, to: nil))
+    memoryPopup.show(content, theme: theme, below: anchor, on: buttonWindow.screen)
   }
 }

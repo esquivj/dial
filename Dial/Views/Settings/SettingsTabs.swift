@@ -332,6 +332,11 @@ struct HUDSettingsTab: View {
             isOn: $vm.showBadgesInHUD)
 
           SettingsToggle(
+            title: "Memory pop-ups",
+            detail: "When a new track brings back a memory, show it under the menu bar for a few seconds.",
+            isOn: $vm.showMemoryPopups)
+
+          SettingsToggle(
             title: "Show spectrum",
             detail: "Show the live audio meter on Now Playing.",
             isOn: $vm.showVisualizerInHUD)
