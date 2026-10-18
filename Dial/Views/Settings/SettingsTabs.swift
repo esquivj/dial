@@ -169,6 +169,8 @@ struct GeneralSettingsTab: View {
         }
       }
 
+      SettingsShortcutsSection(hotkeys: vm.hotkeys)
+
       SettingsStatusPanel(coord: coord)
 
       SettingsSection("ABOUT") {

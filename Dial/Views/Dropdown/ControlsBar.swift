@@ -13,6 +13,10 @@ struct ControlsBar: View {
     .padding(Dial.Layout.Transport.padding)
   }
 
+  private var commands: TransportCommands {
+    TransportCommands(menubar: menubar, transport: client)
+  }
+
   private var transportButtons: some View {
     ZStack {
       TransportWellRow()
@@ -62,7 +66,7 @@ struct ControlsBar: View {
   }
 
   private var previousButton: some View {
-    Button { Task { try? await client.prev() } } label: {
+    Button { commands.previous() } label: {
       DialThickIcon("backward.fill", size: 14)
     }
     .buttonStyle(ToyTransportStyle())
@@ -72,21 +76,7 @@ struct ControlsBar: View {
 
   private var playPauseButton: some View {
     Button {
-      let wasPlaying = menubar.state == .playing
-      let now = Date()
-      let anchoredProgress = menubar.interpolatedProgressMs(at: now)
-      menubar.setOptimisticProgress(anchoredProgress, at: now)
-      menubar.state = wasPlaying ? .paused : .playing
-      Task {
-        do {
-          if wasPlaying { try await client.pause() }
-          else          { try await client.play()  }
-        } catch {
-          await MainActor.run {
-            menubar.state = wasPlaying ? .playing : .paused
-          }
-        }
-      }
+      commands.togglePlayPause()
     } label: {
       DialThickIcon(menubar.state == .playing ? "pause.fill" : "play.fill", size: 14)
         .id(menubar.state)
@@ -99,7 +89,7 @@ struct ControlsBar: View {
   }
 
   private var nextButton: some View {
-    Button { Task { try? await client.next() } } label: {
+    Button { commands.next() } label: {
       DialThickIcon("forward.fill", size: 14)
     }
     .buttonStyle(ToyTransportStyle())

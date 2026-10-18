@@ -153,6 +153,29 @@ final class VisualRegressionTests: XCTestCase {
     try assertMatchesBaseline(image, name: snapshotName)
   }
 
+  /// The hotkey confirmation flash: the memory pop-up's strip on one line.
+  /// Play (primary), liked (memory pink) and volume (accent + meter) cover
+  /// every tone and both layouts.
+  func test_hotkeyFlashRendersOneLineStrip() throws {
+    let flash = HotkeyFlashView.size
+    let size = CGSize(width: flash.width + 40, height: flash.height * 3 + 16 + 40)
+    let view = ZStack {
+      Color(red: 0.86, green: 0.87, blue: 0.89)
+      VStack(spacing: 8) {
+        HotkeyFlashView(content: .play)
+        HotkeyFlashView(content: .liked)
+        HotkeyFlashView(content: .volume(45))
+      }
+    }
+    .environment(\.dialTheme, .classic)
+    .preferredColorScheme(.dark)
+
+    let image = try render(view, size: size)
+    let snapshotName = "dial-hotkey-flash"
+    try attach(image, name: snapshotName)
+    try assertMatchesBaseline(image, name: snapshotName)
+  }
+
   func test_petScreenRendersCompactLivingMemoryLog() throws {
     let context = try makeSnapshotContext(themeID: .slime)
     let memories = try seedWeeklyMemoryLog(in: context.dbq)

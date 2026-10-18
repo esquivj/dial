@@ -49,6 +49,10 @@ ICON_MAP: dict[str, tuple[str, str]] = {
     "forward.fill": ("solid", "skip-next"),
     "flame.fill": ("regular", "fire-flame"),
     "triangle.fill": ("regular", "triangle"),
+    "speaker.slash.fill": ("regular", "sound-off"),
+    "speaker.wave.1.fill": ("regular", "sound-low"),
+    "speaker.wave.3.fill": ("regular", "sound-high"),
+    "exclamationmark.triangle": ("regular", "warning-triangle"),
 }
 
 

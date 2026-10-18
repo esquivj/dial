@@ -216,6 +216,8 @@ final class SettingsViewModel {
   private let tokenStore: TokenStore
   private let lastFMAPIKeyStore: SecretStringStore
   private let defaults: UserDefaults
+  /// Global shortcuts and whether they're on.
+  let hotkeys: HotkeySettings
   var signedIn: Bool
   var importProgress: Double = 0
   var lastImport: ImportLogEntry?
@@ -368,6 +370,7 @@ final class SettingsViewModel {
     self.tokenStore = tokenStore
     self.lastFMAPIKeyStore = lastFMAPIKeyStore
     self.defaults = defaults
+    self.hotkeys = HotkeySettings(defaults: defaults)
     self.menuBarDisplayMode = Self.enumValue(
       MenuBarDisplayMode.self, key: Key.menuBarDisplayMode, default: .albumArtTrackArtist, defaults: defaults
     ).visiblePreset

@@ -1023,8 +1023,12 @@ final class AppCoordinator {
     guard let shown = memoryPopupGate.decide(
       uri: uri, content: content, moment: moment, conditions: conditions)
     else { return }
-    let theme = DialTheme.palette(for: settings.hudColorMode.resolvedTheme(soundTheme: nowPlaying.soundTheme))
-    memoryPopupPresenter?.presentMemoryPopup(shown, theme: theme)
+    memoryPopupPresenter?.presentMemoryPopup(shown, theme: readoutTheme)
+  }
+
+  /// The theme the HUD would use right now; the floating readouts match it.
+  var readoutTheme: DialTheme {
+    DialTheme.palette(for: settings.hudColorMode.resolvedTheme(soundTheme: nowPlaying.soundTheme))
   }
 
   private func updatePetMemoryText() {

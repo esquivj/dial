@@ -322,6 +322,27 @@ extension SpotifyClient {
     try await sendEmpty(method: "POST", path: "/me/player/previous", respectRateLimitGate: false)
   }
 
+  /// The active Spotify player's volume, 0–100. nil when nothing is active
+  /// or the device doesn't allow remote volume (some speakers and phones).
+  func volumePercent() async throws -> Int? {
+    guard let url = URL(string: "https://api.spotify.com/v1/me/player") else {
+      throw SpotifyAPIError.invalidResponse
+    }
+    let (data, http) = try await authedGET(url)
+    if http.statusCode == 204 { return nil }
+    try Self.validate(http)
+    return try JSONDecoder().decode(PlayerVolumeResponse.self, from: data).device?.volumePercent
+  }
+
+  /// Sets the active player's volume, the same control as Spotify's slider.
+  func setVolume(percent: Int) async throws {
+    try await sendEmpty(
+      method: "PUT",
+      path: "/me/player/volume",
+      queryItems: [.init(name: "volume_percent", value: "\(max(0, min(100, percent)))")],
+      respectRateLimitGate: false)
+  }
+
   /// Restart the current track from 0:00.
   func seek(positionMs: Int = 0) async throws {
     try await sendEmpty(
@@ -388,6 +409,14 @@ extension SpotifyClient {
     return response.devices.first(where: { $0.isActive && !$0.isRestricted })?.id
       ?? response.devices.first(where: { !$0.isRestricted })?.id
   }
+}
+
+private struct PlayerVolumeResponse: Decodable {
+  struct Device: Decodable {
+    let volumePercent: Int?
+    enum CodingKeys: String, CodingKey { case volumePercent = "volume_percent" }
+  }
+  let device: Device?
 }
 
 private struct PlaybackDevicesResponse: Decodable {
