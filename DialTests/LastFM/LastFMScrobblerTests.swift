@@ -324,7 +324,7 @@ final class LastFMScrobblerTests: XCTestCase {
     scrobbler.resumed()
     scrobbler.trackStarted(Self.track("spotify:track:A", durationMs: 200_000))
     scrobbler.trackStarted(Self.track("spotify:track:B", durationMs: 200_000))
-    await settle()
+    try await waitUntil { api.nowPlaying.count >= 2 }
 
     XCTAssertEqual(api.nowPlaying.map(\.track), ["Song A", "Song B"])
   }
@@ -499,6 +499,17 @@ final class LastFMScrobblerTests: XCTestCase {
 
   private func settle() async {
     for _ in 0..<20 { await Task.yield() }
+  }
+
+  private func waitUntil(timeout: TimeInterval = 2, _ condition: @escaping () -> Bool) async throws {
+    let deadline = Date().addingTimeInterval(timeout)
+    while !condition() {
+      if Date() > deadline {
+        XCTFail("Timed out waiting for condition")
+        return
+      }
+      try await Task.sleep(nanoseconds: 5_000_000)
+    }
   }
 
   private func freshDefaults() -> UserDefaults {

@@ -97,6 +97,8 @@ final class LastFMScrobbler {
     refreshStatus()
   }
 
+  private var nowPlayingTask: Task<Void, Never>?
+
   private var session: LastFMSession? {
     guard let sessionKey, let credentials = credentials() else { return nil }
     return LastFMSession(credentials: credentials, key: sessionKey)
@@ -152,7 +154,11 @@ final class LastFMScrobbler {
       durationMs: track.durationMs > 0 ? Int64(track.durationMs) : nil,
       timestamp: clock())
     let api = self.api
-    Task {
+    // Chain updates so they reach Last.fm in order: after a quick skip from
+    // A to B, Last.fm must end on B, not on whichever request landed last.
+    let previous = nowPlayingTask
+    nowPlayingTask = Task {
+      await previous?.value
       do {
         try await api.updateNowPlaying(entry, session: session)
       } catch {
