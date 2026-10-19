@@ -36,8 +36,8 @@ final class SimulatedSpotify: @unchecked Sendable {
   /// Notification delivery + Apple Event latency.
   var notificationDelay: TimeInterval = 0.05
   private(set) var webCalls = 0
-  /// The poll task can run a cycle past the end before the consumer stops
-  /// it; calls and reads after this time aren't counted.
+  /// End of the current run. `VirtualPollScheduler` stops the poll loop
+  /// here, so no call or read happens at or after it.
   var countUntil: TimeInterval = .infinity
 
   // Strong references on purpose: the poll task can still be finishing a
@@ -88,7 +88,7 @@ final class SimulatedSpotify: @unchecked Sendable {
   }
 
   func webResponse() -> CurrentlyPlaying? {
-    if now < countUntil { webCalls += 1 }
+    webCalls += 1
     let t = max(0, now - webLag)
     guard let seg = segment(at: t) else { return nil }
     return .init(
@@ -143,13 +143,19 @@ final class SimulatedLocalSource: LocalPlaybackSource, @unchecked Sendable {
   private(set) var reads = 0
   init(world: SimulatedSpotify) { self.world = world }
   func read() async -> LocalPlaybackReading {
-    if world.now < world.countUntil { reads += 1 }
+    reads += 1
     return world.localReading()
   }
 }
 
 /// Advances the world's clock instead of sleeping. A wait ends early at the
 /// next Spotify notification, like `WakeablePollScheduler` does.
+///
+/// The scheduler, not the test, ends a run: a wait that would reach
+/// `world.countUntil` cancels the poll task, whose loop then exits and
+/// finishes the stream. The consumer never reads the clock, because the
+/// producer runs ahead of it (the stream buffers), and stopping on the clock
+/// dropped events that were still buffered.
 final class VirtualPollScheduler: PollScheduler, @unchecked Sendable {
   let world: SimulatedSpotify
   var notificationsEnabled = true
@@ -159,6 +165,11 @@ final class VirtualPollScheduler: PollScheduler, @unchecked Sendable {
 
   func wait(upTo seconds: TimeInterval) async {
     let target = world.now + max(seconds, 0.01)
+    if target >= world.countUntil {
+      world.now = world.countUntil
+      withUnsafeCurrentTask { $0?.cancel() }
+      return
+    }
     if notificationsEnabled, let wake = world.nextNotification(after: world.now, upTo: target) {
       world.now = wake
     } else {
@@ -271,14 +282,12 @@ struct SimulationRun {
 }
 
 extension SimulatedSpotify {
-  /// Drains `stream` until the virtual clock passes `seconds`.
+  /// Drains `stream` to the end. The scheduler stops the poll loop once
+  /// the virtual clock reaches `seconds`.
   func run(_ stream: AsyncThrowingStream<PlaybackEvent, Error>, for seconds: TimeInterval) async throws -> [PlaybackEvent] {
     countUntil = seconds
     var events: [PlaybackEvent] = []
-    for try await e in stream {
-      events.append(e)
-      if now >= seconds { break }
-    }
+    for try await e in stream { events.append(e) }
     return events
   }
 
