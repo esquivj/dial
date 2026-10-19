@@ -70,6 +70,45 @@ final class PlayAggregationsTests: XCTestCase {
     XCTAssertEqual(stored, 5, "Skips stay in the archive")
   }
 
+  func test_recentTwinsOfLivePlaysAreHiddenButRealRepeatsCount() throws {
+    // Rows written straight to `plays`, as the old strict dedup window let
+    // them through. Live rows are start-stamped, recent rows end-stamped.
+    let plays = PlaysDAO(dbq: dbq)
+    let tracks = TracksDAO(dbq: dbq)
+    let start: Int64 = 1_700_000_000
+    for uri in ["ZERO", "ONE", "REPEAT", "ALONE"] {
+      try tracks.upsert(.init(uri: uri, name: uri, albumName: nil, albumArtUrl: nil, durationMs: 200_000,
+                              artistsJson: nil))
+    }
+    // 0 s past the old boundary: twin.
+    try plays.insert(.init(playedAt: start, trackUri: "ZERO", msPlayed: 60_000, source: "live"))
+    try plays.insert(.init(playedAt: start + 200, trackUri: "ZERO", msPlayed: 200_000, source: "recent"))
+    // 1 s past the old boundary: twin.
+    try plays.insert(.init(playedAt: start - 1, trackUri: "ONE", msPlayed: 60_000, source: "live"))
+    try plays.insert(.init(playedAt: start + 200, trackUri: "ONE", msPlayed: 200_000, source: "recent"))
+    // Back-to-back repeat seen live once: the first recent row is a twin,
+    // the second is a real play Dial missed live.
+    try plays.insert(.init(playedAt: start, trackUri: "REPEAT", msPlayed: 60_000, source: "live"))
+    try plays.insert(.init(playedAt: start + 200, trackUri: "REPEAT", msPlayed: 200_000, source: "recent"))
+    try plays.insert(.init(playedAt: start + 400, trackUri: "REPEAT", msPlayed: 200_000, source: "recent"))
+    // A recent row with no live twin.
+    try plays.insert(.init(playedAt: start + 200, trackUri: "ALONE", msPlayed: 200_000, source: "recent"))
+
+    let counts = try dbq.read { db -> [String: Int] in
+      let rows = try Row.fetchAll(db, sql: """
+        SELECT track_uri, COUNT(*) AS n FROM counted_plays
+        WHERE track_uri IN ('ZERO', 'ONE', 'REPEAT', 'ALONE')
+        GROUP BY track_uri
+        """)
+      return Dictionary(uniqueKeysWithValues: rows.map { ($0["track_uri"] as String, $0["n"] as Int) })
+    }
+    XCTAssertEqual(counts, ["ZERO": 1, "ONE": 1, "REPEAT": 2, "ALONE": 1])
+    let stored = try dbq.read { db in
+      try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM plays WHERE track_uri IN ('ZERO', 'ONE', 'REPEAT', 'ALONE')")
+    }
+    XCTAssertEqual(stored, 8, "Twins stay in the archive")
+  }
+
   func test_albumPlaysYTD_countsSameAlbumAndArtistContext() throws {
     let plays = PlaysDAO(dbq: dbq)
     let tracks = TracksDAO(dbq: dbq)
@@ -99,7 +138,7 @@ final class PlayAggregationsTests: XCTestCase {
 
     try plays.insert(.init(playedAt: now - 60, trackUri: "spotify:track:iceman-a", msPlayed: 200_000, source: "live"))
     try plays.insert(.init(playedAt: now - 120, trackUri: "spotify:track:iceman-b", msPlayed: 200_000, source: "live"))
-    try plays.insert(.init(playedAt: now - 180, trackUri: "spotify:track:iceman-b", msPlayed: 200_000, source: "recent"))
+    try plays.insert(.init(playedAt: now - 3_600, trackUri: "spotify:track:iceman-b", msPlayed: 200_000, source: "recent"))
     try plays.insert(.init(playedAt: now - 370 * 86_400, trackUri: "spotify:track:iceman-b", msPlayed: 200_000, source: "import"))
     try plays.insert(.init(playedAt: now - 240, trackUri: "spotify:track:other-artist", msPlayed: 200_000, source: "live"))
 

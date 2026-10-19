@@ -382,6 +382,38 @@ enum Migrations {
                AND p.ms_played * 2 >= t.duration_ms)
         """)
     }
+
+    // Before the inclusive window in `PetEngine.duplicateRecentSyncPlayExists`,
+    // a recently-played row whose live twin started exactly one duration
+    // (or a few seconds more) before it was inserted as a second play.
+    // Those rows stay in `plays`; this hides them from `counted_plays` using
+    // the same window as the engine (duration, min 30 s, 600 s if unknown,
+    // plus `PetEngine.recentTwinToleranceSec` = 5 s on the early side).
+    m.registerMigration("v18_counted_plays_hide_recent_twins") { db in
+      try db.execute(sql: """
+        DROP VIEW counted_plays;
+        CREATE VIEW counted_plays AS
+        SELECT p.*
+        FROM plays p
+        WHERE (p.source != 'import'
+           OR p.ms_played >= 30000
+           OR EXISTS (
+             SELECT 1 FROM tracks t
+             WHERE t.uri = p.track_uri
+               AND t.duration_ms > 0
+               AND p.ms_played * 2 >= t.duration_ms))
+          AND (p.source != 'recent'
+           OR NOT EXISTS (
+             SELECT 1 FROM plays l
+             LEFT JOIN tracks tw ON tw.uri = p.track_uri
+             WHERE l.track_uri = p.track_uri
+               AND l.source != 'recent'
+               AND l.played_at >= p.played_at - 5 - (
+                 CASE WHEN tw.duration_ms > 0 THEN max(30, tw.duration_ms / 1000) ELSE 600 END)
+               AND l.played_at < p.played_at + (
+                 CASE WHEN tw.duration_ms > 0 THEN max(30, tw.duration_ms / 1000) ELSE 600 END)))
+        """)
+    }
     return m
   }
 }
