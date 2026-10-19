@@ -15,16 +15,17 @@ private let visualizerLog = Logger(subsystem: "com.dial.Dial", category: "Visual
 ///   - `.denied` if Screen Recording permission isn't granted (or revoked)
 ///   - `.error` for everything else (no display, format issues)
 ///
-/// Lifecycle: long-lived. The engine starts on first dropdown appearance and
-/// keeps the SCStream running for the app's lifetime — closing/reopening the
-/// dropdown is *not* a stop/start cycle. Two reasons:
+/// Lifecycle: the engine starts when the visualizer first appears. Once the
+/// dropdown has been closed for `idleStopDelay`, the SCStream is stopped and
+/// `state` stays `.running`; the next appearance restarts the stream. A live
+/// stream keeps ScreenCaptureKit's audio tap open (which holds a "prevent
+/// idle sleep" assertion), costs replayd ~2–3% CPU, and lights the
+/// screen-recording indicator, so it should only run while someone can see
+/// the bars. The grace period absorbs quick close/reopen toggles.
 ///
-///   1. **Permission stability.** macOS TCC for Screen Recording is fussy
-///      under ad-hoc signing (every Xcode rebuild = new signature = TCC
-///      sees a "different app"). The fewer times we ask `SCShareableContent`
-///      for content, the fewer chances for a flaky re-prompt.
-///   2. **Cost.** SCStream at 2×2 video / 1fps + 48kHz audio is ~1–2% CPU
-///      on Apple Silicon. Far cheaper than the start/stop churn it replaces.
+/// Builds are signed with a stable certificate (see AGENTS.md), so stopping
+/// and restarting the stream doesn't re-trigger the Screen Recording prompt
+/// the way ad-hoc signed rebuilds used to.
 ///
 /// Threading:
 ///   - `start` / `stop` are `@MainActor` so state mutations are serialized
@@ -50,7 +51,15 @@ final class VisualizerEngine: @unchecked Sendable {
   /// Public state for the view layer to render permission/error overlays.
   private(set) var state: State = .idle
 
-  @ObservationIgnored private let capture = AudioCaptureEngine()
+  @ObservationIgnored private let capture: AudioCapturing
+  /// How long the dropdown must stay closed before the stream is stopped.
+  @ObservationIgnored private let idleStopDelay: Duration
+  /// True while the SCStream is actually delivering buffers. `state` can be
+  /// `.running` while this is false: the stream is parked because nothing is
+  /// visible, and the next `start()` brings it back.
+  @ObservationIgnored private var captureLive = false
+  @ObservationIgnored private var isSuspending = false
+  @ObservationIgnored private var idleStopTask: Task<Void, Never>?
   @ObservationIgnored private var fft = FFTProcessor(fftSize: 2048, windowKind: .blackman)
   @ObservationIgnored private var analysisBandCount = SpectrumDensity.detailed.bandCount
   @ObservationIgnored private var bandScale: FFTProcessor.BandScale = .mel
@@ -68,10 +77,8 @@ final class VisualizerEngine: @unchecked Sendable {
 
   /// Visibility throttle: views call `attach()`/`detach()` to register/
   /// unregister themselves as consumers. While zero consumers are attached,
-  /// `handleSamples` short-circuits — the SCStream stays alive (so we don't
-  /// re-prompt for permission) but the FFT, MainActor dispatch, and SwiftUI
-  /// updates all skip. Saves ~5ms/sec of CPU plus main-thread wakeups while
-  /// the popover sits closed (which is most of the time).
+  /// `handleSamples` short-circuits (no FFT, MainActor dispatch, or SwiftUI
+  /// updates), and after `idleStopDelay` the stream itself is stopped.
   @ObservationIgnored private let visibilityLock = NSLock()
   @ObservationIgnored private var _consumers = 0
 
@@ -91,7 +98,12 @@ final class VisualizerEngine: @unchecked Sendable {
   @ObservationIgnored private var isStarting = false
   @ObservationIgnored private var retryStartOnNextActivation = false
 
-  init() {
+  init(
+    capture: AudioCapturing = AudioCaptureEngine(),
+    idleStopDelay: Duration = .seconds(10)
+  ) {
+    self.capture = capture
+    self.idleStopDelay = idleStopDelay
     capture.shouldProcessSamples = { [weak self] in
       self?.hasVisibleConsumer() ?? false
     }
@@ -108,6 +120,7 @@ final class VisualizerEngine: @unchecked Sendable {
     capture.onStop = { [weak self] _ in
       Task { @MainActor [weak self] in
         guard let self else { return }
+        self.captureLive = false
         self.state = CGPreflightScreenCaptureAccess() ? .error : .denied
         self.resetBands()
       }
@@ -216,11 +229,16 @@ final class VisualizerEngine: @unchecked Sendable {
 
   @MainActor
   func start() async {
-    // Idempotent — calling start() while already running or already entering
-    // ScreenCaptureKit is a no-op. This is what makes long-lived capture safe
-    // under SwiftUI's `.task` modifier, which fires on every view appearance.
-    guard state != .running else { return }
+    // Idempotent — calling start() while the stream is live or already
+    // entering ScreenCaptureKit is a no-op. SwiftUI's `.task` calls this on
+    // every appearance; that's also what restarts a stream parked by
+    // `suspendCaptureIfUnused()`.
+    cancelIdleStop()
+    guard !(state == .running && captureLive) else { return }
     guard !isStarting else { return }
+    // A stop is in flight; `suspendCaptureIfUnused` restarts the stream
+    // itself once it finishes if a view attached in the meantime.
+    guard !isSuspending else { return }
     isStarting = true
     defer { isStarting = false }
 
@@ -250,13 +268,17 @@ final class VisualizerEngine: @unchecked Sendable {
 
     do {
       try await capture.start()
+      captureLive = true
       state = .running
+      // The dropdown may have closed while ScreenCaptureKit was starting.
+      if !hasVisibleConsumer() { scheduleIdleStop() }
     } catch {
       // ScreenCaptureKit reports permission denial as a generic error from
       // SCShareableContent. Map any failure to either `.denied` (most common
       // first-launch case) or `.error`. Either way the UI shows a fallback.
       let nsErr = error as NSError
       visualizerLog.error("start failed: domain=\(nsErr.domain, privacy: .public) code=\(nsErr.code) \(nsErr.localizedDescription, privacy: .public)")
+      captureLive = false
       if nsErr.domain == "com.apple.ScreenCaptureKit.SCStreamErrorDomain"
         || nsErr.domain == "com.apple.TCC"
         || nsErr.code == -3801
@@ -270,14 +292,60 @@ final class VisualizerEngine: @unchecked Sendable {
 
   @MainActor
   func stop() async {
-    // Idempotent — only do work if we're actually running. Note: with the
-    // long-lived lifecycle, the production code path doesn't call stop()
-    // anymore; it's kept for tests and for future surfaces (e.g. an
-    // explicit "pause visualizer" toggle in settings).
+    // Idempotent — only do work if we're actually running. The production
+    // path parks the stream with `suspendCaptureIfUnused()` instead; this is
+    // kept for tests and for future surfaces (e.g. an explicit "pause
+    // visualizer" toggle in settings).
+    cancelIdleStop()
     guard state == .running else { return }
-    await capture.stop()
+    if captureLive {
+      captureLive = false
+      await capture.stop()
+    }
     state = .idle
     resetBands()
+  }
+
+  #if DEBUG
+  /// Test hook: whether the underlying stream is currently live.
+  @MainActor
+  var isCaptureLive: Bool { captureLive }
+  #endif
+
+  @MainActor
+  private func scheduleIdleStop() {
+    idleStopTask?.cancel()
+    let delay = idleStopDelay
+    idleStopTask = Task { @MainActor [weak self] in
+      try? await Task.sleep(for: delay)
+      guard !Task.isCancelled else { return }
+      await self?.suspendCaptureIfUnused()
+    }
+  }
+
+  @MainActor
+  private func cancelIdleStop() {
+    idleStopTask?.cancel()
+    idleStopTask = nil
+  }
+
+  /// Stops the SCStream while no view is showing the bars. `state` stays
+  /// `.running` so the header keeps its label; the next `start()` restarts
+  /// the stream (and reports `.denied` if permission went away meanwhile).
+  @MainActor
+  private func suspendCaptureIfUnused() async {
+    idleStopTask = nil
+    guard state == .running, captureLive, !isStarting, !isSuspending,
+      !hasVisibleConsumer()
+    else { return }
+    isSuspending = true
+    captureLive = false
+    await capture.stop()
+    isSuspending = false
+    // Reopened while the stream was shutting down.
+    if hasVisibleConsumer() {
+      await start()
+    }
   }
 
   // MARK: - Visibility throttle
@@ -288,12 +356,20 @@ final class VisualizerEngine: @unchecked Sendable {
     visibilityLock.lock()
     _consumers += 1
     visibilityLock.unlock()
+
+    Task { @MainActor in
+      self.cancelIdleStop()
+      // Restart a parked stream. A fresh engine (`.idle`) waits for the
+      // view's own `start()` call instead.
+      if self.state == .running, !self.captureLive {
+        await self.start()
+      }
+    }
   }
 
   /// View calls this on `.onDisappear`. Decrements the consumer count;
-  /// FFT processing pauses when count reaches zero. The capture stream
-  /// stays alive (pausing/restarting it would re-trigger permission
-  /// prompt risk under ad-hoc signing).
+  /// FFT processing pauses when count reaches zero, and the capture stream
+  /// stops `idleStopDelay` later unless a view attaches again.
   func detach() {
     visibilityLock.lock()
     _consumers = max(0, _consumers - 1)
@@ -307,6 +383,7 @@ final class VisualizerEngine: @unchecked Sendable {
       Task { @MainActor in
         guard !self.hasVisibleConsumer() else { return }
         self.resetBands()
+        if self.captureLive { self.scheduleIdleStop() }
       }
     }
   }
