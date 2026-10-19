@@ -212,13 +212,26 @@ final class PetEngine {
     return row != nil
   }
 
+  /// Slack for matching a recently-played row to its live twin. Spotify's
+  /// `played_at` is when the play *ended*; a live row stores the estimated
+  /// *start* (`now - progress`, to the second). For a full play the two sit
+  /// about one track-duration apart, and in practice the live start lands
+  /// 0–3 s before `recent_at - duration`. Kept far below any track's length,
+  /// so the play before a back-to-back repeat (a full duration earlier)
+  /// never matches.
+  static let recentTwinToleranceSec: Int64 = 5
+
+  /// Returns true if a live or imported play already covers the
+  /// recently-played row: same track, `played_at` within one
+  /// track-duration (plus `recentTwinToleranceSec` on the early side,
+  /// because live rows are start-stamped and recent rows end-stamped).
   private static func duplicateRecentSyncPlayExists(of play: Play, in db: Database) throws -> Bool {
     let durationMs = try Int64.fetchOne(
       db,
       sql: "SELECT duration_ms FROM tracks WHERE uri = ?",
       arguments: [play.trackUri]) ?? 0
     let thresholdSec: Int64 = durationMs > 0 ? max(30, durationMs / 1000) : 600
-    let lower = play.playedAt - thresholdSec
+    let lower = play.playedAt - thresholdSec - recentTwinToleranceSec
     let upper = play.playedAt + thresholdSec
     let row = try Int.fetchOne(
       db,
@@ -226,7 +239,7 @@ final class PetEngine {
         SELECT 1 FROM plays
         WHERE track_uri = ?
           AND source != ?
-          AND played_at > ?
+          AND played_at >= ?
           AND played_at < ?
         LIMIT 1
         """,

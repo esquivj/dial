@@ -118,4 +118,66 @@ final class PetEngineTests: XCTestCase {
     let s = try PetStateDAO(dbq: dbq).get()
     XCTAssertEqual(s.xp, 30_000)
   }
+
+  // MARK: - Recently-played twins
+  //
+  // A live row stores the play's estimated start; Spotify's recently-played
+  // row stores its end. For a full 200 s play started at 1_700_000_000 the
+  // recent row arrives at 1_700_000_200, and real archives show the live
+  // start landing 0–3 s before `recent_at - duration`.
+
+  private func makeRecentTwinEngine() throws -> (DatabaseQueue, PetEngine) {
+    let dbq = try InMemoryDatabase.make()
+    let engine = PetEngine(dbq: dbq, clock: { 1_700_000_000 })
+    try TracksDAO(dbq: dbq).upsert(.init(uri: "T", name: "t", albumName: "Al", albumArtUrl: nil, durationMs: 200_000,
+                                         artistsJson: #"[{"name":"X","uri":"art:X"}]"#))
+    return (dbq, engine)
+  }
+
+  private func playCount(_ dbq: DatabaseQueue) throws -> Int {
+    try dbq.read { db in
+      try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM plays WHERE track_uri = 'T'") ?? 0
+    }
+  }
+
+  func test_recentRow_endingExactlyOneDurationAfterLiveStart_isSkipped() throws {
+    let (dbq, engine) = try makeRecentTwinEngine()
+    try engine.recordPlay(.init(playedAt: 1_700_000_000, trackUri: "T", msPlayed: 60_000, source: "live"))
+
+    let recorded = try engine.recordPlay(.init(
+      playedAt: 1_700_000_200, trackUri: "T", msPlayed: 200_000, source: RecentPlaysReconciler.source))
+
+    XCTAssertFalse(recorded)
+    XCTAssertEqual(try playCount(dbq), 1)
+  }
+
+  func test_recentRow_endingOneSecondPastLiveStartPlusDuration_isSkipped() throws {
+    let (dbq, engine) = try makeRecentTwinEngine()
+    try engine.recordPlay(.init(playedAt: 1_700_000_000, trackUri: "T", msPlayed: 60_000, source: "live"))
+    let xpBefore = try PetStateDAO(dbq: dbq).get().xp
+
+    let recorded = try engine.recordPlay(.init(
+      playedAt: 1_700_000_201, trackUri: "T", msPlayed: 200_000, source: RecentPlaysReconciler.source))
+
+    XCTAssertFalse(recorded)
+    XCTAssertEqual(try playCount(dbq), 1)
+    XCTAssertEqual(try PetStateDAO(dbq: dbq).get().xp, xpBefore)
+  }
+
+  func test_backToBackRepeat_recentRowForSecondPlay_stillCounts() throws {
+    // Play 1 counted live (start 1_700_000_000). Play 2 of the same track
+    // started right after it ended, but Dial missed it live. The recent
+    // rows for both arrive later: play 1 is a twin, play 2 is a new play.
+    let (dbq, engine) = try makeRecentTwinEngine()
+    try engine.recordPlay(.init(playedAt: 1_700_000_000, trackUri: "T", msPlayed: 60_000, source: "live"))
+
+    let firstRecent = try engine.recordPlay(.init(
+      playedAt: 1_700_000_200, trackUri: "T", msPlayed: 200_000, source: RecentPlaysReconciler.source))
+    let secondRecent = try engine.recordPlay(.init(
+      playedAt: 1_700_000_400, trackUri: "T", msPlayed: 200_000, source: RecentPlaysReconciler.source))
+
+    XCTAssertFalse(firstRecent)
+    XCTAssertTrue(secondRecent)
+    XCTAssertEqual(try playCount(dbq), 2)
+  }
 }
