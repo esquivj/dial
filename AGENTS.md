@@ -71,5 +71,5 @@ Use `rg` (respects `.gitignore`) and always pass a path: `rg PollingService Dial
 ## Known gaps
 
 - Swift 5.10 language mode. Turning on strict concurrency surfaces about 140 warnings, mostly in `AppCoordinator` and `StatusBarController`.
-- No CI and no git remote: `scripts/dev.sh test` is the check. Run it before every commit.
+- No CI. `scripts/dev.sh test` is the check; run it before every commit. The remote is the private `esquivj/dial` on GitHub (`origin`); push `main` after merging so the backup stays current.
 - `docs/superpowers/` is the original v1 spec/plan and is historical: colours, fonts and sizes there are outdated.
