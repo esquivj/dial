@@ -22,6 +22,9 @@ final class AppCoordinator {
   let backgroundEnrichment: BackgroundEnrichmentCoordinator
   let artworkCache: ArtworkCache
   let desktopPlaybackObserver: SpotifyDesktopPlaybackObserver
+  /// Last.fm scrobbling and Loved sync. Fed only from the live playback
+  /// path below, never from imports or recently-played sync.
+  let lastFM: LastFMScrobbler
   /// Owns the system-audio capture + FFT pipeline that drives the spectrum
   /// visualizer. Idle until the visualizer view first appears, at which
   /// point `start()` is called and the engine triggers the Screen Recording
@@ -108,7 +111,17 @@ final class AppCoordinator {
     self.backgroundEnrichment = BackgroundEnrichmentCoordinator(dbq: dbq, client: client, settings: settings)
     self.artworkCache = ArtworkCache()
     self.desktopPlaybackObserver = SpotifyDesktopPlaybackObserver()
+    // Built on the main thread (app launch, tests).
+    self.lastFM = MainActor.assumeIsolated {
+      LastFMScrobbler(
+        dbq: dbq,
+        credentials: { [weak settings] in settings?.lastFMCredentials },
+        defaults: defaults)
+    }
     self.pet.syncFromStore(dbq: dbq)
+    menubar.onUserLikedChange = { [weak self] uri, liked in
+      self?.syncLovedTrack(uri: uri, liked: liked)
+    }
   }
 
   /// Starts the polling loop. Idempotent — second call is a no-op.
@@ -124,6 +137,7 @@ final class AppCoordinator {
     }
     startRecentPlayRepair(reason: "launch", delay: 8)
     startPeriodicRecentPlaySync()
+    Task { @MainActor [weak self] in self?.lastFM.flushSoon() }
     Task { [weak self] in
       guard let self else { return }
       do {
@@ -199,6 +213,7 @@ final class AppCoordinator {
       if satisfied && !self.networkWasSatisfied {
         DispatchQueue.main.async { [weak self] in
           self?.startRecentPlayRepair(reason: "network")
+          self?.lastFM.flushSoon()
         }
       }
       self.networkWasSatisfied = satisfied
@@ -514,6 +529,17 @@ final class AppCoordinator {
         }
       }
 
+      let scrobbleTrack = ScrobbleTracker.Track(
+        uri: uri,
+        artist: resolvedArtists.first?.name ?? resolvedArtistName,
+        name: resolvedName,
+        album: resolvedAlbumName.isEmpty ? nil : resolvedAlbumName,
+        durationMs: resolvedDurationMs)
+      await MainActor.run {
+        guard nowPlaying.track?.uri == uri else { return }
+        lastFM.trackStarted(scrobbleTrack)
+      }
+
       await artworkCache.prefetch(resolvedArtUrl)
 
       // Persist track metadata so the SQL joins in `artistRank7d`,
@@ -596,6 +622,7 @@ final class AppCoordinator {
       let visiblePublishPerf = beginPollInterval("playback.visible_publish")
       await MainActor.run {
         menubar.state = .paused
+        lastFM.paused()
         resolvePetBehavior()
       }
       visiblePublishPerf?.end()
@@ -605,6 +632,7 @@ final class AppCoordinator {
       let visiblePublishPerf = beginPollInterval("playback.visible_publish")
       await MainActor.run {
         menubar.state = .playing
+        lastFM.resumed()
         resolvePetBehavior()
       }
       visiblePublishPerf?.end()
@@ -629,6 +657,7 @@ final class AppCoordinator {
         menubar.lastProgressUpdate = nil
         menubar.playsYTD = 0
         pet.currentBPM = nil
+        lastFM.stopped()
         aggCache.refresh(trackUri: nil, artistUri: nil, currentPlayAt: nil)
         resolvePetBehavior()
       }
@@ -640,6 +669,7 @@ final class AppCoordinator {
       await MainActor.run {
         menubar.progressMs = ms
         menubar.lastProgressUpdate = Date()
+        lastFM.progress(ms: ms)
       }
       visiblePublishPerf?.end()
       endPerf()
@@ -731,6 +761,7 @@ final class AppCoordinator {
 
       if didRecord {
         coordLog.notice("recorded live play: \(uri, privacy: .public) (\(ms)ms)")
+        lastFM.livePlayRecorded(uri: uri, playedAt: at, msPlayed: ms)
         if stillCurrent {
           let xpDelta = max(0, pet.xp - xpBefore)
           pet.lastFeedingText = xpDelta > 0
@@ -1082,6 +1113,21 @@ final class AppCoordinator {
     case .idle:
       pet.reactionText = "Waiting for playback."
     }
+  }
+
+  /// A like or unlike made in Dial, confirmed by Spotify. Mirrored to
+  /// Last.fm's Loved tracks when scrobbling is on.
+  @MainActor
+  private func syncLovedTrack(uri: String, liked: Bool) {
+    // Same primary artist the scrobble uses: the stored artist list first,
+    // then the name on screen.
+    let stored = try? TracksDAO(dbq: dbq).fetch(uri: uri)
+    let current = nowPlaying.track?.uri == uri ? nowPlaying.track : nil
+    let name = current?.name ?? stored?.name ?? ""
+    let artist = Self.playbackArtists(from: stored?.artistsJson).first?.name
+      ?? current?.artistName
+      ?? ""
+    lastFM.setLoved(liked, artist: artist, track: name)
   }
 
   private func refreshLikedState(for uri: String) {

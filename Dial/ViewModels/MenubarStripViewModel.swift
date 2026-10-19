@@ -27,6 +27,8 @@ final class MenubarStripViewModel {
   var durationMs: Int = 0
   var playsYTD: Int = 0
   var likedTrackState: LikedTrackState = .unknown
+  /// Called after Spotify confirms a like or unlike the user made in Dial.
+  @ObservationIgnored var onUserLikedChange: (@MainActor (_ uri: String, _ liked: Bool) -> Void)?
   /// Set whenever a fresh `.progress(ms:)` event lands. Views interpolate
   /// between polls by adding `(now - lastProgressUpdate)` to `progressMs`
   /// while `state == .playing`.

@@ -91,6 +91,18 @@ final class HotkeyActionRouterTests: XCTestCase {
     try await waitUntil { self.library.calls == [.like("spotify:track:abc"), .check("spotify:track:abc")] }
   }
 
+  func test_hotkeyLikeReportsConfirmedChangeForLastFMLovedSync() async throws {
+    var reported: [(String, Bool)] = []
+    menubar.onUserLikedChange = { uri, liked in reported.append((uri, liked)) }
+    menubar.likedTrackState = .notLiked
+    library.liked = false
+    makeRouter().perform(.like)
+
+    try await waitUntil { reported.count == 1 }
+    XCTAssertEqual(reported.first?.0, "spotify:track:abc")
+    XCTAssertEqual(reported.first?.1, true)
+  }
+
   func test_likeOnALikedTrackUnlikes() async throws {
     menubar.likedTrackState = .liked
     library.liked = true

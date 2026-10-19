@@ -140,6 +140,10 @@ struct LikedTrackController {
       }
       let confirmed = try await library.isTrackLiked(uri: uri)
       await MainActor.run {
+        // Fires for button and hotkey likes alike (Last.fm "Loved" sync).
+        if confirmed == shouldLike {
+          menubar.onUserLikedChange?(uri, confirmed)
+        }
         guard menubar.track?.uri == uri else { return }
         menubar.likedTrackState = confirmed ? .liked : .notLiked
       }

@@ -60,14 +60,7 @@ enum LastFMAPIKeyStorage {
   static let legacyDefaultsKey = "settings.lastFMAPIKey"
 
   static func makeDefaultStore() -> SecretStringStore {
-    let keychain = KeychainSecretStringStore(service: "com.dial.lastfm", key: "api-key")
-    // DEBUG builds (what scripts/install.sh ships) use a file so rebuilds don't
-    // re-trigger the keychain prompt; see FileSecretStringStore.
-    #if DEBUG
-    return FileSecretStringStore(filename: "lastfm-api-key", fallback: keychain)
-    #else
-    return keychain
-    #endif
+    LastFMSecretStorage.makeStore(filename: "lastfm-api-key", keychainKey: "api-key")
   }
 
   static func load(
@@ -103,5 +96,28 @@ enum LastFMAPIKeyStorage {
       try? store.save(trimmed)
     }
     defaults.removeObject(forKey: legacyDefaultsKey)
+  }
+}
+
+/// Where Last.fm secrets live: the shared secret (signs auth and scrobble
+/// calls) and the session key (one per connected user).
+enum LastFMSecretStorage {
+  static func makeStore(filename: String, keychainKey: String) -> SecretStringStore {
+    let keychain = KeychainSecretStringStore(service: "com.dial.lastfm", key: keychainKey)
+    // DEBUG builds (what scripts/install.sh ships) use a file so rebuilds don't
+    // re-trigger the keychain prompt; see FileSecretStringStore.
+    #if DEBUG
+    return FileSecretStringStore(filename: filename, fallback: keychain)
+    #else
+    return keychain
+    #endif
+  }
+
+  static func makeSharedSecretStore() -> SecretStringStore {
+    makeStore(filename: "lastfm-shared-secret", keychainKey: "shared-secret")
+  }
+
+  static func makeSessionKeyStore() -> SecretStringStore {
+    makeStore(filename: "lastfm-session-key", keychainKey: "session-key")
   }
 }
