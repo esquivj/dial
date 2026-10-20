@@ -69,12 +69,17 @@ struct ArchiveMerger {
     }
     let stamp = Self.fileStamp(options.now)
     let dialFolder = archiveURL.deletingLastPathComponent()
-    let workFolder = dialFolder
-      .appendingPathComponent("Merging", isDirectory: true)
+    let mergingFolder = dialFolder.appendingPathComponent("Merging", isDirectory: true)
+    let workFolder = mergingFolder
       .appendingPathComponent("\(stamp)-\(UUID().uuidString.prefix(8))", isDirectory: true)
     try fileManager.createDirectory(
       at: workFolder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-    defer { try? fileManager.removeItem(at: workFolder) }
+    defer {
+      try? fileManager.removeItem(at: workFolder)
+      if (try? fileManager.contentsOfDirectory(atPath: mergingFolder.path))?.isEmpty == true {
+        try? fileManager.removeItem(at: mergingFolder)
+      }
+    }
 
     options.log("→ Reading \(snapshotURL.lastPathComponent)")
     let snapshotCopy = workFolder.appendingPathComponent("snapshot.sqlite")
@@ -416,6 +421,11 @@ struct ArchiveMerger {
       FROM snapshot.plays
       ORDER BY played_at, id
       """)
+    // A first merge can insert hundreds of thousands of rows: prepare once.
+    let insertPlay = try db.cachedStatement(sql: """
+      INSERT INTO main.plays (played_at, track_uri, ms_played, source, origin) VALUES (?, ?, ?, ?, ?)
+      """)
+    let rememberPlay = try db.cachedStatement(sql: "INSERT INTO temp.merge_added (id) VALUES (?)")
     var added: [String: Int] = [:]
     var alreadyHere = 0
     while let row = try rows.next() {
@@ -429,10 +439,8 @@ struct ArchiveMerger {
       }
       // A play keeps the id of the Mac that first recorded it.
       let origin = (row["origin"] as String?) ?? sourceID
-      try db.execute(sql: """
-        INSERT INTO main.plays (played_at, track_uri, ms_played, source, origin) VALUES (?, ?, ?, ?, ?)
-        """, arguments: [stamp.playedAt, trackUri, stamp.msPlayed, stamp.source, origin])
-      try db.execute(sql: "INSERT INTO temp.merge_added (id) VALUES (?)", arguments: [db.lastInsertedRowID])
+      try insertPlay.execute(arguments: [stamp.playedAt, trackUri, stamp.msPlayed, stamp.source, origin])
+      try rememberPlay.execute(arguments: [db.lastInsertedRowID])
       added[stamp.source, default: 0] += 1
     }
     return (added, alreadyHere)

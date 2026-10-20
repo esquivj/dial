@@ -110,9 +110,9 @@ final class ArchiveMergerTests: XCTestCase {
     XCTAssertEqual(try withFile(backup) { dbq in
       try dbq.read { try Int.fetchOne($0, sql: "SELECT COUNT(*) FROM plays") }
     }, report.before.plays)
-    let workFolders = try FileManager.default.contentsOfDirectory(
-      atPath: archives.mini.deletingLastPathComponent().appendingPathComponent("Merging").path)
-    XCTAssertEqual(workFolders, [])
+    // The working files are gone, and no empty folder is left behind.
+    XCTAssertFalse(FileManager.default.fileExists(
+      atPath: archives.mini.deletingLastPathComponent().appendingPathComponent("Merging").path))
   }
 
   func test_mergingAgainOrBack_changesNothing() throws {
