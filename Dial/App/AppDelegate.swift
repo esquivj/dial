@@ -26,6 +26,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
       "Dial is running a menu bar UI or headless enrichment job.")
     ProcessInfo.processInfo.disableSuddenTermination()
 
+    // Multi-Mac history (docs/design/multi-mac-history.md):
+    // `--export-archive <file>` writes a snapshot for another Mac to merge.
+    if let request = archiveRequestFromArgs() {
+      runHeadlessArchive(request)
+      return
+    }
+
     // Headless import path: `--import <folder>` runs the same Importer that
     // the Settings UI uses, then exits. Skips all menubar / polling /
     // visualizer setup so the binary acts as a one-shot CLI tool. Useful
@@ -320,6 +327,49 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         exit(0)
       } catch {
         stderr("✗ Backfill failed: \(error)")
+        exit(1)
+      }
+    }
+  }
+
+  // MARK: - Headless archive export
+
+  private enum ArchiveRequest {
+    case export(path: String)
+  }
+
+  private func archiveRequestFromArgs() -> ArchiveRequest? {
+    let args = CommandLine.arguments
+    if let path = Self.argumentValue("--export-archive", in: args) {
+      return .export(path: path)
+    }
+    return nil
+  }
+
+  /// The value given as `--flag value` or `--flag=value`.
+  private static func argumentValue(_ flag: String, in args: [String]) -> String? {
+    if let idx = args.firstIndex(of: flag), idx + 1 < args.count {
+      return args[idx + 1]
+    }
+    return args.first { $0.hasPrefix("\(flag)=") }.map { String($0.dropFirst(flag.count + 1)) }
+  }
+
+  /// Export reads the archive through a read-only connection, so it's safe
+  /// while the menu bar app is running.
+  private func runHeadlessArchive(_ request: ArchiveRequest) {
+    Task { @MainActor in
+      do {
+        let archiveURL = try DatabaseStack.defaultURL()
+        switch request {
+        case let .export(path):
+          let destination = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
+          stderr("→ Exporting \(archiveURL.path)")
+          let info = try ArchiveExporter.export(archiveAt: archiveURL, to: destination)
+          stderr("✓ Wrote \(destination.path): \(info.playCount.formatted()) plays from \(info.macName)")
+        }
+        exit(0)
+      } catch {
+        stderr("✗ \(error)")
         exit(1)
       }
     }
