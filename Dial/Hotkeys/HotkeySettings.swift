@@ -11,33 +11,36 @@ enum HotkeyAction: String, CaseIterable, Identifiable, Codable {
   case volumeUp
   case volumeDown
   case openHUD
+  case toggleDesktopMemory
 
   var id: String { rawValue }
 
   var title: String {
     switch self {
-    case .playPause:  "Play / pause"
-    case .next:       "Next track"
-    case .previous:   "Previous track"
-    case .like:       "Like / unlike"
-    case .volumeUp:   "Volume up"
-    case .volumeDown: "Volume down"
-    case .openHUD:    "Open HUD"
+    case .playPause:           "Play / pause"
+    case .next:                "Next track"
+    case .previous:            "Previous track"
+    case .like:                "Like / unlike"
+    case .volumeUp:            "Volume up"
+    case .volumeDown:          "Volume down"
+    case .openHUD:             "Open HUD"
+    case .toggleDesktopMemory: "Show / hide desktop memory"
     }
   }
 
   /// ⌃⌥⌘ plus a letter or punctuation key: macOS ships nothing on that
-  /// chord, and none of these are function keys or Space.
+  /// chord, and none of these are function keys or Space. M is for memory.
   var defaultShortcut: KeyShortcut {
     let chord: KeyShortcut.Modifiers = [.control, .option, .command]
     switch self {
-    case .playPause:  return KeyShortcut(keyCode: kVK_ANSI_P, modifiers: chord)
-    case .next:       return KeyShortcut(keyCode: kVK_ANSI_RightBracket, modifiers: chord)
-    case .previous:   return KeyShortcut(keyCode: kVK_ANSI_LeftBracket, modifiers: chord)
-    case .like:       return KeyShortcut(keyCode: kVK_ANSI_L, modifiers: chord)
-    case .volumeUp:   return KeyShortcut(keyCode: kVK_ANSI_Equal, modifiers: chord)
-    case .volumeDown: return KeyShortcut(keyCode: kVK_ANSI_Minus, modifiers: chord)
-    case .openHUD:    return KeyShortcut(keyCode: kVK_ANSI_D, modifiers: chord)
+    case .playPause:           return KeyShortcut(keyCode: kVK_ANSI_P, modifiers: chord)
+    case .next:                return KeyShortcut(keyCode: kVK_ANSI_RightBracket, modifiers: chord)
+    case .previous:            return KeyShortcut(keyCode: kVK_ANSI_LeftBracket, modifiers: chord)
+    case .like:                return KeyShortcut(keyCode: kVK_ANSI_L, modifiers: chord)
+    case .volumeUp:            return KeyShortcut(keyCode: kVK_ANSI_Equal, modifiers: chord)
+    case .volumeDown:          return KeyShortcut(keyCode: kVK_ANSI_Minus, modifiers: chord)
+    case .openHUD:             return KeyShortcut(keyCode: kVK_ANSI_D, modifiers: chord)
+    case .toggleDesktopMemory: return KeyShortcut(keyCode: kVK_ANSI_M, modifiers: chord)
     }
   }
 }

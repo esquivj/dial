@@ -23,6 +23,10 @@ final class HotkeyControllerTests: XCTestCase {
       transport: FakeTransport(),
       library: FakeLibrary(),
       openHUD: { [weak self] in self?.performed.append(.openHUD) },
+      toggleDesktopMemory: { [weak self] in
+        self?.performed.append(.toggleDesktopMemory)
+        return true
+      },
       flash: { _ in })
     controller = HotkeyController(settings: settings, router: router, center: center)
   }
@@ -87,6 +91,10 @@ final class HotkeyControllerTests: XCTestCase {
     center.onPress?(.openHUD)
     await settleObservation()
     XCTAssertEqual(performed, [.openHUD])
+
+    center.onPress?(.toggleDesktopMemory)
+    await settleObservation()
+    XCTAssertEqual(performed, [.openHUD, .toggleDesktopMemory])
   }
 }
 

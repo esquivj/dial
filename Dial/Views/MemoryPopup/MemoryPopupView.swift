@@ -10,6 +10,9 @@ struct MemoryPopupView: View {
   static let size = CGSize(width: 300, height: 54)
 
   let content: MemoryPopupContent
+  /// Opens the HUD. Clicks go to the panel's click view; VoiceOver's press
+  /// comes here, to the SwiftUI element.
+  let onOpen: () -> Void
   @Environment(\.dialTheme) private var theme
 
   var body: some View {
@@ -18,6 +21,7 @@ struct MemoryPopupView: View {
       .accessibilityLabel("\(content.kind.label): \(content.line). \(trackLine)")
       .accessibilityAddTraits(.isButton)
       .accessibilityHint("Opens Dial.")
+      .accessibilityAction { onOpen() }
   }
 
   private var readout: some View {

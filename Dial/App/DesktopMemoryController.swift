@@ -8,8 +8,9 @@ import SwiftUI
 /// level, above the desktop and its icons and below every app window.
 ///
 /// It redraws only when the track, play state, memory, theme or settings
-/// change. Click opens the HUD, drag moves it and it snaps to the nearest
-/// corner on release, right-click offers Open Dial and Hide.
+/// change. Click (or VoiceOver's press) opens the HUD, drag moves it and it
+/// snaps to the nearest corner on release, right-click offers Open Dial and
+/// Hide.
 @MainActor
 final class DesktopMemoryController {
   /// Everything the object depends on, read in one place so observation
@@ -136,7 +137,7 @@ final class DesktopMemoryController {
   private func render() {
     guard let content else { return }
     hostView.setContent(
-      DesktopMemoryView(content: content, artwork: artwork)
+      DesktopMemoryView(content: content, artwork: artwork, onOpen: openHUD)
         .environment(\.dialTheme, theme)
         .preferredColorScheme(.dark))
   }
@@ -252,6 +253,8 @@ private final class DesktopMemoryPanel: NSPanel {
 /// Hosts the SwiftUI object and owns every mouse event itself: a click
 /// opens the HUD, a drag moves the window, a right-click shows the menu.
 /// Only the chassis takes the mouse, not the shadow margin around it.
+/// VoiceOver's press skips this view and goes to the SwiftUI element,
+/// which opens the HUD through its own action.
 private final class DesktopMemoryHostView: NSView {
   private static let dragThreshold: CGFloat = 3
 
@@ -283,6 +286,13 @@ private final class DesktopMemoryHostView: NSView {
   override func hitTest(_ point: NSPoint) -> NSView? {
     // `point` is in the superview's coordinates.
     chassisRect.contains(convert(point, from: superview)) ? self : nil
+  }
+
+  /// VoiceOver finds what's under the pointer with an accessibility hit
+  /// test. `hitTest` returns this view, which VoiceOver skips, so the test
+  /// would land on the window; send it to the SwiftUI element instead.
+  override func accessibilityHitTest(_ point: NSPoint) -> Any? {
+    host?.accessibilityHitTest(point) ?? super.accessibilityHitTest(point)
   }
 
   override func mouseDown(with event: NSEvent) {

@@ -59,28 +59,32 @@ A new track's memory (badge, plays, last played) lands a moment after the track 
 - **Moving:** drag it anywhere; on release it snaps to the nearest corner of the display it was dropped on. Dial remembers the corner and the display; if that display is gone, it uses the main display.
 - **Click:** opens the HUD, the same as clicking the menu bar item.
 - **Right-click:** a menu with Open Dial and Hide Desktop Memory (turns the setting off).
+- **Shortcut:** ⌃⌥⌘M shows or hides it from any app (see Settings below).
 
 ## Theme, motion, accessibility
 
 - Follows the HUD theme, like memory pop-ups (`AppCoordinator.readoutTheme`).
 - Track changes crossfade art and text in 0.22 s (as `TrackHero`); the snap animates in 0.2 s. Both are instant with Reduce Motion.
 - No timers, meters or progress: it redraws only when the track, play state or memory changes.
-- One VoiceOver element: "Rediscovered: Last played Mar 2023. Kiss Me Thru the Phone · Soulja Boy", button trait, hint "Opens Dial."
+- One VoiceOver element: "Rediscovered: Last played Mar 2023. Kiss Me Thru the Phone · Soulja Boy", button trait, hint "Opens Dial." VoiceOver's press (VO-Space) opens the HUD, the same as a click. The AppKit host view takes every mouse event, so the SwiftUI element carries its own press action (`DesktopMemoryView.onOpen`), and the host view passes VoiceOver's hit test on to that element: moving the VoiceOver cursor to the pointer lands on the object, not its window. The memory pop-up works the same way; its press closes the strip and opens the HUD, like its click.
 - State is never color alone: stamps are words (plus a sprite for memories), and paused or not playing are words plus dimming.
 
-## Settings
+## Settings and shortcut
 
 Menu Bar › Display, next to Live Dock artwork: **Desktop memory**, "Keep the current album and what it means to you on your desktop, under your windows." On by default.
 
+General › Shortcuts: **Show / hide desktop memory** flips that switch from any app. Default ⌃⌥⌘M (M for memory), on the same ⌃⌥⌘ chord as Dial's other shortcuts; it can be re-recorded or cleared like them. Each press flashes the new state in words under the menu bar item: `DESKTOP MEMORY ON`, or `DESKTOP MEMORY OFF` in muted text. The object sits under your windows, so when they cover it the flash is the only sign the press worked. As with every shortcut flash, there's none while the HUD is open.
+
 ## Not in v1
 
-Transport or hover controls, free placement, a second size, a show/hide hotkey, hiding from screen recordings, per-Space positions.
+Transport or hover controls, free placement, a second size, hiding from screen recordings, per-Space positions.
 
 ## Verification
 
 - Unit tests for the LCD content rules and for snapping (nearest corner, visible-area insets, missing display).
+- Unit tests for the shortcut (its default, routing, and the flash for each state) and for VoiceOver on the object and the memory pop-up: a hit test at the center lands on the button, and pressing it opens the HUD.
 - Visual baseline `dial-desktop-memory`: every state above on a light and a dark desktop.
-- In the running app: under all windows, on every Space, steady through Mission Control and Show Desktop, drag and snap on both displays, click opens the HUD, right-click hides it.
+- In the running app: under all windows, on every Space, steady through Mission Control and Show Desktop, drag and snap on both displays, click opens the HUD, right-click hides it, ⌃⌥⌘M hides and shows it with a flash, VoiceOver's press opens the HUD.
 
 ## Code map
 
@@ -93,5 +97,9 @@ Transport or hover controls, free placement, a second size, a show/hide hotkey, 
 | `Dial/Views/MemoryPopup/LCDReadoutStrip.swift` | `LCDReadoutWell`, the LCD both objects share |
 | `Dial/ViewModels/AppCoordinator.swift` | `aggregatesTrackUri`: which track the loaded memory belongs to |
 | `Dial/ViewModels/SettingsViewModel.swift` | `showDesktopMemory`, `desktopMemoryCorner`, `desktopMemoryDisplayID` |
+| `Dial/Hotkeys/HotkeySettings.swift` | `HotkeyAction.toggleDesktopMemory`: the shortcut's title and default |
+| `Dial/ViewModels/HotkeyActionRouter.swift` | Runs the shortcut and picks the flash |
+| `Dial/App/StatusBarController.swift` | `startHotkeys`: gives the router the `showDesktopMemory` switch |
+| `Dial/Views/MemoryPopup/HotkeyFlashView.swift` | `desktopMemoryOn` and `desktopMemoryOff` flashes |
 
-Tests: `DesktopMemoryContentTests`, `DesktopMemoryPlacementTests`, the desktop memory cases in `SettingsViewModelTests`, and `VisualRegressionTests.test_desktopMemoryRendersStates`.
+Tests: `DesktopMemoryContentTests`, `DesktopMemoryPlacementTests`, the desktop memory cases in `SettingsViewModelTests`, `HotkeyActionRouterTests` and `HotkeySettingsTests`, `VoiceOverPressTests`, and `VisualRegressionTests.test_desktopMemoryRendersStates`.
