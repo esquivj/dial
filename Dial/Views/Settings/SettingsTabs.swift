@@ -88,6 +88,10 @@ struct GeneralSettingsTab: View {
 
       LastFMSettingsSection(vm: vm, lastFM: coord.lastFM)
 
+      PermissionsSettingsSection(coord: coord)
+
+      StartupSettingsSection()
+
       SettingsSection("ANALYSIS") {
         VStack(alignment: .leading, spacing: SettingsLayout.controlGap) {
           SettingsToggle(

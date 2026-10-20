@@ -32,6 +32,8 @@ ICON_MAP: dict[str, tuple[str, str]] = {
     "gearshape.fill": ("regular", "settings"),
     "info.circle": ("regular", "info-circle"),
     "xmark.circle": ("regular", "xmark-circle"),
+    "checkmark.circle": ("regular", "check-circle"),
+    "questionmark.circle": ("regular", "help-circle"),
     "chevron.left": ("regular", "nav-arrow-left"),
     "music.note": ("regular", "music-note"),
     "menubar.rectangle": ("regular", "menu-scale"),
