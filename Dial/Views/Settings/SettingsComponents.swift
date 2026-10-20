@@ -474,6 +474,9 @@ struct SettingsButtonStyle: ButtonStyle {
     var body: some View {
       configuration.label
         .font(SettingsType.tab)
+        // Keep the whole label. Rows give their text column layout
+        // priority, which otherwise squeezes the label down to nothing.
+        .fixedSize()
         .foregroundStyle(prominent ? SettingsPalette.prominentText : SettingsPalette.text)
         .padding(.horizontal, 12)
         .frame(height: 27)

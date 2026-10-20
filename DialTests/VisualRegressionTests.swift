@@ -62,8 +62,8 @@ final class VisualRegressionTests: XCTestCase {
     }
   }
 
-  func test_mainHUDScreenshotsRenderForThreeThemeCartridges() async throws {
-    for themeID in [DialThemeID.slime, .aqua, .ember] {
+  func test_mainHUDScreenshotsRenderForEveryThemeCartridge() async throws {
+    for themeID in DialThemeID.allCases {
       let context = try makeSnapshotContext(themeID: themeID)
       let theme = DialTheme.palette(for: themeID)
       let view = MainHUDSnapshotHarness(context: context)
@@ -142,7 +142,7 @@ final class VisualRegressionTests: XCTestCase {
     let size = CGSize(width: MemoryPopupView.size.width + 40, height: MemoryPopupView.size.height + 40)
     let view = ZStack {
       Color(red: 0.86, green: 0.87, blue: 0.89)
-      MemoryPopupView(content: content)
+      MemoryPopupView(content: content, onOpen: {})
     }
     .environment(\.dialTheme, .classic)
     .preferredColorScheme(.dark)
@@ -213,7 +213,7 @@ final class VisualRegressionTests: XCTestCase {
     func row(_ cells: [Cell], desktop: Color) -> some View {
       HStack(spacing: 0) {
         ForEach(cells.indices, id: \.self) { index in
-          DesktopMemoryView(content: cells[index].content, artwork: cells[index].artwork)
+          DesktopMemoryView(content: cells[index].content, artwork: cells[index].artwork, onOpen: {})
             .environment(\.dialTheme, cells[index].theme)
             .frame(width: cell.width, height: cell.height)
         }
@@ -987,7 +987,7 @@ final class VisualRegressionTests: XCTestCase {
     case .slime: return RGB(184, 255, 56)
     case .aqua: return RGB(37, 199, 255)
     case .ember: return RGB(255, 77, 210)
-    case .classic: return RGB(31, 182, 255)
+    case .classic: return RGB(242, 242, 238)
     }
   }
 }

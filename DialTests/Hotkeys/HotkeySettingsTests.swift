@@ -88,6 +88,13 @@ final class HotkeySettingsTests: XCTestCase {
     XCTAssertEqual(KeyShortcut.Modifiers(carbonFlags: UInt32(cmdKey)), [.command])
   }
 
+  func test_desktopMemoryToggleDefaultsToControlOptionCommandM() {
+    XCTAssertEqual(
+      HotkeyAction.toggleDesktopMemory.defaultShortcut,
+      KeyShortcut(keyCode: kVK_ANSI_M, modifiers: [.control, .option, .command]))
+    XCTAssertEqual(HotkeyAction.toggleDesktopMemory.title, "Show / hide desktop memory")
+  }
+
   func test_defaultShortcutDisplayUsesAppleModifierOrder() {
     XCTAssertTrue(HotkeyAction.playPause.defaultShortcut.displayString.hasPrefix("⌃⌥⌘"))
     XCTAssertEqual(

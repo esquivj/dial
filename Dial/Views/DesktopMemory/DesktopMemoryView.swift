@@ -27,12 +27,16 @@ enum DesktopMemoryMetrics {
 /// The desktop memory object (docs/design/desktop-memory.md): the album in
 /// a smoke-gel chassis over one LCD well. The LCD stamps the track's memory
 /// the way the memory pop-up does, so the two read as the same device.
-/// It shows no controls; clicking it opens the HUD.
+/// It shows no controls; clicking it, or pressing it with VoiceOver, opens
+/// the HUD.
 struct DesktopMemoryView: View {
   private typealias Metrics = DesktopMemoryMetrics
 
   let content: DesktopMemoryContent
   let artwork: NSImage?
+  /// Opens the HUD. Clicks go to the window's host view; VoiceOver's press
+  /// comes here, to the SwiftUI element.
+  let onOpen: () -> Void
   @Environment(\.dialTheme) private var theme
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -54,6 +58,7 @@ struct DesktopMemoryView: View {
     .accessibilityLabel(content.accessibilityLabel)
     .accessibilityAddTraits(.isButton)
     .accessibilityHint("Opens Dial.")
+    .accessibilityAction { onOpen() }
   }
 
   // MARK: - Art

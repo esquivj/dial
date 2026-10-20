@@ -23,7 +23,7 @@ Full logs are in `.build/logs/`. Don't pass your own `-derivedDataPath` to a new
 
 | Folder | What it owns |
 |---|---|
-| `Dial/App` | App entry, `AppDelegate` (CLI flags like `--import`, `--backfill`, `--perf-automation`), `StatusBarController` + `DropdownPanel` (the 440×440 borderless panel), `DesktopMemoryController` (the album object on the desktop; spec in `docs/design/desktop-memory.md`) |
+| `Dial/App` | App entry, `AppDelegate` (CLI flags like `--import`, `--backfill`, `--perf-automation`), `StatusBarController` + `DropdownPanel` (the 440×440 borderless panel), `DesktopMemoryController` (the album object on the desktop; spec in `docs/design/desktop-memory.md`), `LaunchAtLogin` and `AppPermissions` (login item and privacy permission status for Settings) |
 | `Dial/Spotify`, `Dial/Auth` | Web API client, rate-limit gate, desktop playback observer; PKCE OAuth with Keychain tokens |
 | `Dial/Polling` | `PollingService` turns playback state into events; `DedupRule` decides when a play counts |
 | `Dial/LastFM` | Scrobbling and Loved sync: signed API client (`LastFMAPI`), scrobble rule + per-track tracker, `LastFMScrobbler` (queue flush, desktop auth flow). Tag lookups stay in `History/MetadataEnricher` |
@@ -62,7 +62,7 @@ Full logs are in `.build/logs/`. Don't pass your own `-derivedDataPath` to a new
 2. On failure, open `.build/snapshot-failures/<name>.actual.png` next to `<name>.baseline.png`.
 3. If the change is intended, run `scripts/dev.sh record`, **look at every changed PNG**, and get the user's OK before committing new baselines. A baseline recorded over a broken layout hides the breakage.
 
-Snapshots are deterministic: fixtures use a fixed date (week of May 18, 2026), and the `dialFrozenDate` environment value pins sprite and overlay animation frames. If you add a `TimelineView` or a clock-driven animation, read `dialFrozenDate` so snapshots stay stable. The default Smoke (`classic`) theme has no HUD baseline yet.
+Snapshots are deterministic: fixtures use a fixed date (week of May 18, 2026), and the `dialFrozenDate` environment value pins sprite and overlay animation frames. If you add a `TimelineView` or a clock-driven animation, read `dialFrozenDate` so snapshots stay stable.
 
 ## Searching
 

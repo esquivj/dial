@@ -512,6 +512,11 @@ extension StatusBarController {
         library: coord.client,
         onReconnect: { [weak coord] in try await coord?.reconnectForLibraryAccess() },
         openHUD: { [weak self] in self?.togglePanel() },
+        toggleDesktopMemory: { [weak coord] in
+          guard let settings = coord?.settings else { return false }
+          settings.showDesktopMemory.toggle()
+          return settings.showDesktopMemory
+        },
         flash: { [weak self] content in self?.presentHotkeyFlash(content) })
       return HotkeyController(settings: coord.settings.hotkeys, router: router)
     }

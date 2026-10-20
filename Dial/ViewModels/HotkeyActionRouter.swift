@@ -4,7 +4,8 @@ import Foundation
 /// Turns a global hotkey press into the same command the HUD sends, plus a
 /// confirmation flash. Play, pause and skip go through `TransportCommands`
 /// (the transport row's code); like goes through `LikedTrackController`
-/// (the heart button's code).
+/// (the heart button's code); the desktop memory toggle flips the same
+/// setting as its switch in Settings.
 @MainActor
 final class HotkeyActionRouter {
   static let volumeStep = 5
@@ -16,6 +17,8 @@ final class HotkeyActionRouter {
   private let transport: PlaybackTransport
   private let liked: LikedTrackController
   private let openHUD: () -> Void
+  /// Flips Settings' Desktop memory switch and returns the new value.
+  private let toggleDesktopMemory: () -> Bool
   private let flash: (HotkeyFlashContent) -> Void
   private let now: () -> Date
 
@@ -32,6 +35,7 @@ final class HotkeyActionRouter {
     library: LikedLibrary,
     onReconnect: @escaping () async throws -> Void = {},
     openHUD: @escaping () -> Void,
+    toggleDesktopMemory: @escaping () -> Bool,
     flash: @escaping (HotkeyFlashContent) -> Void,
     now: @escaping () -> Date = Date.init
   ) {
@@ -39,6 +43,7 @@ final class HotkeyActionRouter {
     self.transport = transport
     self.liked = LikedTrackController(menubar: menubar, library: library, onReconnect: onReconnect)
     self.openHUD = openHUD
+    self.toggleDesktopMemory = toggleDesktopMemory
     self.flash = flash
     self.now = now
   }
@@ -70,6 +75,8 @@ final class HotkeyActionRouter {
       adjustVolume(up: false)
     case .openHUD:
       openHUD()
+    case .toggleDesktopMemory:
+      flash(toggleDesktopMemory() ? .desktopMemoryOn : .desktopMemoryOff)
     }
   }
 
