@@ -243,7 +243,7 @@ Dial uses material layering, not generic card shadows. Depth comes from transluc
 - **Color:** discovery badges usually cyan, first/new artist and pattern moments can be pink, milestones can use text-primary or special artifact color.
 - **Icon Rule:** badge icons are generated pixel assets, black-on-transparent template PNGs, tinted in code.
 - **Behavior:** badges should tell the user something personal about the current track. They are not achievements for their own sake.
-- **Future Direction:** badge memories should also unlock artifacts.
+- **Artifacts:** the first earned badge of each kind unlocks its artifact on the Pet screen's memory shelf (Deep cut → deep cut gem, 50th play → 50 play trophy). See Artifact Sprites.
 
 ### Readouts
 - **Shape:** one shared raised rail with `8px` corners and internal dividers.
@@ -268,7 +268,7 @@ Dial uses material layering, not generic card shadows. Depth comes from transluc
 - **Current Sheet:** `Dial/Resources/Artifacts/artifact_sheet_source.png`.
 - **Export Rule:** artifact files are 128x128 black-on-transparent template PNGs. White, checkerboard, glow, shading, labels, and antialiasing are removed before shipping.
 - **Visual Rule:** each artifact must read at 23-30pt. Use thick LCD object silhouettes, not tiny detailed illustrations.
-- **Meaning Rule:** artifacts are permanent memory objects unlocked by the first earned badge of each type or by a pet trick unlock. They should feel like room/shrine objects, not generic achievement icons.
+- **Meaning Rule:** artifacts are permanent memory objects unlocked by the first earned badge of each type, by a pet trick unlock, or by a weekly memory's memento (when living memories are on). They should feel like room/shrine objects, not generic achievement icons.
 
 ### Pet Room
 - **Direction:** PetView should become `ROOM`: an LCD pixel room first, then bond/action and evolution below.

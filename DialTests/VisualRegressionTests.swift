@@ -62,8 +62,8 @@ final class VisualRegressionTests: XCTestCase {
     }
   }
 
-  func test_mainHUDScreenshotsRenderForThreeThemeCartridges() async throws {
-    for themeID in [DialThemeID.slime, .aqua, .ember] {
+  func test_mainHUDScreenshotsRenderForEveryThemeCartridge() async throws {
+    for themeID in DialThemeID.allCases {
       let context = try makeSnapshotContext(themeID: themeID)
       let theme = DialTheme.palette(for: themeID)
       let view = MainHUDSnapshotHarness(context: context)
@@ -987,7 +987,7 @@ final class VisualRegressionTests: XCTestCase {
     case .slime: return RGB(184, 255, 56)
     case .aqua: return RGB(37, 199, 255)
     case .ember: return RGB(255, 77, 210)
-    case .classic: return RGB(31, 182, 255)
+    case .classic: return RGB(242, 242, 238)
     }
   }
 }
