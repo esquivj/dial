@@ -229,12 +229,12 @@ Twin matching treats two rows as one listen when they're for the same track and:
 | Rows | Same listen when |
 |---|---|
 | Any two | Same `played_at`, `track_uri` and `ms_played` (the unique index) |
-| `live` and `live` | Start times less than `d` apart |
+| `live` and `live` | Start times less than half the track's length apart, at most 60 s |
 | `recent` and any non-`recent` row | The other row's time is in [t − d − 5 s, t + d), where t is the `recent` row's time (the v18 window) |
-| Counted `import` and `live` | The same window, with t the import row's time (imports are end-stamped, like `recent` rows) |
+| Counted `import` and `live` | The live start is within the same half-length tolerance of the import's start: its time minus `ms_played` |
 | `import` and `import`, `recent` and `recent` | The exact key only; the same export or fetch gives the same row |
 
-`d` is the track's duration in seconds (at least 30 s), or 600 s if unknown, as in `PetEngine`'s recent-play rule. An incoming play with a twin here is skipped, and the local row stays. The check covers rows the merge has just added, and back-to-back replays exactly one duration apart stay two plays. Every lookup is a range scan on `plays_by_track`.
+Two Macs' start estimates for one live listen land seconds apart, and a replay starts a whole track later, so half the length tells them apart even for back-to-back repeats. An export row is stamped when the stream stopped and measures the time listened, so its listen started `ms_played` before its stamp. Imported skips (under 30 s and under half the track) never match. `d` is the track's duration in seconds (at least 30 s), or 600 s if unknown, as in `PetEngine`'s recent-play rule. An incoming play with a twin here is skipped, and the local row stays. The check covers rows the merge has just added. Every lookup is a range scan on `plays_by_track`.
 
 ### Donor and replay point
 
