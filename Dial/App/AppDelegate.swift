@@ -27,7 +27,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     ProcessInfo.processInfo.disableSuddenTermination()
 
     // Multi-Mac history (docs/design/multi-mac-history.md):
-    // `--export-archive <file>` writes a snapshot for another Mac to merge.
+    // `--export-archive <file>` writes a snapshot for another Mac to merge;
+    // `--merge-archive <file> [--dry-run] [--source-name <name>]` merges one.
     if let request = archiveRequestFromArgs() {
       runHeadlessArchive(request)
       return
@@ -332,16 +333,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     }
   }
 
-  // MARK: - Headless archive export
+  // MARK: - Headless archive export and merge
 
   private enum ArchiveRequest {
     case export(path: String)
+    case merge(path: String, dryRun: Bool, sourceName: String?)
   }
 
   private func archiveRequestFromArgs() -> ArchiveRequest? {
     let args = CommandLine.arguments
     if let path = Self.argumentValue("--export-archive", in: args) {
       return .export(path: path)
+    }
+    if let path = Self.argumentValue("--merge-archive", in: args) {
+      return .merge(
+        path: path,
+        dryRun: args.contains("--dry-run"),
+        sourceName: Self.argumentValue("--source-name", in: args))
     }
     return nil
   }
@@ -354,9 +362,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     return args.first { $0.hasPrefix("\(flag)=") }.map { String($0.dropFirst(flag.count + 1)) }
   }
 
-  /// Export reads the archive through a read-only connection, so it's safe
-  /// while the menu bar app is running.
+  /// Export and dry runs only read the archive, so they're safe while the
+  /// menu bar app is running. A real merge swaps the archive file, so it
+  /// refuses to run until Dial is quit.
   private func runHeadlessArchive(_ request: ArchiveRequest) {
+    if case let .merge(_, dryRun, _) = request, !dryRun {
+      let myPID = ProcessInfo.processInfo.processIdentifier
+      let bundleID = Bundle.main.bundleIdentifier ?? "com.dial.Dial"
+      let others = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID)
+        .filter { $0.processIdentifier != myPID }
+      if !others.isEmpty {
+        let pids = others.map { String($0.processIdentifier) }.joined(separator: ", ")
+        stderr("✗ Dial is already running (PID \(pids)). Quit it first, or add --dry-run.")
+        exit(1)
+      }
+    }
+
     Task { @MainActor in
       do {
         let archiveURL = try DatabaseStack.defaultURL()
@@ -366,6 +387,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
           stderr("→ Exporting \(archiveURL.path)")
           let info = try ArchiveExporter.export(archiveAt: archiveURL, to: destination)
           stderr("✓ Wrote \(destination.path): \(info.playCount.formatted()) plays from \(info.macName)")
+        case let .merge(path, dryRun, sourceName):
+          var options = ArchiveMerger.Options()
+          options.dryRun = dryRun
+          options.sourceName = sourceName
+          options.log = { [self] line in self.stderr(line) }
+          let snapshot = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
+          stderr("→ Merging into \(archiveURL.path)\(dryRun ? " (dry run)" : "")")
+          let report = try ArchiveMerger(archiveURL: archiveURL, snapshotURL: snapshot, options: options).run()
+          for line in report.summaryLines() {
+            stderr(line)
+          }
         }
         exit(0)
       } catch {

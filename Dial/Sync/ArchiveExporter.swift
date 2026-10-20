@@ -45,6 +45,7 @@ enum ArchiveError: Error, Equatable, CustomStringConvertible {
   case missingFile(String)
   case destinationExists(String)
   case notAnArchive(String)
+  case historyExport(String)
   case damaged(String)
   case newerSchema([String])
   case sameMac
@@ -59,6 +60,9 @@ enum ArchiveError: Error, Equatable, CustomStringConvertible {
       return "\(path) already exists. Choose a new file name."
     case let .notAnArchive(name):
       return "\(name) isn't a Dial archive."
+    case let .historyExport(name):
+      return "\(name) is a Dial History export, which has plays but no memories or pet. "
+        + "Merge a full copy of the other Mac's dial.sqlite instead."
     case let .damaged(detail):
       return "The snapshot failed its integrity check: \(detail)"
     case let .newerSchema(migrations):

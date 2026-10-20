@@ -2,7 +2,7 @@
 
 Dial now runs on two Macs: the first Mac, which holds the archive, and a Mac mini installed on 2026-10-19. Each keeps its own `~/Library/Application Support/Dial/dial.sqlite` (`DatabaseStack.defaultURL()`), so the Mac mini started with no history and the two archives drift as both record. This doc maps what is per-Mac today, what already converges, the options, and a recommendation with a build plan.
 
-Status: proposal, 2026-10-19. Nothing here is built. Change this file first when a decision here changes.
+Status: Phase 1 steps 1–6 built, 2026-10-20. Steps 7 and 8 (the real-data dry run and the seed) are next. Change this file first when a decision here changes.
 
 ## The short version
 
@@ -204,11 +204,12 @@ Until it ships:
 
 - `Dial --export-archive <file>` runs `VACUUM INTO`, which gives a consistent single file, includes what's still in the WAL, and is safe while Dial runs. It then adds a `dial_archive_info` table: Mac id and name, export time, the last migration applied, and the play count. The file is a plain SQLite database named `*.dialarchive`. No secrets live in the database, so none travel.
 - **Mac id:** a hash of the hardware `IOPlatformUUID`, which stays the same for the life of the machine. It isn't stored in the database or `UserDefaults`, so neither a database copy nor Migration Assistant can clone it. The computer name is used for display.
-- **The merge refuses** a snapshot that fails `PRAGMA integrity_check`, one with migrations this build doesn't know ("Update Dial on this Mac first"), or one from this same Mac.
+- **A plain copy works too.** `sqlite3 dial.sqlite "VACUUM INTO '…'"` on the other Mac needs no new Dial there. It has no `dial_archive_info`, so pass `--source-name "<name>"`; its plays get the origin `unidentified:<name>`.
+- **The merge refuses** a snapshot that fails `PRAGMA integrity_check`, one with migrations this build doesn't know ("Update Dial on this Mac first"), one from this same Mac, and a Dial History export (`integrations/dial_history`), which has plays but no memories or pet.
 
 ### Order of steps
 
-`Dial --merge-archive <file> [--dry-run]` refuses to run while Dial is running, as `--import` does. It first backs up the archive (`VACUUM INTO` to `Dial/Backups/dial-before-merge-<time>.sqlite`). It then makes a working copy, attaches the snapshot read-only, and runs these steps on the copy:
+`Dial --merge-archive <file> [--dry-run] [--source-name <name>]` only ever reads the archive. A real merge refuses to run while Dial is running, as `--import` does; a dry run is safe while it runs. The merge makes a working copy of the archive in `Dial/Merging/`, attaches a copy of the snapshot, and runs these steps on the working copy:
 
 1. **Metadata:** union `tracks` and `artists` with the `Track.mergeUpsert` rule (fill blanks, never overwrite). Union the tag and enrichment tables; the newer `fetched_at` wins per key. Then run `ArtistIdentityRepair.rebuildAliases`.
 2. **Plays:** walk the snapshot's plays oldest first. Skip any play that has a twin here; otherwise insert it with `origin` set to the Mac that first recorded it.
@@ -220,7 +221,7 @@ Until it ships:
 8. **Artifacts:** delete them all and rebuild with `ArtifactsDAO.syncFromMemoriesAndTricks`.
 9. **Log:** write one `archive_merges` row: when, which Mac, the snapshot's time, plays added, the donor and the replay point.
 
-The working copy replaces `dial.sqlite` only after `PRAGMA integrity_check` passes and the play counts add up (plays before plus plays added equals plays after). The memory replay uses a second, throwaway copy, so no play in the archive is ever deleted or renumbered: deleting a play would cascade to its scrobble row. `VACUUM INTO` keeps `INTEGER PRIMARY KEY` ids, so play and queue ids survive the swap. If anything fails, `dial.sqlite` is left as it was.
+A dry run prints its report and deletes the working copy. A real merge goes on only if `PRAGMA integrity_check` passes, the play counts add up (plays before plus plays added equals plays after), and the archive hasn't changed since the working copy was taken. It then backs the archive up (`VACUUM INTO` to `Dial/Backups/dial-before-merge-<time>.sqlite`), deletes the archive's old `-wal` and `-shm`, and swaps the working copy in. The memory replay uses a second, throwaway copy, so no play in the archive is ever deleted or renumbered: deleting a play would cascade to its scrobble row. `VACUUM INTO` keeps `INTEGER PRIMARY KEY` ids, so play and queue ids survive the swap. If anything fails, `dial.sqlite` is left as it was.
 
 ### Twins
 
@@ -305,12 +306,12 @@ Live or real-time sync. Merging settings, Last.fm state or the recent-play curso
 - A dry run against a copy of the real archive before any real merge (step 7).
 - After the seed (step 8), on both Macs: the same lifetime and year-to-date totals in Stats, the same memory and artifact counts, pet XP within a few points, no false First Listens from the Mac mini's first day, and unchanged Last.fm queues.
 
-## Code map (proposed)
+## Code map
 
 | File | Role |
 |---|---|
 | `Dial/Sync/MacIdentity.swift` | Per-Mac id and display name |
-| `Dial/Sync/ArchiveExporter.swift` | `VACUUM INTO` plus `dial_archive_info` |
+| `Dial/Sync/ArchiveExporter.swift` | `VACUUM INTO` plus `dial_archive_info`; `ArchiveInfo`, `ArchiveError`, `ArchiveFiles` |
 | `Dial/Sync/PlayTwinMatcher.swift` | When two rows are one listen |
 | `Dial/Sync/ArchiveMerger.swift` | Merge steps, backup, dry-run report |
 | `Dial/Sync/MemoryReplay.swift` | Replays memories from `w` in a throwaway copy |
@@ -319,4 +320,4 @@ Live or real-time sync. Merging settings, Last.fm state or the recent-play curso
 | `Dial/Store/DAO/ScrobbleQueueDAO.swift` | `origin IS NULL` guard |
 | `Dial/App/AppDelegate.swift` | `--export-archive`, `--merge-archive`, `--dry-run` |
 
-Tests: `PlayTwinMatcherTests`, `ArchiveExporterTests`, `ArchiveMergerTests` (including replay equivalence and the seed case), `PetMergeTests`, and the v19 cases in the migration and `ScrobbleQueueDAO` tests.
+Tests: `MacIdentityTests`, `PlayTwinMatcherTests`, `ArchiveExporterTests`, `ArchiveMergerTests` (replay equivalence across all eight memory kinds, the seed case, the pet rules, idempotence and refusals), `ScrobbleQueueDAOTests`, and the v19 case in `DatabaseStackTests`.
