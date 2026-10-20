@@ -9,9 +9,9 @@ import SwiftUI
 ///
 /// The strip never takes focus and never activates Dial: it's a
 /// borderless non-activating panel that can't become key. The only thing
-/// it reacts to is a click, which opens the HUD. It slides down a few
-/// points while fading in, holds, then fades out. With Reduce Motion on it
-/// only fades.
+/// it reacts to is a click (or VoiceOver's press on a memory pop-up),
+/// which opens the HUD. It slides down a few points while fading in,
+/// holds, then fades out. With Reduce Motion on it only fades.
 final class MemoryPopupController {
   struct Timing {
     let fadeIn: TimeInterval
@@ -44,17 +44,14 @@ final class MemoryPopupController {
     clickView = MemoryPopupClickView(frame: NSRect(origin: .zero, size: size))
     clickView.autoresizingMask = [.width, .height]
     panel.contentView = clickView
-    clickView.onClick = { [weak self] in
-      self?.dismiss(animated: false)
-      self?.onClick?()
-    }
+    clickView.onClick = { [weak self] in self?.open() }
   }
 
   /// - Parameter anchor: the status item button's frame in screen coordinates.
   func show(_ content: MemoryPopupContent, theme: DialTheme, below anchor: NSRect, on screen: NSScreen?) {
     present(
       .memory,
-      view: MemoryPopupView(content: content),
+      view: MemoryPopupView(content: content, onOpen: { [weak self] in self?.open() }),
       size: MemoryPopupView.size,
       timing: .memory,
       theme: theme,
@@ -122,6 +119,13 @@ final class MemoryPopupController {
     hideTimer = Timer.scheduledTimer(withTimeInterval: timing.fadeIn + timing.hold, repeats: false) { [weak self] _ in
       self?.dismiss(animated: true)
     }
+  }
+
+  /// A click on the strip, or VoiceOver's press on a memory pop-up: put
+  /// the strip away and open the HUD.
+  private func open() {
+    dismiss(animated: false)
+    onClick?()
   }
 
   func dismiss(animated: Bool) {
@@ -192,6 +196,13 @@ private final class MemoryPopupClickView: NSView {
   override func hitTest(_ point: NSPoint) -> NSView? {
     // `point` is in the superview's coordinates, like `frame`.
     frame.contains(point) ? self : nil
+  }
+
+  /// VoiceOver finds what's under the pointer with an accessibility hit
+  /// test. `hitTest` returns this view, which VoiceOver skips, so the test
+  /// would land on the window; send it to the SwiftUI strip instead.
+  override func accessibilityHitTest(_ point: NSPoint) -> Any? {
+    host?.accessibilityHitTest(point) ?? super.accessibilityHitTest(point)
   }
 
   override func mouseDown(with event: NSEvent) {}

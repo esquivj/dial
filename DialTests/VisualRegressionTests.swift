@@ -142,7 +142,7 @@ final class VisualRegressionTests: XCTestCase {
     let size = CGSize(width: MemoryPopupView.size.width + 40, height: MemoryPopupView.size.height + 40)
     let view = ZStack {
       Color(red: 0.86, green: 0.87, blue: 0.89)
-      MemoryPopupView(content: content)
+      MemoryPopupView(content: content, onOpen: {})
     }
     .environment(\.dialTheme, .classic)
     .preferredColorScheme(.dark)
@@ -213,7 +213,7 @@ final class VisualRegressionTests: XCTestCase {
     func row(_ cells: [Cell], desktop: Color) -> some View {
       HStack(spacing: 0) {
         ForEach(cells.indices, id: \.self) { index in
-          DesktopMemoryView(content: cells[index].content, artwork: cells[index].artwork)
+          DesktopMemoryView(content: cells[index].content, artwork: cells[index].artwork, onOpen: {})
             .environment(\.dialTheme, cells[index].theme)
             .frame(width: cell.width, height: cell.height)
         }

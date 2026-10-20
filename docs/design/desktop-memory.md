@@ -66,7 +66,7 @@ A new track's memory (badge, plays, last played) lands a moment after the track 
 - Follows the HUD theme, like memory pop-ups (`AppCoordinator.readoutTheme`).
 - Track changes crossfade art and text in 0.22 s (as `TrackHero`); the snap animates in 0.2 s. Both are instant with Reduce Motion.
 - No timers, meters or progress: it redraws only when the track, play state or memory changes.
-- One VoiceOver element: "Rediscovered: Last played Mar 2023. Kiss Me Thru the Phone · Soulja Boy", button trait, hint "Opens Dial."
+- One VoiceOver element: "Rediscovered: Last played Mar 2023. Kiss Me Thru the Phone · Soulja Boy", button trait, hint "Opens Dial." VoiceOver's press (VO-Space) opens the HUD, the same as a click. The AppKit host view takes every mouse event, so the SwiftUI element carries its own press action (`DesktopMemoryView.onOpen`), and the host view passes VoiceOver's hit test on to that element: moving the VoiceOver cursor to the pointer lands on the object, not its window. The memory pop-up works the same way; its press closes the strip and opens the HUD, like its click.
 - State is never color alone: stamps are words (plus a sprite for memories), and paused or not playing are words plus dimming.
 
 ## Settings and shortcut
@@ -82,9 +82,9 @@ Transport or hover controls, free placement, a second size, hiding from screen r
 ## Verification
 
 - Unit tests for the LCD content rules and for snapping (nearest corner, visible-area insets, missing display).
-- Unit tests for the shortcut: its default, routing, and the flash for each state.
+- Unit tests for the shortcut (its default, routing, and the flash for each state) and for VoiceOver on the object and the memory pop-up: a hit test at the center lands on the button, and pressing it opens the HUD.
 - Visual baseline `dial-desktop-memory`: every state above on a light and a dark desktop.
-- In the running app: under all windows, on every Space, steady through Mission Control and Show Desktop, drag and snap on both displays, click opens the HUD, right-click hides it, ⌃⌥⌘M hides and shows it with a flash.
+- In the running app: under all windows, on every Space, steady through Mission Control and Show Desktop, drag and snap on both displays, click opens the HUD, right-click hides it, ⌃⌥⌘M hides and shows it with a flash, VoiceOver's press opens the HUD.
 
 ## Code map
 
@@ -102,4 +102,4 @@ Transport or hover controls, free placement, a second size, hiding from screen r
 | `Dial/App/StatusBarController.swift` | `startHotkeys`: gives the router the `showDesktopMemory` switch |
 | `Dial/Views/MemoryPopup/HotkeyFlashView.swift` | `desktopMemoryOn` and `desktopMemoryOff` flashes |
 
-Tests: `DesktopMemoryContentTests`, `DesktopMemoryPlacementTests`, the desktop memory cases in `SettingsViewModelTests`, `HotkeyActionRouterTests` and `HotkeySettingsTests`, and `VisualRegressionTests.test_desktopMemoryRendersStates`.
+Tests: `DesktopMemoryContentTests`, `DesktopMemoryPlacementTests`, the desktop memory cases in `SettingsViewModelTests`, `HotkeyActionRouterTests` and `HotkeySettingsTests`, `VoiceOverPressTests`, and `VisualRegressionTests.test_desktopMemoryRendersStates`.
