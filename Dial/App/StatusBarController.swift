@@ -238,6 +238,13 @@ final class StatusBarController {
     }
   }
 
+  /// Opens the HUD unless it's already open. The desktop memory object
+  /// uses this: clicking it should never close the HUD.
+  func openHUD() {
+    guard !panel.isVisible else { return }
+    showPanel(screen: coord?.settings.defaultDropdownScreen.screen ?? .hud)
+  }
+
   /// Show the panel positioned directly under the status item button,
   /// clamped to screen bounds so it doesn't overflow when the menubar
   /// item is near the right edge of the display.

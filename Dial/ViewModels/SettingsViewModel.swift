@@ -248,6 +248,19 @@ final class SettingsViewModel {
   var showDockArtwork: Bool {
     didSet { defaults.set(showDockArtwork, forKey: Key.showDockArtwork) }
   }
+  /// Keep the current album and its memory on the desktop, under every
+  /// window (docs/design/desktop-memory.md).
+  var showDesktopMemory: Bool {
+    didSet { defaults.set(showDesktopMemory, forKey: Key.showDesktopMemory) }
+  }
+  /// The corner the desktop memory object snaps to.
+  var desktopMemoryCorner: DesktopMemoryCorner {
+    didSet { defaults.set(desktopMemoryCorner.rawValue, forKey: Key.desktopMemoryCorner) }
+  }
+  /// The display it sits on; 0 means the main display.
+  var desktopMemoryDisplayID: UInt32 {
+    didSet { defaults.set(Int(desktopMemoryDisplayID), forKey: Key.desktopMemoryDisplayID) }
+  }
 
   var defaultDropdownScreen: DefaultDropdownScreen {
     didSet { defaults.set(defaultDropdownScreen.rawValue, forKey: Key.defaultDropdownScreen) }
@@ -402,6 +415,10 @@ final class SettingsViewModel {
     self.showProgressInMenuBar = Self.boolValue(Key.showProgressInMenuBar, default: false, defaults: defaults)
     self.flashOnTrackChange = Self.boolValue(Key.flashOnTrackChange, default: true, defaults: defaults)
     self.showDockArtwork = Self.boolValue(Key.showDockArtwork, default: true, defaults: defaults)
+    self.showDesktopMemory = Self.boolValue(Key.showDesktopMemory, default: true, defaults: defaults)
+    self.desktopMemoryCorner = Self.enumValue(
+      DesktopMemoryCorner.self, key: Key.desktopMemoryCorner, default: .bottomRight, defaults: defaults)
+    self.desktopMemoryDisplayID = UInt32(clamping: defaults.integer(forKey: Key.desktopMemoryDisplayID))
 
     self.defaultDropdownScreen = Self.enumValue(
       DefaultDropdownScreen.self, key: Key.defaultDropdownScreen, default: .hud, defaults: defaults)
@@ -485,6 +502,7 @@ final class SettingsViewModel {
     showProgressInMenuBar = false
     flashOnTrackChange = true
     showDockArtwork = true
+    showDesktopMemory = true
   }
 
   func resetHUDDefaults() {
@@ -631,6 +649,9 @@ final class SettingsViewModel {
     static let showProgressInMenuBar = "settings.showProgressInMenuBar"
     static let flashOnTrackChange = "settings.flashOnTrackChange"
     static let showDockArtwork = "settings.showDockArtwork"
+    static let showDesktopMemory = "settings.showDesktopMemory"
+    static let desktopMemoryCorner = "settings.desktopMemoryCorner"
+    static let desktopMemoryDisplayID = "settings.desktopMemoryDisplayID"
 
     static let defaultDropdownScreen = "settings.defaultDropdownScreen"
     static let showReadoutsInHUD = "settings.showReadoutsInHUD"

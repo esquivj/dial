@@ -56,6 +56,11 @@ final class AppCoordinator {
   private var playbackReducer = PlaybackStateReducer()
   private var memoryPopupGate = MemoryPopupGate()
 
+  /// The track whose memory `aggCache` holds right now. A new track's
+  /// aggregates land a moment after the track itself, so surfaces that
+  /// show both (the desktop memory object) wait until this matches.
+  private(set) var aggregatesTrackUri: String?
+
   /// Shows the track-change memory pop-up. Set by `StatusBarController`;
   /// while it's nil no pop-up can show.
   weak var memoryPopupPresenter: MemoryPopupPresenting?
@@ -275,6 +280,7 @@ final class AppCoordinator {
           trackUri: nowPlaying.track?.uri,
           artistUri: nowPlaying.track?.artistUri,
           currentPlayAt: currentTrackCountedAt)
+        aggregatesTrackUri = nowPlaying.track?.uri
         refreshCurrentSoundTheme(allowFallback: false)
         nowPlaying.playsYTD = aggCache.playsYTD
         menubar.playsYTD = aggCache.playsYTD
@@ -384,6 +390,7 @@ final class AppCoordinator {
         trackUri: nowPlaying.track?.uri,
         artistUri: nowPlaying.track?.artistUri,
         currentPlayAt: currentTrackCountedAt)
+      aggregatesTrackUri = nowPlaying.track?.uri
       refreshCurrentSoundTheme(allowFallback: false)
       nowPlaying.playsYTD = aggCache.playsYTD
       menubar.playsYTD = aggCache.playsYTD
@@ -466,6 +473,7 @@ final class AppCoordinator {
       await MainActor.run {
         if trackChanged {
           currentTrackCountedAt = nil
+          aggregatesTrackUri = nil
           resetMemoryPopup(forTrack: uri)
           menubar.setOptimisticProgress(0)
           clearAmbientTrick()
@@ -594,6 +602,7 @@ final class AppCoordinator {
         await MainActor.run {
           guard self.nowPlaying.track?.uri == uri else { return }
           self.aggCache.apply(aggregationSnapshot)
+          self.aggregatesTrackUri = uri
           self.applySoundThemeDecision(soundThemeDecision)
           self.warmCurrentSoundTags(for: resolvedArtists)
           self.nowPlaying.playsYTD = self.aggCache.playsYTD
@@ -659,6 +668,7 @@ final class AppCoordinator {
         pet.currentBPM = nil
         lastFM.stopped()
         aggCache.refresh(trackUri: nil, artistUri: nil, currentPlayAt: nil)
+        aggregatesTrackUri = nil
         resolvePetBehavior()
       }
       visiblePublishPerf?.end()
@@ -751,6 +761,7 @@ final class AppCoordinator {
       if stillCurrent {
         currentTrackCountedAt = currentPlayAt
         aggCache.apply(aggregationSnapshot)
+        aggregatesTrackUri = uri
         nowPlaying.playsYTD = aggCache.playsYTD
         menubar.playsYTD = aggCache.playsYTD
       }

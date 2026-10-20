@@ -11,6 +11,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
   @Published var coordinator: AppCoordinator?
   private var statusBar: StatusBarController?
   private var dockIcon: DockIconController?
+  private var desktopMemory: DesktopMemoryController?
   private var perfAutomationTask: Task<Void, Never>?
   private static let perfAutomationFlagURL = URL(fileURLWithPath: "/tmp/dial-perf-automation")
 
@@ -61,8 +62,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
       let client = SpotifyClient(tokenStore: tokens, refresh: { try await auth.refresh() })
       let coord = AppCoordinator(dbq: dbq, client: client, auth: auth, tokenStore: tokens)
       self.coordinator = coord
-      self.statusBar = StatusBarController(coord: coord)
+      let statusBar = StatusBarController(coord: coord)
+      self.statusBar = statusBar
       self.dockIcon = DockIconController(coord: coord)
+      self.desktopMemory = DesktopMemoryController(coord: coord) { [weak statusBar] in
+        statusBar?.openHUD()
+      }
 
       // If a token's already in the keychain, start polling immediately.
       // Otherwise present Settings so the user can sign in — without a token,

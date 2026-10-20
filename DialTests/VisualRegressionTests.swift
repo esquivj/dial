@@ -176,6 +176,63 @@ final class VisualRegressionTests: XCTestCase {
     try assertMatchesBaseline(image, name: snapshotName)
   }
 
+  /// Every desktop memory state from docs/design/desktop-memory.md. The top
+  /// row sits on a light desktop, the bottom on a dark one, so the chassis
+  /// edge and contact shadow are checked on both.
+  func test_desktopMemoryRendersStates() throws {
+    let art = NSImage(contentsOf: try StateGridFixtures.makeArtworkFile())
+    let soulja = DesktopMemoryContent.Track(
+      uri: "spotify:track:soulja", name: "Kiss Me Thru the Phone", artistName: "Soulja Boy", artUrl: "fixture")
+    let frank = DesktopMemoryContent.Track(
+      uri: "spotify:track:frank", name: "Pink + White", artistName: "Frank Ocean", artUrl: "fixture")
+    let long = DesktopMemoryContent.Track(
+      uri: "spotify:track:long", name: "Everything In Its Right Place (Live in Paris, 2001)",
+      artistName: "Radiohead", artUrl: nil)
+    let rediscovered = DesktopMemoryContent.Stamp.memory(
+      kind: .rediscovered, label: "REDISCOVERED", line: "Last played Mar 2023")
+
+    typealias Cell = (content: DesktopMemoryContent, artwork: NSImage?, theme: DialTheme)
+    let light: [Cell] = [
+      (.init(playback: .playing, stamp: rediscovered, track: soulja), art, .classic),
+      (.init(playback: .playing,
+             stamp: .memory(kind: .firstListen, label: "FIRST LISTEN", line: "New to your history"),
+             track: frank), art, .classic),
+      (.init(playback: .playing, stamp: .yearToDate(plays: 12), track: soulja), art, .classic),
+      (.init(playback: .paused,
+             stamp: .memory(kind: .play50, label: "50TH PLAY", line: "50th lifetime play today"),
+             track: soulja), art, .classic),
+    ]
+    let dark: [Cell] = [
+      (.init(playback: .notPlaying, stamp: .notPlaying, track: soulja), art, .classic),
+      (.init(playback: .notPlaying, stamp: .notPlaying, track: nil), nil, .classic),
+      (.init(playback: .playing, stamp: .yearToDate(plays: 0), track: long), nil, .classic),
+      (.init(playback: .playing, stamp: rediscovered, track: soulja), art, .aqua),
+    ]
+
+    let cell = DesktopMemoryMetrics.windowSize
+    func row(_ cells: [Cell], desktop: Color) -> some View {
+      HStack(spacing: 0) {
+        ForEach(cells.indices, id: \.self) { index in
+          DesktopMemoryView(content: cells[index].content, artwork: cells[index].artwork)
+            .environment(\.dialTheme, cells[index].theme)
+            .frame(width: cell.width, height: cell.height)
+        }
+      }
+      .background(desktop)
+    }
+    let view = VStack(spacing: 0) {
+      row(light, desktop: Color(red: 0.86, green: 0.87, blue: 0.89))
+      row(dark, desktop: Color(red: 0.11, green: 0.12, blue: 0.14))
+    }
+    .preferredColorScheme(.dark)
+
+    let size = CGSize(width: cell.width * 4, height: cell.height * 2)
+    let image = try render(view, size: size)
+    let snapshotName = "dial-desktop-memory"
+    try attach(image, name: snapshotName)
+    try assertMatchesBaseline(image, name: snapshotName)
+  }
+
   func test_petScreenRendersCompactLivingMemoryLog() throws {
     let context = try makeSnapshotContext(themeID: .slime)
     let memories = try seedWeeklyMemoryLog(in: context.dbq)
