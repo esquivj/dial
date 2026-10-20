@@ -90,7 +90,8 @@ final class AppCoordinator {
   var lastSuccessfulPoll: Date?
 
   /// Which feed answers for now-playing: the Spotify app (local, instant)
-  /// or the Web API. Settings uses it to explain a denied Automation grant.
+  /// or the Web API. Settings re-checks the Automation permission when it
+  /// changes.
   var playbackSource: PlaybackSourceStatus = .webAPI(.noLocalSource)
 
   init(

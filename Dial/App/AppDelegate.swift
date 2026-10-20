@@ -461,6 +461,13 @@ final class SettingsWindowPresenter: NSObject, NSWindowDelegate {
     present(window)
   }
 
+  /// Settings floats so it opens in front, but that would also keep it over
+  /// System Settings when a button sends the user there. Drops it to the
+  /// normal level until the next `show`.
+  func stopFloating() {
+    window?.level = .normal
+  }
+
   func windowWillClose(_ notification: Notification) {
     window = nil
   }

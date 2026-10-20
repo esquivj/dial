@@ -55,9 +55,6 @@ struct SettingsStatusPanel: View {
           if let lastRefresh {
             statusRow("Last check", value: lastSyncLabel(last: lastRefresh, now: ctx.date))
           }
-          if coord.playbackSource == .webAPI(.accessDenied) {
-            spotifyAppAccessNote
-          }
 
           Divider()
             .overlay(SettingsPalette.rule)
@@ -92,22 +89,6 @@ struct SettingsStatusPanel: View {
     }
     .task { await refreshEnrichmentLoop() }
   }
-
-  /// Shown only while macOS blocks Dial from reading the Spotify app.
-  private var spotifyAppAccessNote: some View {
-    Text(Self.spotifyAppAccessNoteText)
-      .font(SettingsType.caption)
-      .foregroundStyle(SettingsPalette.muted)
-      .tint(SettingsPalette.accent)
-      .fixedSize(horizontal: false, vertical: true)
-  }
-
-  static let spotifyAppAccessNoteText: AttributedString = {
-    let markdown = "Dial can't read the Spotify app, so updates are slower. "
-      + "Turn on Spotify under Dial in [Privacy & Security › Automation]"
-      + "(x-apple.systempreferences:com.apple.preference.security?Privacy_Automation)."
-    return (try? AttributedString(markdown: markdown)) ?? AttributedString(markdown)
-  }()
 
   private func statusRow(_ label: String, value: String) -> some View {
     HStack {

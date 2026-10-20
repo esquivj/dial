@@ -62,6 +62,10 @@ final class AudioCaptureEngine: NSObject, AudioCapturing, SCStreamOutput, SCStre
   var onStop: (@Sendable (Error) -> Void)?
 
   func start() async throws {
+    // The first content request is what makes macOS ask for Screen
+    // Recording. Settings needs this to tell "not asked yet" from "not
+    // allowed", which CGPreflightScreenCaptureAccess() can't.
+    ScreenRecordingAccess.noteRequested()
     let content = try await SCShareableContent.excludingDesktopWindows(
       false, onScreenWindowsOnly: false)
     guard let display = content.displays.first else {

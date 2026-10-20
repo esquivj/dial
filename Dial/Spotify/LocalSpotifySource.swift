@@ -177,7 +177,10 @@ final class SpotifyAppleEventsSource: LocalPlaybackSource, @unchecked Sendable {
     }
   }
 
-  private static func permissionStatus(askUserIfNeeded: Bool) -> OSStatus {
+  /// Asks macOS whether Dial may send Apple Events to Spotify. With
+  /// `askUserIfNeeded: false` it never prompts, which is how Settings reads
+  /// the permission (`PermissionStatus(automation:)`).
+  static func permissionStatus(askUserIfNeeded: Bool) -> OSStatus {
     let target = NSAppleEventDescriptor(bundleIdentifier: bundleIdentifier)
     guard let desc = target.aeDesc else { return OSStatus(procNotFound) }
     return AEDeterminePermissionToAutomateTarget(
