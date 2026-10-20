@@ -20,9 +20,10 @@ struct LastScrobble: Equatable {
 struct ScrobbleQueueDAO {
   let dbq: DatabaseQueue
 
-  /// Queues one play. Only `live` plays qualify: imported history and
-  /// recently-played sync rows are never scrobbled. Returns false when the
-  /// play isn't live or is already queued.
+  /// Queues one play. Only `live` plays recorded on this Mac qualify:
+  /// imported history, recently-played sync rows and plays merged in from
+  /// another Mac's archive (`origin` set) are never scrobbled. Returns false
+  /// when the play doesn't qualify or is already queued.
   @discardableResult
   func enqueue(
     playId: Int64,
@@ -38,7 +39,7 @@ struct ScrobbleQueueDAO {
           (play_id, track_uri, artist, track, album, duration_ms, played_at, queued_at)
         SELECT p.id, p.track_uri, ?, ?, ?, ?, p.played_at, ?
         FROM plays p
-        WHERE p.id = ? AND p.source = 'live'
+        WHERE p.id = ? AND p.source = 'live' AND p.origin IS NULL
         """, arguments: [artist, track, album, durationMs, now, playId])
       return db.changesCount > 0
     }
