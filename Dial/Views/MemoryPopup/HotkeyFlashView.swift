@@ -19,6 +19,8 @@ struct HotkeyFlashContent: Equatable {
   static let noTrack = HotkeyFlashContent(symbol: "music.note", label: "NO TRACK", tone: .muted)
   static let reconnect = HotkeyFlashContent(symbol: "heart.slash", label: "RECONNECT", tone: .muted)
   static let noPlayer = HotkeyFlashContent(symbol: "exclamationmark.triangle", label: "NO PLAYER", tone: .muted)
+  static let desktopMemoryOn = HotkeyFlashContent(symbol: "rectangle.inset.filled", label: "DESKTOP MEMORY ON")
+  static let desktopMemoryOff = HotkeyFlashContent(symbol: "rectangle.inset.filled", label: "DESKTOP MEMORY OFF", tone: .muted)
 
   static func volume(_ percent: Int) -> HotkeyFlashContent {
     let clamped = max(0, min(100, percent))

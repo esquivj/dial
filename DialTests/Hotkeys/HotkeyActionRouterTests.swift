@@ -8,6 +8,7 @@ final class HotkeyActionRouterTests: XCTestCase {
   private var library: FakeLibrary!
   private var flashes: [HotkeyFlashContent] = []
   private var hudOpens = 0
+  private var desktopMemoryShown = true
   private var reconnects = 0
   private var clock = Date(timeIntervalSince1970: 1_000_000)
 
@@ -21,6 +22,7 @@ final class HotkeyActionRouterTests: XCTestCase {
     library = FakeLibrary()
     flashes = []
     hudOpens = 0
+    desktopMemoryShown = true
     reconnects = 0
   }
 
@@ -31,6 +33,11 @@ final class HotkeyActionRouterTests: XCTestCase {
       library: library,
       onReconnect: { [weak self] in await MainActor.run { self?.reconnects += 1 } },
       openHUD: { [weak self] in self?.hudOpens += 1 },
+      toggleDesktopMemory: { [weak self] in
+        guard let self else { return false }
+        self.desktopMemoryShown.toggle()
+        return self.desktopMemoryShown
+      },
       flash: { [weak self] in self?.flashes.append($0) },
       now: { [weak self] in self?.clock ?? Date() })
   }
@@ -77,6 +84,27 @@ final class HotkeyActionRouterTests: XCTestCase {
     XCTAssertEqual(hudOpens, 1)
     XCTAssertTrue(flashes.isEmpty)
     XCTAssertTrue(transport.calls.isEmpty)
+  }
+
+  // MARK: - Desktop memory
+
+  func test_desktopMemoryToggleHidesThenShowsAndSaysWhichInWords() {
+    let router = makeRouter()
+    router.perform(.toggleDesktopMemory)
+    XCTAssertFalse(desktopMemoryShown)
+    router.perform(.toggleDesktopMemory)
+    XCTAssertTrue(desktopMemoryShown)
+
+    XCTAssertEqual(flashes, [.desktopMemoryOff, .desktopMemoryOn])
+    XCTAssertEqual(flashes.map(\.label), ["DESKTOP MEMORY OFF", "DESKTOP MEMORY ON"])
+    XCTAssertEqual(flashes.map(\.tone), [.muted, .primary])
+  }
+
+  func test_desktopMemoryToggleSendsNoCommandAndLeavesTheHUDAlone() {
+    makeRouter().perform(.toggleDesktopMemory)
+    XCTAssertTrue(transport.calls.isEmpty)
+    XCTAssertTrue(library.calls.isEmpty)
+    XCTAssertEqual(hudOpens, 0)
   }
 
   // MARK: - Like

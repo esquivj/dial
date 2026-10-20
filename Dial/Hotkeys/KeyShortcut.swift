@@ -132,7 +132,7 @@ struct KeyShortcut: Codable, Hashable {
 
   /// US-layout names, for when the layout can't be read.
   private static let fallbackCharacters: [Int: String] = [
-    kVK_ANSI_P: "P", kVK_ANSI_L: "L", kVK_ANSI_D: "D",
+    kVK_ANSI_P: "P", kVK_ANSI_L: "L", kVK_ANSI_D: "D", kVK_ANSI_M: "M",
     kVK_ANSI_LeftBracket: "[", kVK_ANSI_RightBracket: "]",
     kVK_ANSI_Equal: "=", kVK_ANSI_Minus: "-",
   ]
