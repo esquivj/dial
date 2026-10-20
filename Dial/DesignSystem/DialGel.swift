@@ -264,6 +264,9 @@ struct PrintedChipMaterial<S: Shape>: ViewModifier {
 
 struct MediaFrameMaterial<S: Shape>: ViewModifier {
   var shape: S
+  /// The small corner glare sized for HUD artwork. Larger media turns it
+  /// into a visible block, so it can be switched off.
+  var showsGloss = true
 
   func body(content: Content) -> some View {
     content
@@ -278,17 +281,19 @@ struct MediaFrameMaterial<S: Shape>: ViewModifier {
           .allowsHitTesting(false)
       )
       .overlay(alignment: .topLeading) {
-        LinearGradient(
-          colors: [
-            Color.white.opacity(0.30),
-            Color.white.opacity(0.10),
-            Color.clear,
-          ],
-          startPoint: .topLeading,
-          endPoint: .bottomTrailing)
-          .frame(width: 54, height: 26)
-          .clipShape(shape)
-          .allowsHitTesting(false)
+        if showsGloss {
+          LinearGradient(
+            colors: [
+              Color.white.opacity(0.30),
+              Color.white.opacity(0.10),
+              Color.clear,
+            ],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing)
+            .frame(width: 54, height: 26)
+            .clipShape(shape)
+            .allowsHitTesting(false)
+        }
       }
       .overlay(
         shape
@@ -361,8 +366,8 @@ extension View {
       edgeOpacity: edgeOpacity))
   }
 
-  func dialMediaFrame<S: Shape>(shape: S) -> some View {
-    self.modifier(MediaFrameMaterial(shape: shape))
+  func dialMediaFrame<S: Shape>(shape: S, showsGloss: Bool = true) -> some View {
+    self.modifier(MediaFrameMaterial(shape: shape, showsGloss: showsGloss))
   }
 
 }

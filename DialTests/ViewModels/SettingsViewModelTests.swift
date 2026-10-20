@@ -106,6 +106,37 @@ final class SettingsViewModelTests: XCTestCase {
     XCTAssertEqual(try tokenStore.load()?.refreshToken, "refresh")
   }
 
+  func test_desktopMemoryDefaultsToOnAtTheMainDisplaysBottomRight() throws {
+    let vm = try makeSettings(defaults: freshDefaults())
+
+    XCTAssertTrue(vm.showDesktopMemory)
+    XCTAssertEqual(vm.desktopMemoryCorner, .bottomRight)
+    XCTAssertEqual(vm.desktopMemoryDisplayID, 0)
+  }
+
+  func test_desktopMemorySettingsSurviveRelaunch() throws {
+    let defaults = freshDefaults()
+    let vm = try makeSettings(defaults: defaults)
+    vm.showDesktopMemory = false
+    vm.desktopMemoryCorner = .topLeft
+    vm.desktopMemoryDisplayID = 69_733_382
+
+    let relaunched = try makeSettings(defaults: defaults)
+
+    XCTAssertFalse(relaunched.showDesktopMemory)
+    XCTAssertEqual(relaunched.desktopMemoryCorner, .topLeft)
+    XCTAssertEqual(relaunched.desktopMemoryDisplayID, 69_733_382)
+  }
+
+  func test_resetMenuBarDefaultsTurnsDesktopMemoryBackOn() throws {
+    let vm = try makeSettings(defaults: freshDefaults())
+    vm.showDesktopMemory = false
+
+    vm.resetMenuBarDefaults()
+
+    XCTAssertTrue(vm.showDesktopMemory)
+  }
+
   private func makeSettings(
     defaults: UserDefaults,
     tokenStore: TokenStore = InMemoryTokenStore(),

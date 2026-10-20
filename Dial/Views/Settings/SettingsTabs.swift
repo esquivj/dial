@@ -229,6 +229,11 @@ struct MenuBarSettingsTab: View {
             title: "Live Dock artwork",
             detail: "Replace Dial's Dock icon with the current album cover.",
             isOn: $vm.showDockArtwork)
+
+          SettingsToggle(
+            title: "Desktop memory",
+            detail: "Keep the current album and what it means to you on your desktop, under your windows.",
+            isOn: $vm.showDesktopMemory)
         }
       }
 
