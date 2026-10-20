@@ -62,7 +62,7 @@ Full logs are in `.build/logs/`. Don't pass your own `-derivedDataPath` to a new
 2. On failure, open `.build/snapshot-failures/<name>.actual.png` next to `<name>.baseline.png`.
 3. If the change is intended, run `scripts/dev.sh record`, **look at every changed PNG**, and get the user's OK before committing new baselines. A baseline recorded over a broken layout hides the breakage.
 
-Snapshots are deterministic: fixtures use a fixed date (week of May 18, 2026), and the `dialFrozenDate` environment value pins sprite and overlay animation frames. If you add a `TimelineView` or a clock-driven animation, read `dialFrozenDate` so snapshots stay stable. The default Smoke (`classic`) theme has no HUD baseline yet.
+Snapshots are deterministic: fixtures use a fixed date (week of May 18, 2026), and the `dialFrozenDate` environment value pins sprite and overlay animation frames. If you add a `TimelineView` or a clock-driven animation, read `dialFrozenDate` so snapshots stay stable.
 
 ## Searching
 
