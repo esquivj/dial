@@ -19,6 +19,19 @@ final class DatabaseStackTests: XCTestCase {
     XCTAssertEqual(count, 1, "pet_state should seed a singleton row")
   }
 
+  func test_v19_addsPlayOriginAndMergeLog() throws {
+    let dbq = try InMemoryDatabase.make()
+    try dbq.read { db in
+      XCTAssertTrue(try db.columns(in: "plays").map(\.name).contains("origin"))
+      XCTAssertTrue(try db.tableExists("archive_merges"))
+    }
+
+    // Plays recorded the normal way belong to this Mac.
+    try PlaysDAO(dbq: dbq).insert(.init(playedAt: 1_700_000_000, trackUri: "T", msPlayed: 60_000, source: "live"))
+    let row = try XCTUnwrap(try dbq.read { try Row.fetchOne($0, sql: "SELECT origin FROM plays") })
+    XCTAssertNil(row["origin"] as String?)
+  }
+
   func test_fileDatabase_isOwnerOnly() throws {
     let directory = FileManager.default.temporaryDirectory
       .appendingPathComponent("Dial.DatabaseStackTests.\(UUID().uuidString)", isDirectory: true)

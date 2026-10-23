@@ -23,12 +23,13 @@ Full logs are in `.build/logs/`. Don't pass your own `-derivedDataPath` to a new
 
 | Folder | What it owns |
 |---|---|
-| `Dial/App` | App entry, `AppDelegate` (CLI flags like `--import`, `--backfill`, `--perf-automation`), `StatusBarController` + `DropdownPanel` (the 440×440 borderless panel), `DesktopMemoryController` (the album object on the desktop; spec in `docs/design/desktop-memory.md`), `LaunchAtLogin` and `AppPermissions` (login item and privacy permission status for Settings) |
+| `Dial/App` | App entry, `AppDelegate` (CLI flags like `--import`, `--backfill`, `--perf-automation`, `--export-archive`, `--merge-archive`), `StatusBarController` + `DropdownPanel` (the 440×440 borderless panel), `DesktopMemoryController` (the album object on the desktop; spec in `docs/design/desktop-memory.md`), `LaunchAtLogin` and `AppPermissions` (login item and privacy permission status for Settings) |
 | `Dial/Spotify`, `Dial/Auth` | Web API client, rate-limit gate, desktop playback observer; PKCE OAuth with Keychain tokens |
 | `Dial/Polling` | `PollingService` turns playback state into events; `DedupRule` decides when a play counts |
 | `Dial/LastFM` | Scrobbling and Loved sync: signed API client (`LastFMAPI`), scrobble rule + per-track tracker, `LastFMScrobbler` (queue flush, desktop auth flow). Tag lookups stay in `History/MetadataEnricher` |
 | `Dial/History` | Extended Streaming History import (`Importer`, `EndsongFile`), recently-played reconciliation, metadata enrichment/backfill |
-| `Dial/Store` | GRDB `DatabaseStack`, `Migrations` (v1…v17), `DAO/` and `Models/` |
+| `Dial/Store` | GRDB `DatabaseStack`, `Migrations` (v1…v19), `DAO/` and `Models/` |
+| `Dial/Sync` | Multi-Mac history: `ArchiveExporter` (`--export-archive`), `ArchiveMerger` (`--merge-archive`), `PlayTwinMatcher`, `MemoryReplay`, `PetMerge`, `MacIdentity`. Spec in `docs/design/multi-mac-history.md` |
 | `Dial/Aggregations` | All stats SQL (`StatsQueries`, `PlayAggregations`), badges (`BadgeResolver`), sound themes, track/artist identity merging |
 | `Dial/Pet` | `PetEngine` (records plays, XP, stages, tricks), behaviors, streaks |
 | `Dial/Audio` | Screen-audio capture + FFT for the spectrum visualizer |
@@ -46,7 +47,7 @@ Full logs are in `.build/logs/`. Don't pass your own `-derivedDataPath` to a new
 - **Everything committed is public.** Never commit listening data (Spotify exports, Dial databases, `dial-history` exports), tokens, keys or client IDs, research built on real listening history, or teardowns of other people's apps. Per-machine values go in the gitignored `Config/Dial.local.xcconfig`; private material lives outside this repo. Before pushing, scan with `gitleaks git` and check that new files hold no personal data.
 - **The HUD shape is locked.** Read `HUD_LOOK_LOCK.md` before any change inside the dropdown. Don't change `Dial.Layout.Dropdown` sizes, the shell art, or element placement unless the user explicitly asks. Never fix a shell or art problem by moving UI. The panel and its snapshots are 440×440, and the rounded shell fills that square edge to edge by design.
 - **`project.yml` is the source of truth.** `Dial.xcodeproj` is generated and gitignored. `dev.sh` regenerates it, so new Swift files are picked up automatically. New resource folders must be added to `project.yml` with `buildPhase: resources`, or they silently won't ship.
-- **Migrations are append-only.** Add `v18_…` at the end of `Migrations.swift`; never edit a shipped migration.
+- **Migrations are append-only.** Add `v20_…` at the end of `Migrations.swift`; never edit a shipped migration.
 - **Play counting** has four layers:
   1. `DedupRule`: a live play counts at ≥30 s or ≥50% of the track.
   2. `PollingService`: counts once per track change.
@@ -54,7 +55,8 @@ Full logs are in `.build/logs/`. Don't pass your own `-derivedDataPath` to a new
   4. The unique `(played_at, track_uri, ms_played)` index.
 
   `Importer` inserts every streaming-history row, skips included, so the archive stays complete. **Stats, ranks and badges read the `counted_plays` view** (migration v16), which drops imported rows under 30 s unless they cover ≥50% of a known duration. New user-facing queries should read `counted_plays`. Use `plays` only for archive, enrichment and dedup work.
-- **Last.fm scrobbles only live plays.** `LastFMScrobbler` is fed from the coordinator's live playback path; `ScrobbleQueueDAO.enqueue` refuses any play whose source isn't `live`, and `lastfm_scrobbles.play_id` is unique (no double sends across relaunches). A play scrobbles when Dial counted it *and* Last.fm's rule passes (track > 30 s, position ≥ half or 4 min). Queue sends oldest first, 50 per call, retry 1 min doubling to 1 h, drops rows older than 14 days.
+- **Last.fm scrobbles only live plays.** `LastFMScrobbler` is fed from the coordinator's live playback path; `ScrobbleQueueDAO.enqueue` refuses any play whose source isn't `live` or that was merged in from another Mac (`plays.origin` set), and `lastfm_scrobbles.play_id` is unique (no double sends across relaunches). A play scrobbles when Dial counted it *and* Last.fm's rule passes (track > 30 s, position ≥ half or 4 min). Queue sends oldest first, 50 per call, retry 1 min doubling to 1 h, drops rows older than 14 days.
+- **Merging another Mac's archive** (`Dial/Sync`) only reads `dial.sqlite`: it works on copies and swaps a checked copy in after a backup. It never touches `lastfm_scrobbles` and never deletes a local play (that would cascade to its scrobble row). `plays.origin` is NULL for plays recorded on this Mac and names the Mac that first recorded a merged play.
 - **Theme ids are not display names:** `ember` displays as "Magenta", and `classic` as "Smoke Gel".
 
 ## Verifying a UI change without a human

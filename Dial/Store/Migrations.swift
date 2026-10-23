@@ -442,6 +442,29 @@ enum Migrations {
                  CASE WHEN tw.duration_ms > 0 THEN max(30, tw.duration_ms / 1000) ELSE 600 END)))
         """)
     }
+
+    // Multi-Mac history (docs/design/multi-mac-history.md). `origin` is NULL
+    // for plays recorded on this Mac. A play merged in from another Mac's
+    // archive carries the id of the Mac that first recorded it, and can never
+    // reach the Last.fm queue. `archive_merges` logs each merge.
+    m.registerMigration("v19_multi_mac") { db in
+      try db.alter(table: "plays") { t in
+        t.add(column: "origin", .text)
+      }
+      try db.create(table: "archive_merges") { t in
+        t.autoIncrementedPrimaryKey("id")
+        t.column("merged_at", .integer).notNull()
+        t.column("source_mac_id", .text).notNull()
+        t.column("source_mac_name", .text).notNull()
+        t.column("source_exported_at", .integer)
+        t.column("plays_added", .integer).notNull()
+        // "here" or "snapshot": whose memories and pet the merge kept up to
+        // `replay_from`. Memories from `replay_from` on were replayed.
+        t.column("donor", .text).notNull()
+        t.column("replay_from", .integer)
+        t.column("plays_replayed", .integer).notNull()
+      }
+    }
     return m
   }
 }
