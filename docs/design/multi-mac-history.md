@@ -1,31 +1,19 @@
 # Multi-Mac history
 
-Dial now runs on two Macs: the first Mac, which holds the archive, and a Mac mini installed on 2026-10-19. Each keeps its own `~/Library/Application Support/Dial/dial.sqlite` (`DatabaseStack.defaultURL()`), so the Mac mini started with no history and the two archives drift as both record. This doc maps what is per-Mac today, what already converges, the options, and a recommendation with a build plan.
+Dial can run on more than one Mac: a first Mac that holds the archive, and a second Mac set up later. Each keeps its own `~/Library/Application Support/Dial/dial.sqlite` (`DatabaseStack.defaultURL()`), so the second Mac starts with no history and the two archives drift as both record. This doc maps what is per-Mac, what already converges, the options, and the design that was built.
 
-Status: Phase 1 steps 1–6 built, 2026-10-20. Steps 7 and 8 (the real-data dry run and the seed) are next. Change this file first when a decision here changes.
+Status: Phase 1 built, 2026-10-23, and used to seed a second Mac from the first. Next: the reverse merge, the rest of step 8. Change this file first when a decision here changes.
 
 ## The short version
 
-- **Both Macs already record the same listens while Dial runs on both.** When the local Spotify app isn't playing, `PollingService` asks the Web API, which reports playback on any device on the account. The archives differ in three ways: the history from before the Mac mini's install, gaps when one Mac sleeps through more than 50 tracks, and everything Dial derived from a partial archive.
+- **Both Macs already record the same listens while Dial runs on both.** When the local Spotify app isn't playing, `PollingService` asks the Web API, which reports playback on any device on the account. The archives differ in three ways: the history from before the second Mac's install, gaps when one Mac sleeps through more than 50 tracks, and everything Dial derived from a partial archive.
 - **Plays are the facts; almost everything else is derived** from them, against whatever that Mac knew at the time. Copying memories or pet XP between Macs carries their mistakes along. Tricks, which you teach, are the exception.
 - **A merge that relies only on the unique index would double every listen both Macs saw.** Two Macs practically never produce the same `(played_at, track_uri, ms_played)` for one live listen.
-- **Recommendation:** an archive export and merge, run as a headless command first (like `--import`). Use it now to seed the Mac mini, then to send the Mac mini's plays back. Automate the exchange later, and only if running it by hand gets tedious.
+- **The design:** an archive export and merge, run as a headless command (like `--import`). Use it to seed the second Mac, then to send the second Mac's plays back. Automate the exchange later, and only if running it by hand gets tedious.
 
-## The two archives today
+## Why a new Mac's history goes wrong
 
-The first Mac had 195,504 plays on 2026-10-11 (`integrations/dial_history/README.md`): imports from Nov 2015 to Apr 24, 2026, then live and recent rows, with none from July to September 2026. Its pet, memories and artifacts live on that Mac and weren't read for this doc.
-
-The Mac mini, read on 2026-10-19 at 20:40:
-
-| | Mac mini |
-|---|---|
-| Plays | 126: 65 `live` since 16:33 today, 61 `recent` back to Oct 18, 18:19 |
-| Pet | 3,446 XP, hatchling, 2-day streak, no tricks |
-| Memories | 142: 84 First Listen, 51 New Artist, 6 Album Mode, 1 Repeat |
-| Artifacts, weekly memories | 5 artifacts; last week's memory says "4 plays" |
-| Last.fm | Not connected (empty `lastfm-api-key`) |
-
-Dial judged these plays against an archive that began yesterday, so most of those 135 discovery memories are false. Two in three plays being a first listen is nowhere near a heavy listener's real rate. The pet is inflated the same way: its 51 New Artist memories line up with +50 XP bonuses worth up to 2,550 of its 3,446 XP.
+A second Mac's first day shows the problem. Dial judges each play against an archive that began that day, so most plays earn First Listen or New Artist memories. The pet collects +50 New Artist bonuses for artists the first Mac has known for years. The first weekly memory counts only a handful of plays. None of this fixes itself: memories and XP are decided once, when a play is recorded.
 
 ## What is per-Mac today
 
@@ -66,7 +54,7 @@ Each source stamps a play differently:
 `PollingService` reads the local Spotify app when it is playing. When the app is idle or closed, it asks `/me/player`, which reports playback on any device. So while Dial runs and is online on both Macs, each one counts what you play on the other, and on your phone. That makes the overlapping time easy to merge. It also causes two problems:
 
 - **Double scrobbles.** `AppCoordinator.finishCountedPlay` hands every counted live play to `LastFMScrobbler`, whichever device played it. If Last.fm is connected on both Macs, one listen is scrobbled twice, with timestamps a few seconds apart. This needs no merge to happen.
-- **A shared rate limit.** Both Macs call Spotify through the same app (client ID), and Spotify rate-limits per app. The Mac mini hit Spotify's rate limit at 20:41 tonight, with a cooldown until 22:06. A merge should carry metadata and tags so the Mac mini doesn't re-enrich 10 years of tracks. It has no Last.fm API key for tag lookups yet anyway.
+- **A shared rate limit.** Both Macs call Spotify through the same app (client ID), and Spotify rate-limits per app. A merge should carry metadata and tags so the second Mac doesn't re-enrich every track in the history. A new Mac may not have a Last.fm API key for tag lookups at all.
 
 ### Memories are decided once
 
@@ -88,7 +76,7 @@ So memories made from a partial archive stay wrong, and copying rows between Mac
 
 - **Tricks** are taught by you (`PetTrickUnlocksDAO.unlock` from the Pet screen), not derived, so they have to travel.
 - **Artifacts** are fully derived: `ArtifactsDAO.syncFromMemoriesAndTricks` keeps the earliest memory per kind, plus tricks and weekly mementos, with `INSERT OR IGNORE`. `source_badge_event_id` is a local row id. They're safe to delete and rebuild.
-- **Weekly memories**: `WeeklyMemoriesDAO.ensureRecentWeeks` recomputes the current week and fills in missing weeks from the last 12. It never recomputes a finished week, so the Mac mini's "4 plays" for last week stays wrong until something recomputes it.
+- **Weekly memories**: `WeeklyMemoriesDAO.ensureRecentWeeks` recomputes the current week and fills in missing weeks from the last 12. It never recomputes a finished week, so a new Mac's first weekly memory stays wrong until something recomputes it.
 
 ### Last.fm
 
@@ -105,20 +93,20 @@ Settings are per-Mac on purpose: menu bar width, desktop memory corner and displ
 
 **`RecentPlaysReconciler`.** Spotify's recently-played endpoint returns only the last 50 tracks: music only, each played at least 30 s.
 
-- On an empty archive Dial makes one request and gets the last 50 plays. That's the Mac mini's history from yesterday evening.
+- On an empty archive Dial makes one request and gets the last 50 plays. On a new Mac, that's all the history it starts with.
 - After that it repairs gaps at launch, on wake, when the network returns, and every 10 minutes, but only within those 50 plays. A longer gap is flagged as possibly truncated.
 - Its rows go through `PetEngine.recordPlay` as live plays: full XP, every memory kind. That's how a fresh archive collects false First Listens.
 
-**`Importer`.** Spotify's Extended Streaming History covers the whole account, every device, back to 2015 here.
+**`Importer`.** Spotify's Extended Streaming History covers the whole account, every device, as far back as the account goes.
 
 - You request it from Spotify's privacy page. It can take up to 30 days to arrive, and it ends on the day you asked.
 - Imported plays earn only milestone and anniversary memories, and base XP within the 25,000 cap.
 - Importing the same files on both Macs produces identical rows, so later merges dedup them for free.
-- Without an import-to-live twin rule, importing a newer export on the first Mac would double count its live plays from late April on.
+- Without an import-to-live twin rule, importing a newer export on the first Mac would double count the live plays it recorded since its last import.
 
-**How far the Mac mini gets on its own.** With the old export files re-imported, it would have Nov 2015 to Apr 24, 2026, plus Oct 18 onward. It would still be missing:
+**How far a second Mac gets on its own.** With the first Mac's old export files re-imported, it has everything up to that export, plus everything since its own install. It would still be missing:
 
-- The first Mac's live plays from late April to Oct 18. They exist only on the first Mac, in its Dial History cloud snapshot, and in any Spotify export requested from now on.
+- The first Mac's live plays between that export and the second Mac's install. They exist only in the first Mac's archive, and in any Spotify export requested later.
 - The pet's real growth: imports stop at Companion.
 - Your tricks, and every rediscovery, deep cut and first-listen memory from the past.
 - Correct versions of its own false memories, which would stay wrong.
@@ -127,15 +115,15 @@ Settings are per-Mac on purpose: menu bar width, desktop memory corner and displ
 
 ### 1. Copy the first Mac's database once
 
-Take a consistent snapshot on the first Mac (`sqlite3 dial.sqlite "VACUUM INTO '…'"` works while Dial runs; a Finder copy of `dial.sqlite` without its `-wal` can miss recent writes). Quit Dial on the Mac mini, swap the file in, delete the old `-wal` and `-shm`, and relaunch.
+Take a consistent snapshot on the first Mac (`sqlite3 dial.sqlite "VACUUM INTO '…'"` works while Dial runs; a Finder copy of `dial.sqlite` without its `-wal` can miss recent writes). Quit Dial on the second Mac, swap the file in, delete the old `-wal` and `-shm`, and relaunch.
 
-- **Plays:** the Mac mini gets everything the first Mac has. Its own plays since install are lost, except the ones the first Mac also saw and the last 50, which recent sync fetches again.
-- **Afterwards:** the archives fork. Nothing repairs later drift, and a second copy would wipe the Mac mini's own plays.
+- **Plays:** the second Mac gets everything the first Mac has. Its own plays since install are lost, except the ones the first Mac also saw and the last 50, which recent sync fetches again.
+- **Afterwards:** the archives fork. Nothing repairs later drift, and a second copy would wipe the second Mac's own plays.
 - **Pet, memories, artifacts, tricks:** identical at copy time, then two pets that grow apart.
-- **Last.fm:** the copy brings the first Mac's pending queue rows. If Last.fm is ever connected on the Mac mini, they're sent a second time unless they're cleared from the copy first.
+- **Last.fm:** the copy brings the first Mac's pending queue rows. If Last.fm is ever connected on the second Mac, they're sent a second time unless they're cleared from the copy first.
 - **Effort:** about an hour for a script. **Risk:** low as a one-off, destructive if repeated.
 
-### 2. Export and merge (recommended)
+### 2. Export and merge (chosen)
 
 One Mac writes a read-only snapshot of its archive. The other merges it: plays go in through twin matching, metadata and tricks are unioned, and derived state is rebuilt with Dial's own rules. The Merge rules section has the details.
 
@@ -154,7 +142,7 @@ One Mac writes a read-only snapshot of its archive. The other merges it: plays g
 - Two Macs writing produce conflict copies (`dial 2.sqlite`) that Dial never reads, or the last upload wins and the other Mac's plays since its last download vanish. Turning WAL off doesn't change that.
 - "Optimize Mac Storage" can evict the file to a placeholder while Dial expects it on disk.
 
-**A file share from the Mac mini.** SQLite's documentation warns that locking over network filesystems is unreliable and that WAL doesn't work over them at all. The first Mac also couldn't record anything away from home.
+**A file share from one of the Macs.** SQLite's documentation warns that locking over network filesystems is unreliable and that WAL doesn't work over them at all. The other Mac also couldn't record anything away from that network.
 
 **CloudKit.** It needs an iCloud container entitlement, which needs a provisioning profile from a paid Apple Developer Program team. Dial signs with the self-signed "Dial Local Dev" certificate and `DEVELOPMENT_TEAM: ""` (`project.yml`), on purpose: `scripts/create-cert.sh` explains why it avoids the $99/year program. The same limit rules out `NSUbiquitousKeyValueStore` and Core Data with CloudKit. It would also mean rewriting the store layer.
 
@@ -162,26 +150,26 @@ If a shared file did work, both Macs would flush one Last.fm queue and send rows
 
 ### 4. Other routes
 
-- **A fresh Spotify export on both Macs.** It gets every play up to the request date, including July to September 2026. But it takes days to weeks, carries no memories, pet or tricks, and caps the pet at Companion. On the first Mac it double counts the live era until `Importer` gets an import-to-live twin rule.
-- **One Mac as the recorder.** If the Mac mini stays awake with Dial running, it records nearly every play on the account, phone included. Then most merges only need to run one way, toward the other Mac. This is a habit, not a feature, and it pairs well with option 2.
+- **A fresh Spotify export on both Macs.** It gets every play up to the request date, including stretches neither Mac recorded. But it takes days to weeks, carries no memories, pet or tricks, and caps the pet at Companion. On the first Mac it double counts its live plays until `Importer` gets an import-to-live twin rule.
+- **One Mac as the recorder.** If one Mac stays awake with Dial running, it records nearly every play on the account, phone included. Then most merges only need to run one way, toward the other Mac. This is a habit, not a feature, and it pairs well with option 2.
 - **Single-writer snapshot files in a synced folder.** This automates option 2. Each Mac writes only its own snapshot file and merges the others'. Nothing in the synced folder is ever opened as a live database, so iCloud's failure modes don't apply. This is Phase 2 below.
-- **The Dial History cloud snapshot or Tailscale API** (`integrations/dial_history`). Per its README, the first Mac publishes plays, tracks, artists and aliases every hour. They could seed the Mac mini's plays, but they carry no memories, pet, tricks or tags by design, and Dial would depend on a Vercel deployment for its own data. It's not recommended as Dial's sync path.
+- **The Dial History snapshot or API** (`integrations/dial_history`). It can publish plays, tracks, artists and aliases on a schedule, which could seed a second Mac's plays. But it carries no memories, pet, tricks or tags by design, and Dial would depend on a hosted service for its own data. It's not recommended as Dial's sync path.
 
 ### Side by side
 
 | | 1. Copy once | 2. Export and merge | 3. Shared or synced database | 4. Spotify export |
 |---|---|---|---|---|
-| Plays on the Mac mini | All of the first Mac's; its own only if the first Mac saw them | Union, no doubles | Lost writes, conflict copies, corruption | Everything to the export date |
+| Plays on the second Mac | All of the first Mac's; its own only if the first Mac saw them | Union, no doubles | Lost writes, conflict copies, corruption | Everything to the export date |
 | Drift afterwards | Never repaired | Repaired by the next merge | Not applicable | Until the next export |
 | Pet | Copied, then two pets | One pet, never loses XP | Shared, if it worked | Capped at Companion |
-| Memories, artifacts | Copied; the Mac mini's replaced | Donor's, then replayed | Shared, if it worked | Milestones and anniversaries only |
+| Memories, artifacts | Copied; the second Mac's replaced | Donor's, then replayed | Shared, if it worked | Milestones and anniversaries only |
 | Last.fm | Pending rows sent twice unless cleared | Untouched | One queue sent from two Macs | Untouched |
 | Effort | About an hour | 2–3 days (Phase 1) | Minutes | No code; days to weeks of waiting |
 | Risk | Low once, destructive if repeated | Medium, contained | High | Medium: double counts on the first Mac |
 
 ## Recommendation
 
-Build option 2, the archive merge, as a headless command first. Use it now to seed the Mac mini and to send the Mac mini's own plays back to the first Mac. Add Settings buttons and automatic exchange only after a few manual merges have gone well.
+Build option 2, the archive merge, as a headless command first. Use it to seed the second Mac and to send the second Mac's own plays back to the first Mac. Add Settings buttons and automatic exchange only after a few manual merges have gone well.
 
 Why this one:
 
@@ -191,12 +179,12 @@ Why this one:
 - It needs no server and no paid program, and it works over any transport: AirDrop today, a synced folder later.
 - It's safe to run again. It's idempotent, it takes a backup first, and a dry run shows what it will change.
 
-Until it ships:
+Until merges run regularly:
 
-- **Keep Last.fm on one Mac**, ideally the one that's awake most. The Mac mini has none connected today. If the first Mac scrobbles, leave the Mac mini disconnected, or move Last.fm to the Mac mini and disconnect the first Mac.
+- **Keep Last.fm on one Mac**, ideally the one that's awake most.
 - **Keep Dial running on both Macs.** Every listen both Macs see is one less play for the merge to carry.
-- **Don't import a newer Spotify export on the first Mac yet.** It would double count the live era.
-- **Nothing on the Mac mini needs saving.** The merge keeps its plays and replaces its memories and pet.
+- **Don't import a newer Spotify export on the first Mac** until `Importer` has an import-to-live twin rule. It would double count the live plays.
+- **Nothing on a new second Mac needs saving.** The merge keeps its plays and replaces its memories and pet.
 
 ## Merge rules
 
@@ -211,13 +199,13 @@ Until it ships:
 
 `Dial --merge-archive <file> [--dry-run] [--source-name <name>]` only ever reads the archive. A real merge refuses to run while Dial is running, as `--import` does; a dry run is safe while it runs. The merge makes a working copy of the archive in `Dial/Merging/`, attaches a copy of the snapshot, and runs these steps on the working copy:
 
-1. **Metadata:** union `tracks` and `artists` with the `Track.mergeUpsert` rule (fill blanks, never overwrite). Union the tag and enrichment tables; the newer `fetched_at` wins per key. Then run `ArtistIdentityRepair.rebuildAliases`.
+1. **Metadata:** union `tracks` and `artists` (fill blanks, never overwrite, except that real Spotify artist ids replace the synthetic ids imported history carries). Union the tag and enrichment tables; the newer `fetched_at` wins per key. Then run `ArtistIdentityRepair.rebuildAliases`.
 2. **Plays:** walk the snapshot's plays oldest first. Skip any play that has a twin here; otherwise insert it with `origin` set to the Mac that first recorded it.
 3. **Tricks:** union, keeping the earliest `unlocked_at` per trick.
 4. **Donor and replay point:** choose them from the plays each side lacked.
 5. **Memories:** keep the donor's memories from before the replay point, then replay the rest.
 6. **Pet:** apply the pet rules.
-7. **Weekly memories:** keep the donor's rows for weeks that ended before the replay point. Recompute every week from the replay point to now with `StatsQueries.weeklyMemory`, then run `ensureRecentWeeks`.
+7. **Weekly memories:** keep the donor's rows, and recompute those for weeks that end after the replay point with `StatsQueries.weeklyMemory`. The app fills in missing recent weeks itself.
 8. **Artifacts:** delete them all and rebuild with `ArtifactsDAO.syncFromMemoriesAndTricks`.
 9. **Log:** write one `archive_merges` row: when, which Mac, the snapshot's time, plays added, the donor and the replay point.
 
@@ -235,7 +223,7 @@ Twin matching treats two rows as one listen when they're for the same track and:
 | Counted `import` and `live` | The live start is within the same half-length tolerance of the import's start: its time minus `ms_played` |
 | `import` and `import`, `recent` and `recent` | The exact key only; the same export or fetch gives the same row |
 
-Two Macs' start estimates for one live listen land seconds apart, and a replay starts a whole track later, so half the length tells them apart even for back-to-back repeats. An export row is stamped when the stream stopped and measures the time listened, so its listen started `ms_played` before its stamp. Imported skips (under 30 s and under half the track) never match. `d` is the track's duration in seconds (at least 30 s), or 600 s if unknown, as in `PetEngine`'s recent-play rule. An incoming play with a twin here is skipped, and the local row stays. The check covers rows the merge has just added. Every lookup is a range scan on `plays_by_track`.
+Two Macs' start estimates for one live listen land seconds apart, and a replay starts a whole track later, so half the length tells them apart even for back-to-back repeats. An export row is stamped when the stream stopped and measures the time listened, so its listen started `ms_played` before its stamp. Imported skips (under 30 s and under half the track) never match. `d` is the track's duration in seconds (at least 30 s), or 600 s if unknown, as in `PetEngine`'s recent-play rule. An incoming play with a twin here is skipped, and the local row stays. The check covers rows the merge has just added, so a snapshot's own hidden `recent` duplicates don't come along. Every lookup is a range scan on `plays_by_track`.
 
 ### Donor and replay point
 
@@ -245,8 +233,8 @@ Two Macs' start estimates for one live listen land seconds apart, and a replay s
 
 | Seed | `m_here` | `m_there` | Donor | Replay from |
 |---|---|---|---|---|
-| On the Mac mini, merging the first Mac's snapshot | Nov 2015 | The Mac mini's first play the first Mac missed (Oct 18 at the earliest) | First Mac | That play: at most about two days of plays |
-| On the first Mac, merging the Mac mini's snapshot | That same play | Nov 2015 | First Mac (itself) | The same play |
+| On the second Mac, merging the first Mac's snapshot | The first Mac's first play | The second Mac's first play the first Mac missed | First Mac | That play: only the days since the second Mac's install |
+| On the first Mac, merging the second Mac's snapshot | That same play | The first Mac's first play | First Mac (itself) | The same play |
 
 **Replaying memories.** In a throwaway copy of the merged working copy, delete the plays from `w` on. Re-insert them oldest first, calling `BadgeResolver.recordMemories` for each: `.imported` for imports of at least 30 s and `.live` for the rest, the same calls `Importer` and `PetEngine` make. Each play is then the newest row when it's judged, exactly as when it was first recorded, and look-backs see the full merged history before it. Copy the throwaway copy's memories from `w` on into the working copy, replacing the ones there. The cost is one resolver pass per play after `w`, and the dry run prints the count.
 
@@ -267,7 +255,7 @@ Two Macs' start estimates for one live listen land seconds apart, and a replay s
 
 ## Build plan
 
-### Phase 1: headless merge (2–3 days)
+### Phase 1: headless merge (done)
 
 1. **Migration `v19_multi_mac`**, appended after v18: add `plays.origin TEXT` (NULL means recorded here) and an `archive_merges` table. Make `ScrobbleQueueDAO.enqueue` require `origin IS NULL`. Add migration and queue tests.
 2. **`MacIdentity`:** the hashed `IOPlatformUUID` plus the computer name.
@@ -282,19 +270,24 @@ Two Macs' start estimates for one live listen land seconds apart, and a replay s
    - XP never decreases.
    - The scrobble queue is unchanged, and merged plays can't be queued.
    - Seed case: a one-day archive merged with a large one ends with the large one's memories plus the replayed day.
-7. **Measure on real data:** run `--dry-run` against a copy of the first Mac's archive. Record the snapshot size and the replay time per play here. If the numbers surprise, revisit the plan before step 8.
-8. **Seed for real:** export on the first Mac, AirDrop the file, dry run on the Mac mini, merge. Then export on the Mac mini and merge on the first Mac. Check both Macs show the same Stats totals, memory and artifact counts, pet XP within a few points, the Mac mini's false First Listens gone, and unchanged Last.fm queues.
-9. **Docs:** add `Dial/Sync` and the merge rules to `AGENTS.md` (merges never touch `lastfm_scrobbles`; what `origin` means), and set this file's status to built.
+7. **Measure on real data:** run `--dry-run` against a copy of the first Mac's archive. If the numbers surprise, revisit the plan before step 8.
+   - *Measured 2026-10-23* on a real archive. Merging the plays takes seconds. Replaying memories takes nearly all the time, at under a second per replayed play, with the pet, weekly memories, artifacts and checks included.
+   - A separate re-implementation of the twin and pet rules matched the dry run's pet XP to within one play.
+8. **Seed for real:** export on the first Mac, AirDrop the file, dry run on the second Mac, merge. Then export on the second Mac and merge on the first Mac. Check both Macs show the same Stats totals, memory and artifact counts, pet XP within a few points, the second Mac's false First Listens gone, and unchanged Last.fm queues.
+   - *Second Mac seeded 2026-10-23*, with Dial quit. The integrity check passed afterwards, the Last.fm queue and recently-played cursor were untouched, and the backup is in `Dial/Backups/`.
+   - A Dial build without v19 reopened the merged archive normally.
+   - Still to do: the reverse merge, so the first Mac gets the plays only the second Mac heard.
+9. **Docs:** add `Dial/Sync` and the merge rules to `AGENTS.md` (merges never touch `lastfm_scrobbles`; what `origin` means). Done.
 
 ### Phase 2: optional, after a few weeks of manual merges
 
 10. **Settings › Spotify › Listening history:** "Export Archive…" and "Merge Archive…" next to Import Folder. The merge runs in the app on a background queue; the final write is one transaction.
-11. **Automatic exchange:** each Mac writes its own compressed snapshot into a folder you choose (iCloud Drive by default) when it has new plays, at most every few hours. It merges any newer snapshot from another Mac, copying it out and validating it first. Step 7's size decides the cadence. If snapshots turn out too large, switch to monthly append-only play files per Mac.
+11. **Automatic exchange:** each Mac writes its own compressed snapshot into a folder you choose (iCloud Drive by default) when it has new plays, at most every few hours. It merges any newer snapshot from another Mac, copying it out and validating it first. The snapshot size decides the cadence. If snapshots turn out too large, switch to monthly append-only play files per Mac.
 12. **Last.fm across devices:** decode `device` from `/me/player` (Dial ignores it today). Scrobble a listen only on the Mac that played it, plus phone and speaker plays on the one Mac where "Scrobble other devices" is on. Test it live first, because the Spotify app on an idle Mac may mirror another device's playback.
 
 ### Follow-ups, separate from this work
 
-- Give `Importer` the import-to-live twin rule, reusing `PlayTwinMatcher`, so a fresh Spotify export can fill July to September 2026 without double counting the live era.
+- Give `Importer` the import-to-live twin rule, reusing `PlayTwinMatcher`, so a fresh Spotify export can fill gaps neither Mac recorded without double counting live plays.
 
 ## Not in v1
 
@@ -304,7 +297,7 @@ Live or real-time sync. Merging settings, Last.fm state or the recent-play curso
 
 - Unit tests from Phase 1 steps 1–6, including the replay-equivalence test, which is what proves the merge reuses Dial's rules faithfully.
 - A dry run against a copy of the real archive before any real merge (step 7).
-- After the seed (step 8), on both Macs: the same lifetime and year-to-date totals in Stats, the same memory and artifact counts, pet XP within a few points, no false First Listens from the Mac mini's first day, and unchanged Last.fm queues.
+- After the seed (step 8), on both Macs: the same lifetime and year-to-date totals in Stats, the same memory and artifact counts, pet XP within a few points, no false First Listens from the second Mac's first day, and unchanged Last.fm queues.
 
 ## Code map
 
@@ -318,6 +311,6 @@ Live or real-time sync. Merging settings, Last.fm state or the recent-play curso
 | `Dial/Sync/PetMerge.swift` | Pet rules |
 | `Dial/Store/Migrations.swift` | `v19_multi_mac` |
 | `Dial/Store/DAO/ScrobbleQueueDAO.swift` | `origin IS NULL` guard |
-| `Dial/App/AppDelegate.swift` | `--export-archive`, `--merge-archive`, `--dry-run` |
+| `Dial/App/AppDelegate.swift` | `--export-archive`, `--merge-archive`, `--dry-run`, `--source-name` |
 
 Tests: `MacIdentityTests`, `PlayTwinMatcherTests`, `ArchiveExporterTests`, `ArchiveMergerTests` (replay equivalence across all eight memory kinds, the seed case, the pet rules, idempotence and refusals), `ScrobbleQueueDAOTests`, and the v19 case in `DatabaseStackTests`.

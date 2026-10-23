@@ -4,13 +4,13 @@ import GRDB
 @testable import Dial
 
 /// One listening history, recorded three ways: by a Mac that saw every play
-/// ("all"), by a first Mac that missed days 5–7, and by a Mac mini set up on
+/// ("all"), by a first Mac that missed days 5–7, and by a second Mac set up on
 /// day 3 whose start estimates run 2 s later. Merging the two partial
 /// archives either way should land where "all" is.
 final class ArchiveMergerTests: XCTestCase {
   private var directory: URL!
   private let firstMac = MacIdentity(id: "aaaaaaaaaaaaaaaa", name: "First Mac")
-  private let miniMac = MacIdentity(id: "bbbbbbbbbbbbbbbb", name: "Mac mini")
+  private let miniMac = MacIdentity(id: "bbbbbbbbbbbbbbbb", name: "Second Mac")
   private let now: Int64 = 1_800_000_000
 
   override func setUpWithError() throws {
@@ -42,7 +42,7 @@ final class ArchiveMergerTests: XCTestCase {
     let onMini = try merge(firstSnapshot, into: archives.mini, as: miniMac)
 
     // Both Macs choose the first Mac as the donor and replay from the first
-    // play it missed: the Mac mini's day 5.
+    // play it missed: the second Mac's day 5.
     XCTAssertEqual(onFirst.donor, .here)
     XCTAssertEqual(onMini.donor, .snapshot)
     XCTAssertEqual(onFirst.replayFrom, noon(5) + 2)
@@ -78,7 +78,7 @@ final class ArchiveMergerTests: XCTestCase {
         playId: id, artist: "Delta", track: "Delta Song", album: nil, durationMs: 200_000, now: now))
       return id
     }
-    // On its own, the Mac mini thinks its first day was full of first listens.
+    // On its own, the second Mac thinks its first day was full of first listens.
     XCTAssertEqual(try memories(archives.mini).filter { $0.label == "first_listen spotify:track:a1" }.map(\.at),
                    [noon(3) + 2])
 
@@ -128,7 +128,7 @@ final class ArchiveMergerTests: XCTestCase {
     XCTAssertEqual(again.after, again.before)
     XCTAssertEqual(try memories(archives.mini).map(\.label), memoriesAfterOne.map(\.label))
 
-    // The first Mac takes the Mac mini's merged archive; sending it back
+    // The first Mac takes the second Mac's merged archive; sending it back
     // adds nothing.
     let miniSnapshot = try export(archives.mini, as: miniMac, to: "mini.dialarchive")
     _ = try merge(miniSnapshot, into: archives.first, as: firstMac)
