@@ -1,6 +1,6 @@
 # Desktop memory
 
-A small piece of Dial hardware that lives on the desktop: the current album in a smoke-gel frame, with one LCD line saying what the track means to you. It answers `PRODUCT.md`'s "album-art presence as a dedicated macOS object" (the Sleeve reference, see `docs/references/sleeve.md`) without turning Dial into a mini-player.
+A small piece of Dial hardware that lives on the desktop: the current album in a smoke-gel frame, with one LCD line saying what the track means to you. It answers `PRODUCT.md`'s "album-art presence as a dedicated macOS object" (its Sleeve reference) without turning Dial into a mini-player.
 
 Status: v1, 2026-10-19. Change this file first when a decision here changes.
 
