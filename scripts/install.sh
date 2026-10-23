@@ -60,6 +60,18 @@ fi
 
 echo "  Built: $APP_PATH"
 
+# 3b. Refuse to install a build that can't sign in to Spotify. The Client ID
+#     comes from the gitignored Config/Dial.local.xcconfig.
+CLIENT_ID=$(/usr/libexec/PlistBuddy -c "Print :SpotifyClientID" "$APP_PATH/Contents/Info.plist" 2>/dev/null || true)
+case "$CLIENT_ID" in
+  ""|your_spotify_client_id|'$('*)
+    echo "✗ This build has no Spotify Client ID."
+    echo "  Copy Config/Dial.local.xcconfig.example to Config/Dial.local.xcconfig,"
+    echo "  set SPOTIFY_CLIENT_ID to your Spotify app's Client ID, then run this again."
+    exit 1
+    ;;
+esac
+
 # 4. Kill any running instance — both the /Applications copy and any
 #    that's been launched directly out of DerivedData.
 echo "→ Stopping running ${APP_NAME} (if any)"

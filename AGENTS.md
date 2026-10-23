@@ -15,7 +15,7 @@ scripts/dev.sh record                       # re-record visual baselines (see be
 scripts/dev.sh install                      # build, replace /Applications/Dial.app, relaunch
 ```
 
-First time on a machine: `brew install xcodegen`, then `scripts/create-cert.sh` once. Every build is signed with the self-signed "Dial Local Dev" cert (`project.yml`), so macOS keeps the Screen Recording grant across rebuilds. Without it, builds fail to sign. (`security find-identity -v` reports 0 valid identities for it because it's self-signed; that's expected. `dev.sh` checks with `security find-certificate`.)
+First time on a machine: `brew install xcodegen`, then `scripts/create-cert.sh` once, then copy `Config/Dial.local.xcconfig.example` to `Config/Dial.local.xcconfig` and set your Spotify app's Client ID (gitignored; builds and tests work without it, but `install` refuses a build that can't sign in). Every build is signed with the self-signed "Dial Local Dev" cert (`project.yml`), so macOS keeps the Screen Recording grant across rebuilds. Without it, builds fail to sign. (`security find-identity -v` reports 0 valid identities for it because it's self-signed; that's expected. `dev.sh` checks with `security find-certificate`.)
 
 Full logs are in `.build/logs/`. Don't pass your own `-derivedDataPath` to a new folder; one shared folder keeps builds incremental and the repo small.
 
@@ -43,6 +43,7 @@ Full logs are in `.build/logs/`. Don't pass your own `-derivedDataPath` to a new
 
 ## Rules that must hold
 
+- **Everything committed is public.** Never commit listening data (Spotify exports, Dial databases, `dial-history` exports), tokens, keys or client IDs, research built on real listening history, or teardowns of other people's apps. Per-machine values go in the gitignored `Config/Dial.local.xcconfig`; private material lives outside this repo. Before pushing, scan with `gitleaks git` and check that new files hold no personal data.
 - **The HUD shape is locked.** Read `HUD_LOOK_LOCK.md` before any change inside the dropdown. Don't change `Dial.Layout.Dropdown` sizes, the shell art, or element placement unless the user explicitly asks. Never fix a shell or art problem by moving UI. The panel and its snapshots are 440×440, and the rounded shell fills that square edge to edge by design.
 - **`project.yml` is the source of truth.** `Dial.xcodeproj` is generated and gitignored. `dev.sh` regenerates it, so new Swift files are picked up automatically. New resource folders must be added to `project.yml` with `buildPhase: resources`, or they silently won't ship.
 - **Migrations are append-only.** Add `v18_…` at the end of `Migrations.swift`; never edit a shipped migration.
@@ -71,5 +72,5 @@ Use `rg` (respects `.gitignore`) and always pass a path: `rg PollingService Dial
 ## Known gaps
 
 - Swift 5.10 language mode. Turning on strict concurrency surfaces about 140 warnings, mostly in `AppCoordinator` and `StatusBarController`.
-- No CI. `scripts/dev.sh test` is the check; run it before every commit. The remote is the private `esquivj/dial` on GitHub (`origin`); push `main` after merging so the backup stays current.
+- No CI. `scripts/dev.sh test` is the check; run it before every commit. The remote is `esquivj/dial` on GitHub (`origin`); push `main` after merging.
 - `docs/superpowers/` is the original v1 spec/plan and is historical: colours, fonts and sizes there are outdated.

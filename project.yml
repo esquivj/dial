@@ -37,6 +37,11 @@ targets:
   Dial:
     type: application
     platform: macOS
+    # Per-machine values (the Spotify Client ID) come from the gitignored
+    # Config/Dial.local.xcconfig, which Config/Dial.xcconfig includes.
+    configFiles:
+      Debug: Config/Dial.xcconfig
+      Release: Config/Dial.xcconfig
     sources:
       - path: Dial
         excludes:
@@ -77,7 +82,8 @@ targets:
         CFBundleShortVersionString: "0.1.0"
         CFBundleVersion: "1"
         ATSApplicationFontsPath: Fonts/
-        SpotifyClientID: YOUR_SPOTIFY_CLIENT_ID
+        # Your own Spotify app's Client ID, set in Config/Dial.local.xcconfig.
+        SpotifyClientID: $(SPOTIFY_CLIENT_ID)
         # Shown in the macOS permission prompt when the spectrum visualizer
         # first tries to start ScreenCaptureKit. ScreenCaptureKit's audio
         # capture is gated by Screen Recording TCC even when no video frames

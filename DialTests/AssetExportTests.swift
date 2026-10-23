@@ -16,8 +16,9 @@ final class AssetExportTests: XCTestCase {
       throw XCTSkip("Set DIAL_EXPORT_X_ASSETS=1 or create /tmp/dial-export-x-assets to export marketing assets.")
     }
 
-    let outputURL = URL(fileURLWithPath: ProcessInfo.processInfo.environment["DIAL_X_ASSET_DIR"]
-      ?? "/path/to/dial/MarketingAssets/XReady")
+    let repoRoot = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+    let outputURL = ProcessInfo.processInfo.environment["DIAL_X_ASSET_DIR"].map { URL(fileURLWithPath: $0) }
+      ?? repoRoot.appendingPathComponent("MarketingAssets/XReady", isDirectory: true)
     try FileManager.default.createDirectory(at: outputURL, withIntermediateDirectories: true)
     try writePhilosophy(to: outputURL.appendingPathComponent("dial-x-asset-direction.md"))
 
