@@ -1,5 +1,20 @@
 # Third-Party Notices
 
+## Geist fonts
+
+Dial bundles Geist Mono and Geist Pixel for its interface type.
+
+- Source: https://vercel.com/font
+- Copyright (c) 2023 Vercel, in collaboration with basement.studio
+- License: SIL Open Font License 1.1, included in full at `Dial/Resources/Fonts/Geist-LICENSE.txt`
+
+## Swift packages
+
+Fetched by Swift Package Manager at build time (not vendored in this repository):
+
+- [GRDB.swift](https://github.com/groue/GRDB.swift): SQLite toolkit. MIT License.
+- [KeychainAccess](https://github.com/kishikawakatsumi/KeychainAccess): Keychain wrapper. MIT License.
+
 ## Iconoir
 
 Dial uses selected Iconoir icons for functional UI chrome.

@@ -16,9 +16,10 @@ Dial/App/Dial.entitlements
 .swiftpm/
 Package.resolved
 
-# Local secrets
+# Local secrets and per-machine settings
 .env.local
 *.xcconfig.local
+Config/Dial.local.xcconfig
 
 # macOS
 .DS_Store

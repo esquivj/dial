@@ -1,0 +1,11 @@
+// Dial build settings shared by every machine.
+//
+// Per-machine values live in Dial.local.xcconfig next to this file. It is
+// gitignored; copy Dial.local.xcconfig.example to create it.
+
+// The Client ID of your own Spotify app (see README › Spotify setup).
+// Empty here so the repository never carries one; scripts/install.sh
+// refuses to install a build without it.
+SPOTIFY_CLIENT_ID =
+
+#include? "Dial.local.xcconfig"

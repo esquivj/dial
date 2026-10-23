@@ -2,7 +2,7 @@
 # Bootstrap the Dial dev environment.
 # - Verifies Xcode + xcodegen are installed
 # - Generates Dial.xcodeproj from project.yml
-# - Reminds about local secrets (.env.local)
+# - Reminds you to set your Spotify Client ID (Config/Dial.local.xcconfig)
 
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -23,12 +23,13 @@ fi
 echo "→ Generating Dial.xcodeproj from project.yml…"
 xcodegen generate
 
-if [[ ! -f .env.local ]]; then
+if [[ ! -f Config/Dial.local.xcconfig ]]; then
   cat <<'EOM'
 
-⚠  No .env.local found. The Spotify Client ID is currently embedded in project.yml
-   for personal-use convenience. For shared/CI environments, move it to .env.local
-   and inject via xcconfig at build time.
+⚠  No Config/Dial.local.xcconfig yet. Copy Config/Dial.local.xcconfig.example
+   to it and set SPOTIFY_CLIENT_ID to your Spotify app's Client ID. Builds and
+   tests work without it, but scripts/install.sh won't install a build that
+   can't sign in to Spotify.
 
 EOM
 fi
