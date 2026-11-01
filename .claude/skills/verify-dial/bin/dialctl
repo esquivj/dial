@@ -1,0 +1,496 @@
+#!/usr/bin/env bash
+# dialctl: build, run and inspect "Dial Verify", an isolated copy of Dial.
+#
+# The copy has its own bundle id (com.dial.Dial.verify), so its preferences,
+# privacy grants and "already running" checks are separate from the real
+# Dial's, and its own home (CFFIXED_USER_HOME=.build/verify/home), so its
+# database and sign-in files are too. It only ever stops the PID it started.
+#
+#   dialctl build                  build Debug, then make the Dial Verify copy
+#   dialctl launch [--fresh] [--seed] [--plays N] [-- <Dial flags>]
+#                                  start the copy; returns once it is usable
+#   dialctl doctor                 read-only: is this instance worth driving?
+#   dialctl windows                the copy's on-screen windows (id, level, frame)
+#   dialctl ax tree [depth]        its accessibility tree (labels, values, actions)
+#   dialctl ax press [--exact] "<text>"
+#                                  press the one element whose label contains text
+#   dialctl db [--json] "<sql>"    read-only SQL against the copy's database
+#   dialctl prefs [key]            read the copy's preferences
+#   dialctl set-pref <key> <bool|int|float|string> <value>   (copy stopped)
+#   dialctl seed [--fresh] [--plays N] [--label NAME]
+#                                  import synthetic history (copy stopped)
+#   dialctl cli <flags>            a headless mode against the copy's home:
+#                                  --import <folder> | --export-archive <file> |
+#                                  --merge-archive <file> [--dry-run] [--source-name <name>]
+#   dialctl logs [duration]        unified log of the running copy (default 10m)
+#   dialctl snap <name>            save windows, AX tree, prefs and DB counts
+#   dialctl shot <desktop|hud|settings|window-id> <name>   save a window PNG
+#   dialctl evidence               print this run's evidence folder
+#   dialctl stop                   stop the copy this checkout started
+#   dialctl clean                  stop, delete the copy, its homes and prefs; keep evidence
+#
+# DIAL_VERIFY_HOME=.build/verify/home-<name> points seed and cli at a second
+# home, e.g. to export an archive as "another Mac" would.
+#
+# Guide: .claude/skills/verify-dial/SKILL.md
+set -euo pipefail
+
+SKILL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+REPO="$(cd "$SKILL_DIR/../../.." && pwd)"
+VERIFY="$REPO/.build/verify"
+APP="$VERIFY/Dial Verify.app"
+BIN="$APP/Contents/MacOS/Dial"
+VHOME="${DIAL_VERIFY_HOME:-$VERIFY/home}"
+[[ "$VHOME" == /* ]] || VHOME="$REPO/$VHOME"
+SUPPORT="$VHOME/Library/Application Support/Dial"
+DB="$SUPPORT/dial.sqlite"
+RUN="$VERIFY/run"
+ART_ROOT="$VERIFY/artifacts"
+BUNDLE_ID="com.dial.Dial.verify"
+BUILT_APP="$REPO/.build/DerivedData/Build/Products/Debug/Dial.app"
+SIGN_IDENTITY="Dial Local Dev"
+REAL_SUPPORT="$HOME/Library/Application Support/Dial"
+LASTFM_FILES="lastfm-api-key lastfm-shared-secret lastfm-session-key"
+LAST_CLI=""
+
+say() { printf '%s\n' "$*"; }
+die() { printf 'dialctl: %s\n' "$*" >&2; exit 1; }
+ok() { printf '  ✓ %s\n' "$*"; }
+note() { printf '  · %s\n' "$*"; }
+bad() { printf '  ✗ %s\n' "$*"; FAILED=1; }
+
+[[ -f "$REPO/project.yml" && -d "$REPO/Dial" ]] || die "can't find the Dial repo above $SKILL_DIR"
+[[ "$VHOME" == "$VERIFY/"* ]] || die "DIAL_VERIFY_HOME must be inside $VERIFY"
+
+usage() { sed -n '2,/^set -euo/p' "$0" | sed '$d' | sed 's/^# \{0,1\}//'; }
+
+# The PID this checkout started, if it is still the Dial Verify binary.
+our_pid() {
+  [[ -f "$RUN/pid" ]] || return 1
+  local pid cmd
+  pid="$(cat "$RUN/pid")"
+  [[ "$pid" =~ ^[0-9]+$ ]] || return 1
+  cmd="$(ps -wwo comm= -p "$pid" 2>/dev/null || true)"
+  [[ "$cmd" == "$BIN" ]] || return 1
+  printf '%s\n' "$pid"
+}
+
+# Matched on the executable path, so a shell that only mentions the path in
+# its arguments doesn't count.
+pids_running() { ps -axwwo pid=,comm= | awk -v exe="$1" 'index($0, exe) {print $1}'; }
+
+# Every running Dial Verify, from any checkout. They share one preferences domain.
+verify_pids() { pids_running "/Dial Verify.app/Contents/MacOS/Dial"; }
+
+real_dial_pids() { pids_running "/Dial.app/Contents/MacOS/Dial"; }
+
+latest_migration() {
+  grep -o 'registerMigration("[^"]*"' "$REPO/Dial/Store/Migrations.swift" | tail -1 | sed 's/registerMigration("//; s/"$//'
+}
+
+db_ready() {
+  [[ -f "$DB" ]] || return 1
+  [[ "$(sqlite3 -readonly "$DB" "SELECT count(*) FROM grdb_migrations WHERE identifier = '$(latest_migration)'" 2>/dev/null)" == 1 ]]
+}
+
+dialax() {
+  local src="$SKILL_DIR/bin/dialax.swift" exe="$VERIFY/tools/dialax"
+  if [[ ! -x "$exe" || "$src" -nt "$exe" ]]; then
+    mkdir -p "$VERIFY/tools"
+    swiftc -O -o "$exe" "$src" 2>"$VERIFY/tools/dialax.log" \
+      || { cat "$VERIFY/tools/dialax.log" >&2; die "could not compile $src"; }
+  fi
+  "$exe" "$@"
+}
+
+# Evidence for the current run lives here and survives clean.
+art_dir() {
+  local id=""
+  [[ -f "$RUN/run-id" ]] && id="$(cat "$RUN/run-id")"
+  [[ -n "$id" ]] || new_run >/dev/null
+  id="$(cat "$RUN/run-id")"
+  mkdir -p "$ART_ROOT/$id"
+  printf '%s\n' "$ART_ROOT/$id"
+}
+
+new_run() {
+  mkdir -p "$RUN"
+  date +%Y%m%d-%H%M%S > "$RUN/run-id"
+  art_dir
+}
+
+# Empty Last.fm files read as "not connected" and stop FileSecretStringStore
+# from falling back to the login keychain, where the real Dial's Last.fm
+# session may be.
+prepare_home() {
+  mkdir -p "$SUPPORT"
+  local f
+  for f in $LASTFM_FILES; do
+    if [[ ! -e "$SUPPORT/$f" ]]; then
+      : > "$SUPPORT/$f"
+      chmod 600 "$SUPPORT/$f"
+    fi
+  done
+}
+
+# Everything the copy writes outside .build/verify is keyed by its bundle id.
+reset_state() {
+  rm -rf "$VHOME"
+  defaults delete "$BUNDLE_ID" >/dev/null 2>&1 || true
+  # cfprefsd leaves an empty plist behind after the delete.
+  rm -f "$HOME/Library/Preferences/$BUNDLE_ID.plist"
+  rm -rf "$HOME/Library/Caches/$BUNDLE_ID" "$HOME/Library/HTTPStorages/$BUNDLE_ID" \
+    "$HOME/Library/Saved Application State/$BUNDLE_ID.savedState"
+}
+
+require_stopped() {
+  local pid
+  if pid="$(our_pid)"; then die "Dial Verify is running (PID $pid); $1"; fi
+}
+
+cmd_build() {
+  "$REPO/scripts/dev.sh" build
+  [[ -d "$BUILT_APP" ]] || die "no Debug build at $BUILT_APP"
+  if our_pid >/dev/null; then cmd_stop; fi
+  mkdir -p "$VERIFY"
+  local tmp="$VERIFY/Dial Verify.app.tmp"
+  rm -rf "$tmp"
+  ditto "$BUILT_APP" "$tmp"
+  local plist="$tmp/Contents/Info.plist"
+  /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $BUNDLE_ID" -c "Set :CFBundleName Dial Verify" "$plist"
+  /usr/libexec/PlistBuddy -c "Delete :CFBundleDisplayName" "$plist" >/dev/null 2>&1 || true
+  /usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string Dial Verify" "$plist"
+  # dial:// stays with the real Dial. Spotify sign-in still works in the copy:
+  # ASWebAuthenticationSession catches its own callback.
+  /usr/libexec/PlistBuddy -c "Delete :CFBundleURLTypes" "$plist" >/dev/null 2>&1 || true
+  codesign --force --sign "$SIGN_IDENTITY" --preserve-metadata=entitlements,flags,runtime "$tmp" 2>"$VERIFY/codesign.log" \
+    || { cat "$VERIFY/codesign.log" >&2; die "could not sign with \"$SIGN_IDENTITY\" (scripts/create-cert.sh creates it)"; }
+  rm -rf "$APP"
+  mv "$tmp" "$APP"
+  {
+    echo "rev=$(git -C "$REPO" rev-parse --short HEAD)"
+    echo "built=$(date '+%Y-%m-%d %H:%M:%S')"
+  } > "$VERIFY/build-info"
+  say "✓ built $APP ($BUNDLE_ID at $(git -C "$REPO" rev-parse --short HEAD))"
+}
+
+cmd_launch() {
+  local fresh=0 seed=0 plays=120
+  local extra=()
+  while (($#)); do
+    case "$1" in
+      --fresh) fresh=1 ;;
+      --seed) seed=1 ;;
+      --plays) plays="${2:?--plays needs a number}"; shift ;;
+      --) shift; extra=("$@"); break ;;
+      *) die "unknown launch flag: $1" ;;
+    esac
+    shift
+  done
+  [[ -x "$BIN" ]] || die "no Dial Verify copy yet: run dialctl build"
+  require_stopped "keep driving it, or dialctl stop first"
+  local others
+  others="$(verify_pids | tr '\n' ' ')"
+  [[ -z "${others// /}" ]] || die "another Dial Verify is running (PID $others) that this checkout didn't start; leave it alone"
+
+  # A run is everything from one fresh launch to clean, so a journey that
+  # stops and relaunches keeps its evidence in one folder.
+  local art
+  if ((fresh)) || [[ ! -f "$RUN/run-id" ]]; then art="$(new_run)"; else art="$(art_dir)"; fi
+  ((fresh)) && reset_state
+  prepare_home
+  ((seed)) && cmd_seed --plays "$plays"
+  dialax can-capture || true # compiles the helper before the clock starts
+
+  CFFIXED_USER_HOME="$VHOME" nohup "$BIN" ${extra[@]+"${extra[@]}"} </dev/null >"$RUN/app.log" 2>&1 &
+  local pid=$!
+  disown "$pid" 2>/dev/null || true
+  echo "$pid" > "$RUN/pid"
+
+  local i
+  for i in $(seq 1 60); do
+    kill -0 "$pid" 2>/dev/null || { tail -20 "$RUN/app.log" >&2; die "Dial Verify exited during launch (log: $RUN/app.log)"; }
+    if db_ready && [[ "$(dialax windows "$pid" | tail -n +2 | wc -l | tr -d ' ')" -ge 1 ]]; then
+      say "✓ Dial Verify ready: PID $pid, home $VHOME"
+      say "  evidence: $art"
+      dialax windows "$pid"
+      return 0
+    fi
+    sleep 0.5
+  done
+  die "Dial Verify (PID $pid) not ready after 30 s: run dialctl doctor"
+}
+
+cmd_doctor() {
+  FAILED=0
+  say "Dial Verify doctor — $REPO"
+
+  if [[ -x "$BIN" ]]; then
+    local bid
+    bid="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Contents/Info.plist")"
+    if [[ "$bid" == "$BUNDLE_ID" ]] && codesign --verify --strict "$APP" 2>/dev/null; then
+      ok "copy: $APP ($bid, signed)"
+    else
+      bad "copy is not a signed $BUNDLE_ID (it says $bid): run dialctl build"
+    fi
+    local rev head stale
+    rev="$(sed -n 's/^rev=//p' "$VERIFY/build-info" 2>/dev/null || true)"
+    head="$(git -C "$REPO" rev-parse --short HEAD)"
+    stale="$(find "$REPO/Dial" "$REPO/project.yml" -type f -newer "$VERIFY/build-info" 2>/dev/null | head -1 || true)"
+    if [[ "$rev" != "$head" ]]; then
+      bad "copy built from ${rev:-unknown}, checkout is at $head: run dialctl build"
+    elif [[ -n "$stale" ]]; then
+      bad "sources changed since the copy was built (${stale#"$REPO"/}): run dialctl build"
+    else
+      ok "copy matches the checkout ($head)"
+    fi
+  else
+    bad "no Dial Verify copy: run dialctl build"
+  fi
+
+  local pid=""
+  if pid="$(our_pid)"; then
+    ok "running: PID $pid"
+  else
+    pid=""
+    bad "not running: dialctl launch"
+  fi
+  local others
+  others="$(verify_pids | grep -vx "${pid:-none}" | tr '\n' ' ' || true)"
+  if [[ -n "${others// /}" ]]; then
+    bad "other Dial Verify processes (PID $others) share its preferences; this checkout didn't start them"
+  fi
+
+  if [[ -n "$pid" ]]; then
+    local open
+    open="$(lsof -p "$pid" -Fn 2>/dev/null | sed -n 's/^n//p' || true)"
+    if grep -qxF "$DB" <<<"$open"; then ok "database open: ${DB#"$REPO"/}"; else bad "the verify database isn't open"; fi
+    if awk -v p="$REAL_SUPPORT/" 'index($0, p) == 1 {found = 1} END {exit !found}' <<<"$open"; then
+      bad "it has files open in the real Dial folder ($REAL_SUPPORT): stop it now"
+    else
+      ok "nothing open in the real Dial's folder"
+    fi
+  fi
+
+  if db_ready; then
+    ok "database at $(latest_migration): $(sqlite3 -readonly "$DB" "SELECT count(*) FROM plays") plays, $(sqlite3 -readonly "$DB" "SELECT count(*) FROM counted_plays") counted"
+  else
+    bad "database missing or not migrated to $(latest_migration)"
+  fi
+
+  if [[ -n "$pid" ]]; then
+    local windows levels
+    windows="$(dialax windows "$pid" | tail -n +2)"
+    levels="$(cut -f8 <<<"$windows" | sort | uniq -c | sed 's/^ *//' | paste -sd ',' - | sed 's/,/, /g')"
+    if [[ -n "$windows" ]]; then ok "on screen: $levels"; else bad "no windows on screen"; fi
+  fi
+
+  # Sizes only: doctor never reads a token or key.
+  if [[ -s "$SUPPORT/spotify-token.json" ]]; then
+    ok "Spotify: signed in inside Dial Verify"
+  else
+    note "Spotify: signed out (live playback journeys are blocked until someone signs in inside Dial Verify)"
+  fi
+  local f lastfm_ok=1
+  for f in $LASTFM_FILES; do
+    if [[ ! -e "$SUPPORT/$f" ]]; then
+      lastfm_ok=0; bad "$f missing: Last.fm would fall back to the login keychain (dialctl launch recreates it)"
+    elif [[ -s "$SUPPORT/$f" ]]; then
+      lastfm_ok=0; bad "$f is set: Dial Verify can reach Last.fm and may scrobble to a real account"
+    fi
+  done
+  ((lastfm_ok)) && ok "Last.fm: not connected, keychain fallback blocked"
+
+  local real
+  real="$(real_dial_pids | paste -sd ' ' -)"
+  if [[ -n "$real" ]]; then note "real Dial: running (PID $real), left alone"; else note "real Dial: not running"; fi
+  return "$FAILED"
+}
+
+cmd_windows() {
+  local pid
+  pid="$(our_pid)" || die "Dial Verify is not running (dialctl launch)"
+  dialax windows "$pid"
+}
+
+cmd_ax() {
+  local pid
+  pid="$(our_pid)" || die "Dial Verify is not running (dialctl launch)"
+  case "${1:-}" in
+    tree) shift; dialax tree "$pid" "$@" ;;
+    press) shift; [[ $# -eq 1 || ( $# -eq 2 && "$1" == "--exact" ) ]] || die 'usage: dialctl ax press [--exact] "<label text>"'; dialax press "$pid" "$@" ;;
+    *) die 'usage: dialctl ax tree [depth] | dialctl ax press [--exact] "<label text>"' ;;
+  esac
+}
+
+cmd_db() {
+  local mode=(-header -column)
+  if [[ "${1:-}" == "--json" ]]; then mode=(-json); shift; fi
+  [[ $# -eq 1 ]] || die 'usage: dialctl db [--json] "<sql>"'
+  [[ -f "$DB" ]] || die "no database yet ($DB); dialctl launch creates it"
+  sqlite3 -readonly "${mode[@]}" "$DB" "$1"
+}
+
+cmd_prefs() {
+  defaults read "$BUNDLE_ID" "$@" 2>/dev/null || say "(not set: $BUNDLE_ID${1:+ $1})"
+}
+
+cmd_set_pref() {
+  [[ $# -eq 3 ]] || die "usage: dialctl set-pref <key> <bool|int|float|string> <value>"
+  case "$2" in bool | int | float | string) ;; *) die "type must be bool, int, float or string" ;; esac
+  require_stopped "Dial reads preferences at launch: dialctl stop, set-pref, then launch"
+  defaults write "$BUNDLE_ID" "$1" "-$2" "$3"
+  say "$1 = $(defaults read "$BUNDLE_ID" "$1")"
+}
+
+cmd_seed() {
+  local plays=120 label="" fresh=0
+  while (($#)); do
+    case "$1" in
+      --plays) plays="${2:?--plays needs a number}"; shift ;;
+      --label) label="${2:?--label needs a name}"; shift ;;
+      --fresh) fresh=1 ;;
+      *) die "unknown seed flag: $1" ;;
+    esac
+    shift
+  done
+  require_stopped "Dial's importer refuses to run next to it: dialctl stop first"
+  ((fresh)) && rm -rf "$VHOME"
+  prepare_home
+  mkdir -p "$VHOME/seed"
+  /usr/bin/python3 -I "$SKILL_DIR/bin/synth-history.py" --plays "$plays" --label "$label" \
+    --out "$VHOME/seed/Streaming_History_Audio_verify.json"
+  cmd_cli --import "$VHOME/seed"
+  grep -qF "→ DB: $DB" "$LAST_CLI.stderr" || die "the import didn't write to the verify database"
+}
+
+cmd_cli() {
+  case "${1:-}" in
+    --import | --import=* | --export-archive | --export-archive=* | --merge-archive | --merge-archive=*) ;;
+    *) die "cli runs Dial's headless modes only: --import <folder>, --export-archive <file>, --merge-archive <file> [--dry-run] [--source-name <name>]" ;;
+  esac
+  [[ -x "$BIN" ]] || die "no Dial Verify copy yet: run dialctl build"
+  prepare_home
+  local dir base n code=0
+  dir="$(art_dir)"
+  n=$(($(ls "$dir" | grep -c '^cli-.*\.cmd$' || true) + 1))
+  base="$dir/cli-$(printf %02d "$n")-${1#--}"
+  base="${base%%=*}"
+  printf '%q ' "$@" > "$base.cmd"
+  echo >> "$base.cmd"
+  CFFIXED_USER_HOME="$VHOME" "$BIN" "$@" </dev/null >"$base.stdout" 2>"$base.stderr" || code=$?
+  echo "$code" > "$base.exit"
+  LAST_CLI="$base"
+  cat "$base.stdout"
+  cat "$base.stderr"
+  say "exit $code (saved ${base#"$REPO"/}.{cmd,stdout,stderr,exit})"
+  return "$code"
+}
+
+cmd_logs() {
+  local pid
+  pid="$(our_pid)" || die "Dial Verify is not running"
+  /usr/bin/log show --style compact --info --last "${1:-10m}" --predicate "processID == $pid"
+}
+
+db_summary() {
+  [[ -f "$DB" ]] || { echo "(no database)"; return; }
+  sqlite3 -readonly "$DB" "
+    SELECT 'migration       ' || (SELECT identifier FROM grdb_migrations ORDER BY rowid DESC LIMIT 1);
+    SELECT 'plays           ' || count(*) FROM plays;
+    SELECT 'counted_plays   ' || count(*) FROM counted_plays;
+    SELECT 'latest counted  ' || ifnull((SELECT datetime(c.played_at, 'unixepoch') || '  '
+      || ifnull(t.name, c.track_uri) || '  (' || c.source || ')'
+      FROM counted_plays c LEFT JOIN tracks t ON t.uri = c.track_uri
+      ORDER BY c.played_at DESC LIMIT 1), 'none');
+    SELECT 'imports         ' || count(*) FROM imports_log;
+    SELECT 'archive merges  ' || count(*) FROM archive_merges;
+    SELECT 'pet             ' || ifnull((SELECT 'xp ' || xp || ', stage ' || stage FROM pet_state LIMIT 1), 'none');"
+}
+
+cmd_snap() {
+  [[ $# -eq 1 ]] || die "usage: dialctl snap <name>"
+  local pid out
+  pid="$(our_pid)" || die "Dial Verify is not running"
+  out="$(art_dir)/$1.txt"
+  {
+    echo "# $1 — $(date '+%Y-%m-%d %H:%M:%S'), PID $pid, build $(sed -n 's/^rev=//p' "$VERIFY/build-info" 2>/dev/null)"
+    echo
+    echo "## windows"
+    dialax windows "$pid"
+    echo
+    echo "## accessibility"
+    dialax tree "$pid" 2>&1 || true
+    echo
+    echo "## preferences ($BUNDLE_ID)"
+    defaults read "$BUNDLE_ID" 2>/dev/null || echo "(none)"
+    echo
+    echo "## database"
+    db_summary
+  } > "$out"
+  say "$out"
+}
+
+cmd_shot() {
+  [[ $# -eq 2 ]] || die "usage: dialctl shot <desktop|hud|settings|window-id> <name>"
+  dialax can-capture || die "this shell can't save screenshots: the app running it has no Screen Recording grant. Look with computer-use app_screenshot; save text evidence with dialctl snap."
+  local pid id out
+  pid="$(our_pid)" || die "Dial Verify is not running"
+  case "$1" in
+    desktop) id="$(dialax windows "$pid" | awk -F'\t' 'NR > 1 && $2 == -20 {print $1; exit}')" ;;
+    hud) id="$(dialax windows "$pid" | awk -F'\t' 'NR > 1 && $8 == "HUD panel" {print $1; exit}')" ;;
+    settings) id="$(dialax windows "$pid" | awk -F'\t' 'NR > 1 && ($2 == 3 || $2 == 0) {print $1; exit}')" ;;
+    *) id="$1" ;;
+  esac
+  [[ -n "$id" ]] || die "no $1 window on screen (dialctl windows)"
+  out="$(art_dir)/$2.png"
+  screencapture -x -o -l "$id" "$out"
+  say "$out"
+}
+
+cmd_stop() {
+  local pid i
+  if pid="$(our_pid)"; then
+    kill -TERM "$pid"
+    for i in $(seq 1 20); do
+      kill -0 "$pid" 2>/dev/null || break
+      sleep 0.25
+    done
+    if kill -0 "$pid" 2>/dev/null; then kill -KILL "$pid"; fi
+    say "stopped Dial Verify (PID $pid)"
+  else
+    say "Dial Verify from this checkout isn't running"
+  fi
+  rm -f "$RUN/pid"
+}
+
+cmd_clean() {
+  cmd_stop
+  reset_state
+  rm -rf "$APP" "$RUN" "$VERIFY/tools" "$VERIFY/build-info" "$VERIFY/codesign.log" "$VERIFY"/home*
+  say "removed the copy, its homes and its preferences ($BUNDLE_ID)"
+  if [[ -d "$ART_ROOT" ]]; then say "evidence kept in ${ART_ROOT#"$REPO"/}:"; ls -1 "$ART_ROOT" | tail -5 | sed 's/^/  /'; fi
+}
+
+cmd="${1:-help}"
+shift || true
+case "$cmd" in
+  build) cmd_build "$@" ;;
+  launch) cmd_launch "$@" ;;
+  doctor) cmd_doctor "$@" ;;
+  windows) cmd_windows "$@" ;;
+  ax) cmd_ax "$@" ;;
+  db) cmd_db "$@" ;;
+  prefs) cmd_prefs "$@" ;;
+  set-pref) cmd_set_pref "$@" ;;
+  seed) cmd_seed "$@" ;;
+  cli) cmd_cli "$@" ;;
+  logs) cmd_logs "$@" ;;
+  snap) cmd_snap "$@" ;;
+  shot) cmd_shot "$@" ;;
+  evidence) art_dir ;;
+  stop) cmd_stop ;;
+  clean) cmd_clean ;;
+  help | -h | --help) usage ;;
+  *) usage >&2; exit 2 ;;
+esac
