@@ -91,8 +91,9 @@ extension PlayAggregations {
     }
   }
 
+  /// The pet's rediscovery expression: this track earned Rediscovered in
+  /// the last day, or playing it now would earn it (`BadgeResolver`).
   func rediscovered(trackUri: String) throws -> Bool {
-    let ninetyDays: Int64 = 90 * 86_400
     let anchor = now()
     return try dbq.read { db in
       let uris = try matchingTrackUris(trackUri: trackUri, in: db)
@@ -108,29 +109,7 @@ extension PlayAggregations {
           anchor - 24 * 60 * 60,
         ]))
       if recentRediscovery != nil { return true }
-
-      let latest = try Int64.fetchAll(db, sql: """
-        SELECT played_at
-        FROM counted_plays
-        WHERE track_uri IN (\(placeholders(for: uris)))
-        ORDER BY played_at DESC, id DESC
-        LIMIT 2
-        """, arguments: StatementArguments(uris))
-
-      if latest.count >= 2 {
-        let latestPlay = latest[0]
-        let priorPlay = latest[1]
-        if latestPlay >= anchor - 24 * 60 * 60,
-           latestPlay - priorPlay >= ninetyDays {
-          return true
-        }
-      }
-
-      if let lastKnownPlay = latest.first {
-        return anchor - lastKnownPlay >= ninetyDays
-      }
-
-      return false
+      return try BadgeResolver.isRediscovery(trackUri: trackUri, anchorAt: anchor, in: db)
     }
   }
 

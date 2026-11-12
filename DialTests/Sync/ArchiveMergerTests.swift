@@ -48,7 +48,7 @@ final class ArchiveMergerTests: XCTestCase {
     XCTAssertEqual(onFirst.replayFrom, noon(5) + 2)
     XCTAssertEqual(onMini.replayFrom, noon(5) + 2)
     XCTAssertEqual(onFirst.addedBySource, ["live": 6])
-    XCTAssertEqual(onMini.addedBySource, ["live": 11])
+    XCTAssertEqual(onMini.addedBySource, ["live": 13])
 
     let countedTotal = try countedPlays(archives.all)
     XCTAssertEqual(try countedPlays(archives.first), countedTotal)
@@ -96,7 +96,7 @@ final class ArchiveMergerTests: XCTestCase {
         let log = try XCTUnwrap(try Row.fetchOne(db, sql: "SELECT * FROM archive_merges"))
         XCTAssertEqual(log["source_mac_name"] as String, "First Mac")
         XCTAssertEqual(log["donor"] as String, "snapshot")
-        XCTAssertEqual(log["plays_added"] as Int, 11)
+        XCTAssertEqual(log["plays_added"] as Int, 13)
         return try XCTUnwrap(try Int64.fetchOne(
           db, sql: "SELECT id FROM plays WHERE origin = ? AND source = 'live' LIMIT 1", arguments: [firstMac.id]))
       }
@@ -147,8 +147,8 @@ final class ArchiveMergerTests: XCTestCase {
     let report = try merge(snapshot, into: archives.mini, as: miniMac, dryRun: true)
 
     XCTAssertTrue(report.dryRun)
-    XCTAssertEqual(report.playsAdded, 11)
-    XCTAssertEqual(report.after.plays, report.before.plays + 11)
+    XCTAssertEqual(report.playsAdded, 13)
+    XCTAssertEqual(report.after.plays, report.before.plays + 13)
     XCTAssertNil(report.backupURL)
     XCTAssertEqual(try countedPlays(archives.mini), countedBefore)
     XCTAssertEqual(try memories(archives.mini).map(\.label), memoriesBefore.map(\.label))
@@ -178,7 +178,7 @@ final class ArchiveMergerTests: XCTestCase {
 
     XCTAssertEqual(report.sourceName, "First Mac")
     XCTAssertNil(report.sourceExportedAt)
-    XCTAssertEqual(report.addedBySource, ["live": 11])
+    XCTAssertEqual(report.addedBySource, ["live": 13])
     let origins = try withArchive(mini) { dbq in
       try dbq.read { try String.fetchAll($0, sql: "SELECT DISTINCT origin FROM plays WHERE origin IS NOT NULL") }
     }
@@ -292,7 +292,8 @@ final class ArchiveMergerTests: XCTestCase {
 
   /// Plays chosen to earn every kind of memory the replay must reproduce:
   /// album mode and a repeat run (day 0), 10th plays and a streak (day 9), a
-  /// deep cut (day 10), a rediscovery (day 100) and a new artist (day 101).
+  /// deep cut (day 10), a rediscovery of g1 (five plays on days 0–4, back
+  /// on day 190) and a new artist (day 191).
   private func scriptedPlays() -> [ScriptedPlay] {
     var plays: [ScriptedPlay] = []
     func add(_ day: Int, _ tracks: [String]) {
@@ -302,10 +303,10 @@ final class ArchiveMergerTests: XCTestCase {
     }
     add(0, ["a1", "a2", "a3", "b1", "b1", "b1", "g1"])
     for day in 1...12 {
-      add(day, day == 10 ? ["a1", "a2", "a5"] : ["a1", "a2"])
+      add(day, day == 10 ? ["a1", "a2", "a5"] : day <= 4 ? ["a1", "a2", "g1"] : ["a1", "a2"])
     }
-    add(100, ["g1"])
-    add(101, ["d1"])
+    add(190, ["g1"])
+    add(191, ["d1"])
     return plays
   }
 

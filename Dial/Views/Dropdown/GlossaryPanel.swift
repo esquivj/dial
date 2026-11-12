@@ -23,7 +23,7 @@ struct GlossaryPanel: View {
             kind: .rediscovered,
             color: theme.accent,
             label: "REDISCOVERED",
-            body: "A track you haven't heard in 90+ days. The badge detail tells you how long it's been.")
+            body: "An old favorite you haven't heard in 6+ months, at most one a day. The badge detail tells you how long it's been.")
           glossaryRow(
             kind: .deepCut,
             color: theme.accent,
