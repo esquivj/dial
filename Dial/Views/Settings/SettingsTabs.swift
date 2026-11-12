@@ -156,8 +156,10 @@ struct GeneralSettingsTab: View {
 
       SettingsSection("ABOUT") {
         VStack(alignment: .leading, spacing: 4) {
-          Text("Dial 0.1")
+          Text(BuildInfo.current.summary())
             .font(SettingsType.rowTitle)
+            .textSelection(.enabled)
+            .help("The build this Mac is running. Share it when reporting a bug.")
           Text("Now playing, remembered.")
             .font(SettingsType.caption)
             .foregroundStyle(SettingsPalette.muted)
