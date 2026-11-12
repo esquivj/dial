@@ -224,8 +224,18 @@ struct ArchiveMerger {
     }
     if let start = report.replayFrom {
       options.log("→ Replaying memories from \(Self.describe(start))")
+      let started = Date()
+      let log = options.log
       let replay = try MemoryReplay.run(
-        on: dbq, from: start, scratchURL: scratchFolder.appendingPathComponent("replay.sqlite"))
+        on: dbq, from: start, scratchURL: scratchFolder.appendingPathComponent("replay.sqlite")
+      ) { done, total in
+        // A line every 500 plays and at the end, so a long replay can be
+        // judged while it runs.
+        guard done % 500 == 0 || done == total else { return }
+        let elapsed = Date().timeIntervalSince(started)
+        let left = done > 0 ? elapsed / Double(done) * Double(total - done) : 0
+        log(String(format: "  replayed %d of %d plays (%.0f s, about %.0f s left)", done, total, elapsed, left))
+      }
       report.playsReplayed = replay.playsReplayed
       try dbq.write { db in
         for event in replay.events {

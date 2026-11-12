@@ -95,24 +95,19 @@ enum TrackIdentityResolver {
     let artistNameFilter = rawArtist?.isEmpty == false ? rawArtist : nil
     let artistUriFilter = artistUri?.isEmpty == false ? artistUri : nil
 
+    // Three indexed lookups instead of evaluating JSON for every track
+    // (PLA-98): the track itself, then tracks by first artist id and name.
     let rows = try Row.fetchAll(db, sql: """
-      SELECT uri, name, artists_json
-      FROM tracks
-      WHERE uri = ?
-         OR (
-           artists_json IS NOT NULL
-           AND json_valid(artists_json) = 1
-           AND (
-             (? IS NOT NULL AND json_extract(artists_json, '$[0].uri') = ?)
-             OR
-             (? IS NOT NULL AND LOWER(TRIM(json_extract(artists_json, '$[0].name'))) = ?)
-           )
-         )
+      SELECT uri, name, artists_json FROM tracks WHERE uri = ?
+      UNION
+      SELECT t.uri, t.name, t.artists_json FROM tracks t
+      WHERE \(TrackArtistSQL.firstArtistURI("t")) = ?
+      UNION
+      SELECT t.uri, t.name, t.artists_json FROM tracks t
+      WHERE \(TrackArtistSQL.firstArtistName("t")) = ?
       """, arguments: [
         trackUri,
         artistUriFilter,
-        artistUriFilter,
-        artistNameFilter,
         artistNameFilter,
       ])
 

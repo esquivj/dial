@@ -16,34 +16,49 @@ enum MemoryReplay {
     var playsReplayed: Int
   }
 
-  static func run(on dbq: DatabaseQueue, from start: Int64, scratchURL: URL) throws -> Result {
+  /// Called after each replayed play with (plays done, plays in total).
+  typealias Progress = (_ done: Int, _ total: Int) -> Void
+
+  static func run(
+    on dbq: DatabaseQueue,
+    from start: Int64,
+    scratchURL: URL,
+    progress: Progress? = nil
+  ) throws -> Result {
     try dbq.inDatabase { db in
       try db.execute(sql: "VACUUM INTO ?", arguments: [scratchURL.path])
     }
     let scratch = try DatabaseQueue(path: scratchURL.path)
     defer { try? scratch.close() }
     return try scratch.write { db in
-      let plays = try Play.fetchAll(db, sql: """
-        SELECT id, played_at, track_uri, ms_played, source
-        FROM plays
-        WHERE played_at >= ?
-        ORDER BY played_at, id
-        """, arguments: [start])
-      try db.execute(sql: "DELETE FROM badge_events WHERE earned_at >= ?", arguments: [start])
-      try db.execute(sql: "DELETE FROM plays WHERE played_at >= ?", arguments: [start])
-
-      for var play in plays {
-        try play.insert(db)
-        if let mode = try mode(for: play, in: db) {
-          try BadgeResolver.recordMemories(for: play, mode: mode, in: db)
-        }
-      }
-
-      let events = try BadgeEvent.fetchAll(db, sql: """
-        SELECT * FROM badge_events WHERE earned_at >= ? ORDER BY earned_at, id
-        """, arguments: [start])
-      return Result(events: events, playsReplayed: plays.count)
+      try replay(in: db, from: start, progress: progress)
     }
+  }
+
+  /// The replay itself, on a database that is already a throwaway copy:
+  /// it deletes plays and memories from `start` on and records them again.
+  static func replay(in db: Database, from start: Int64, progress: Progress? = nil) throws -> Result {
+    let plays = try Play.fetchAll(db, sql: """
+      SELECT id, played_at, track_uri, ms_played, source
+      FROM plays
+      WHERE played_at >= ?
+      ORDER BY played_at, id
+      """, arguments: [start])
+    try db.execute(sql: "DELETE FROM badge_events WHERE earned_at >= ?", arguments: [start])
+    try db.execute(sql: "DELETE FROM plays WHERE played_at >= ?", arguments: [start])
+
+    for (index, var play) in plays.enumerated() {
+      try play.insert(db)
+      if let mode = try mode(for: play, in: db) {
+        try BadgeResolver.recordMemories(for: play, mode: mode, in: db)
+      }
+      progress?(index + 1, plays.count)
+    }
+
+    let events = try BadgeEvent.fetchAll(db, sql: """
+      SELECT * FROM badge_events WHERE earned_at >= ? ORDER BY earned_at, id
+      """, arguments: [start])
+    return Result(events: events, playsReplayed: plays.count)
   }
 
   /// How a play earns memories when it's recorded, or nil when it earns
