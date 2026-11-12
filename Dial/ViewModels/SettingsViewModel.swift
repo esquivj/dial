@@ -220,6 +220,12 @@ final class SettingsViewModel {
   /// Global shortcuts and whether they're on.
   let hotkeys: HotkeySettings
   var signedIn: Bool
+  /// A stored credential exists but Spotify keeps rejecting its refresh.
+  /// Playback on this Mac still reads and counts; the Web API (other
+  /// devices, likes, enrichment) waits for a reconnect.
+  var connectionNeedsAttention = false
+  /// True when Web API calls can be expected to work.
+  var webAPIUsable: Bool { signedIn && !connectionNeedsAttention }
   var importProgress: Double = 0
   var lastImport: ImportLogEntry?
 
@@ -480,19 +486,24 @@ final class SettingsViewModel {
   }
 
   /// Flip after a successful `auth.signIn()`.
-  func markSignedIn() { signedIn = true }
+  func markSignedIn() {
+    signedIn = true
+    connectionNeedsAttention = false
+  }
 
-  /// Show the reconnect UI without destroying the stored refresh token.
+  /// Show the reconnect prompt without destroying the stored refresh token.
   /// Used after repeated Spotify refresh rejections so the next launch can
-  /// still retry instead of forcing OAuth immediately.
+  /// still retry instead of forcing OAuth immediately. `signedIn` stays
+  /// true so the HUD keeps showing playback from the Spotify app.
   func markConnectionNeedsAttention() {
-    signedIn = false
+    connectionNeedsAttention = true
   }
 
   /// Clear the keychain token and flip the flag. Used by the Disconnect button.
   func markSignedOut() {
     try? tokenStore.clear()
     signedIn = false
+    connectionNeedsAttention = false
   }
 
   func resetMenuBarDefaults() {

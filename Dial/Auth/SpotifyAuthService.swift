@@ -141,7 +141,9 @@ final class SpotifyAuthService: NSObject {
     // auth edge cases, account/device churn, or request races; deleting the
     // credential turns that into a guaranteed full reauth on every relaunch.
     // The explicit Disconnect button remains the destructive path.
-    if (400...499).contains(http.statusCode) {
+    // A 429 is a rate limit, not a verdict on the credential, so it falls
+    // through to `tokenEndpointStatus` like a 5xx and is simply retried.
+    if (400...499).contains(http.statusCode), http.statusCode != 429 {
       authLog.error("refresh: 4xx status \(http.statusCode), preserving token for retry")
       throw SpotifyAuthError.refreshRejected(http.statusCode)
     }

@@ -33,6 +33,9 @@ final class SimulatedSpotify: @unchecked Sendable {
   /// Forces a reading (e.g. `.accessDenied`) while the app is running.
   var forcedLocalReading: LocalPlaybackReading?
   var webLag: TimeInterval = 1
+  /// When set, every Web API call fails with this error (e.g. a rejected
+  /// refresh token). The call still counts toward `webCalls`.
+  var webError: Error?
   /// Notification delivery + Apple Event latency.
   var notificationDelay: TimeInterval = 0.05
   private(set) var webCalls = 0
@@ -135,7 +138,13 @@ final class SimulatedSpotify: @unchecked Sendable {
 final class SimulatedWebClient: PollingClient, @unchecked Sendable {
   let world: SimulatedSpotify
   init(world: SimulatedSpotify) { self.world = world }
-  func currentlyPlaying() async throws -> CurrentlyPlaying? { world.webResponse() }
+  func currentlyPlaying() async throws -> CurrentlyPlaying? {
+    if let error = world.webError {
+      _ = world.webResponse()
+      throw error
+    }
+    return world.webResponse()
+  }
 }
 
 final class SimulatedLocalSource: LocalPlaybackSource, @unchecked Sendable {
@@ -270,6 +279,7 @@ final class LegacyPollingService {
 struct SimulationRun {
   var events: [PlaybackEvent] = []
   var statuses: [PlaybackSourceStatus] = []
+  var webAuthStates: [WebAuthState] = []
   var webCalls = 0
   var localReads = 0
 
@@ -302,9 +312,14 @@ extension SimulatedSpotify {
     service.onStatusChange = { status in
       statusLock.lock(); statuses.append(status); statusLock.unlock()
     }
+    var webAuthStates: [WebAuthState] = []
+    service.onWebAuthChange = { state in
+      statusLock.lock(); webAuthStates.append(state); statusLock.unlock()
+    }
     let callsBefore = webCalls
     run.events = try await self.run(service.stream(), for: seconds)
     run.statuses = statuses
+    run.webAuthStates = webAuthStates
     run.webCalls = webCalls - callsBefore
     run.localReads = localSource.reads
     return run

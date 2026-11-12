@@ -74,26 +74,71 @@ final class PollingServiceTests: XCTestCase {
     XCTAssertFalse(events.contains(where: { if case .countedPlay = $0 { return true } else { return false } }))
   }
 
-  func test_refreshRejectedRetriesThenSurfacesWithoutImmediateSignOut() async {
+  func test_refreshRejectedSurfacesNeedsAttentionAndKeepsPolling() async throws {
     var calls = 0
+    var states: [WebAuthState] = []
     let lock = NSLock()
     let client = ThrowingFakeClient {
       lock.lock(); defer { lock.unlock() }
       calls += 1
-      throw SpotifyAuthError.refreshRejected(400)
+      if calls <= 4 { throw SpotifyAuthError.refreshRejected(400) }
+      return Self.playing(progressMs: 5_000)
     }
     let svc = PollingService(client: client, interval: 0, clock: { 1_700_000_000 })
-
-    do {
-      for try await _ in svc.stream() {}
-      XCTFail("stream should finish with refreshRejected")
-    } catch let error as SpotifyAuthError {
-      XCTAssertEqual(error, .refreshRejected(400))
-    } catch {
-      XCTFail("unexpected error: \(error)")
+    svc.onWebAuthChange = { state in
+      lock.lock(); states.append(state); lock.unlock()
     }
 
-    XCTAssertEqual(calls, 3)
+    // The stream outlives the rejections and delivers the next good read.
+    for try await e in svc.stream() {
+      if case .started = e { break }
+    }
+
+    let (finalCalls, finalStates) = lock.withLock { (calls, states) }
+    XCTAssertGreaterThanOrEqual(finalCalls, 5, "polling continued past the rejections")
+    XCTAssertEqual(finalStates, [.needsAttention, .ok])
+  }
+
+  func test_missingTokenPausesWebReadsUntilRetry() async throws {
+    var calls = 0
+    var signedIn = false
+    let lock = NSLock()
+    let client = ThrowingFakeClient {
+      lock.lock(); defer { lock.unlock() }
+      calls += 1
+      guard signedIn else { throw SpotifyAuthError.missingStoredToken }
+      return Self.playing(progressMs: 5_000)
+    }
+    let svc = PollingService(client: client, interval: 0, clock: { 1_700_000_000 })
+    let signedOut = expectation(description: "signed out reported")
+    svc.onWebAuthChange = { state in
+      if state == .signedOut { signedOut.fulfill() }
+    }
+    let started = expectation(description: "playback read after retry")
+    let task = Task {
+      for try await e in svc.stream() {
+        if case .started = e { started.fulfill(); break }
+      }
+    }
+    defer { task.cancel() }
+
+    await fulfillment(of: [signedOut], timeout: 5.0)
+    try await Task.sleep(nanoseconds: 300_000_000)
+    let callsWhileSignedOut = lock.withLock { () -> Int in
+      signedIn = true
+      return calls
+    }
+    XCTAssertEqual(callsWhileSignedOut, 1, "no Web API calls while there is no token")
+
+    svc.retryWebNow()
+    await fulfillment(of: [started], timeout: 5.0)
+  }
+
+  private static func playing(progressMs: Int) -> CurrentlyPlaying {
+    .init(item: .init(uri: "T", name: "Track", duration_ms: 200000,
+                      artists: [.init(name: "A", uri: "spotify:artist:A")],
+                      album: .init(name: "Al", images: [.init(url: "http://a")])),
+          is_playing: true, progress_ms: progressMs)
   }
 }
 

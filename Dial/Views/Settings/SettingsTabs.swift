@@ -21,10 +21,14 @@ struct GeneralSettingsTab: View {
         VStack(alignment: .leading, spacing: SettingsLayout.rowGap) {
           HStack(alignment: .center, spacing: 12) {
             VStack(alignment: .leading, spacing: 3) {
-              Text(vm.signedIn ? "Spotify connected" : "Spotify offline")
+              Text(vm.connectionNeedsAttention
+                   ? "Spotify needs reconnecting"
+                   : vm.signedIn ? "Spotify connected" : "Spotify offline")
                 .font(SettingsType.rowTitle)
                 .foregroundStyle(SettingsPalette.text)
-              Text(vm.signedIn
+              Text(vm.connectionNeedsAttention
+                   ? "Plays from Spotify on this Mac still count. Reconnect for other devices and likes."
+                   : vm.signedIn
                    ? "Playback, likes, and history are on."
                    : "Playback and likes are off.")
                 .font(SettingsType.caption)
@@ -33,7 +37,11 @@ struct GeneralSettingsTab: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .layoutPriority(1)
             Spacer()
-            if vm.signedIn {
+            if vm.connectionNeedsAttention {
+              Button("Reconnect") { Task { await onSignIn() } }
+                .buttonStyle(SettingsButtonStyle(prominent: true))
+                .help("Sign in to Spotify again. Your history and settings stay as they are.")
+            } else if vm.signedIn {
               Button("Disconnect") { showDisconnectAlert = true }
                 .buttonStyle(SettingsButtonStyle())
                 .help("Stop live Spotify updates. Imported history stays local.")
