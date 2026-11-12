@@ -119,6 +119,13 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.dial.Dial
         INFOPLIST_KEY_NSHumanReadableCopyright: "© 2026 Juan Esquivel"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIconGel
+    # Writes DialGitCommit, DialGitDirty and DialBuildDate into the built
+    # Info.plist so any installed copy can say which commit it came from.
+    # Runs on every build, after Info.plist processing and before signing.
+    postBuildScripts:
+      - name: Stamp build info
+        script: '"${SRCROOT}/scripts/stamp-build-info.sh"'
+        basedOnDependencyAnalysis: false
     dependencies:
       - package: GRDB
         product: GRDB
