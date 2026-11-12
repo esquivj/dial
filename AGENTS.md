@@ -23,13 +23,13 @@ Full logs are in `.build/logs/`. Don't pass your own `-derivedDataPath` to a new
 
 | Folder | What it owns |
 |---|---|
-| `Dial/App` | App entry, `AppDelegate` (CLI flags like `--import`, `--backfill`, `--perf-automation`, `--export-archive`, `--merge-archive`), `StatusBarController` + `DropdownPanel` (the 440×440 borderless panel), `DesktopMemoryController` (the album object on the desktop; spec in `docs/design/desktop-memory.md`), `LaunchAtLogin` and `AppPermissions` (login item and privacy permission status for Settings) |
+| `Dial/App` | App entry, `AppDelegate` (CLI flags like `--import`, `--backfill`, `--perf-automation`, `--export-archive`, `--merge-archive`, `--rebuild-memories`), `StatusBarController` + `DropdownPanel` (the 440×440 borderless panel), `DesktopMemoryController` (the album object on the desktop; spec in `docs/design/desktop-memory.md`), `LaunchAtLogin` and `AppPermissions` (login item and privacy permission status for Settings) |
 | `Dial/Spotify`, `Dial/Auth` | Web API client, rate-limit gate, desktop playback observer; PKCE OAuth with Keychain tokens |
 | `Dial/Polling` | `PollingService` turns playback state into events; `DedupRule` decides when a play counts |
 | `Dial/LastFM` | Scrobbling and Loved sync: signed API client (`LastFMAPI`), scrobble rule + per-track tracker, `LastFMScrobbler` (queue flush, desktop auth flow). Tag lookups stay in `History/MetadataEnricher` |
 | `Dial/History` | Extended Streaming History import (`Importer`, `EndsongFile`), recently-played reconciliation, metadata enrichment/backfill |
 | `Dial/Store` | GRDB `DatabaseStack`, `Migrations` (v1…v20), `DAO/` and `Models/` |
-| `Dial/Sync` | Multi-Mac history: `ArchiveExporter` (`--export-archive`), `ArchiveMerger` (`--merge-archive`), `PlayTwinMatcher`, `MemoryReplay`, `PetMerge`, `MacIdentity`. Spec in `docs/design/multi-mac-history.md` |
+| `Dial/Sync` | Multi-Mac history: `ArchiveExporter` (`--export-archive`), `ArchiveMerger` (`--merge-archive`), `PlayTwinMatcher`, `MemoryReplay`, `MemoryRebuilder` (`--rebuild-memories <yyyy-MM-dd> [--dry-run]` re-judges memories after a badge rule changes), `PetMerge`, `MacIdentity`. Spec in `docs/design/multi-mac-history.md` |
 | `Dial/Aggregations` | All stats SQL (`StatsQueries`, `PlayAggregations`), badges (`BadgeResolver`), sound themes, track/artist identity merging |
 | `Dial/Pet` | `PetEngine` (records plays, XP, stages, tricks), behaviors, streaks |
 | `Dial/Audio` | Screen-audio capture + FFT for the spectrum visualizer |
