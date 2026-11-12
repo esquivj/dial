@@ -51,8 +51,11 @@ final class PlayTwinMatcherTests: XCTestCase {
     // Recently played is stamped at the end; the live row near the start.
     XCTAssertTrue(same(recent(t + 180), live(t - 2)))
     XCTAssertTrue(same(recent(t + 180), live(t)))
-    // Outside the v18 window.
-    XCTAssertFalse(same(recent(t + 180), live(t - 10)))
+    // Spotify often stamps the end late: up to 60 s of slack (v20).
+    XCTAssertTrue(same(recent(t + 180), live(t - 10)))
+    XCTAssertTrue(same(recent(t + 180), live(t - 60)))
+    // Outside the v20 window.
+    XCTAssertFalse(same(recent(t + 180), live(t - 61)))
   }
 
   func test_recentRowsOrImportsWithDifferentKeys_areDifferentListens() {

@@ -81,12 +81,12 @@ enum PlayTwinMatcher {
     return min(60, max(1, seconds / 2))
   }
 
-  /// The v18 `counted_plays` window: a `recent` row (stamped when the play
+  /// The `counted_plays` window (v20): a `recent` row (stamped when the play
   /// ended) and any other row of the same listen, matched exactly as
   /// `counted_plays` and `PetEngine` match them.
   private static func inRecentWindow(recentAt: Int64, otherAt: Int64, durationMs: Int64?) -> Bool {
     let window = durationSec(durationMs).map { max(30, $0) } ?? 600
-    return otherAt >= recentAt - window - PetEngine.recentTwinToleranceSec
+    return otherAt >= recentAt - window - PetEngine.recentTwinToleranceSec(windowSec: window)
       && otherAt < recentAt + window
   }
 
