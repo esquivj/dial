@@ -102,8 +102,16 @@ final class SettingsViewModelTests: XCTestCase {
 
     vm.markConnectionNeedsAttention()
 
-    XCTAssertFalse(vm.signedIn)
+    // The HUD keeps showing playback from the Spotify app; only Web API
+    // work waits for a reconnect.
+    XCTAssertTrue(vm.signedIn)
+    XCTAssertTrue(vm.connectionNeedsAttention)
+    XCTAssertFalse(vm.webAPIUsable)
     XCTAssertEqual(try tokenStore.load()?.refreshToken, "refresh")
+
+    vm.markSignedIn()
+    XCTAssertFalse(vm.connectionNeedsAttention)
+    XCTAssertTrue(vm.webAPIUsable)
   }
 
   func test_desktopMemoryDefaultsToOnAtTheMainDisplaysBottomRight() throws {

@@ -38,6 +38,45 @@ final class LocalPlaybackSourceTests: XCTestCase {
     XCTAssertEqual(run.events.filter { $0 == .modesChanged(shuffle: false, repeatMode: .off) }.count, 1)
   }
 
+  // MARK: Spotify credential broken
+
+  /// PLA-94: a rejected refresh token used to end the whole poll loop, so
+  /// plays from the Spotify app on this Mac stopped counting until a manual
+  /// reconnect. Local reads need no token and must carry on.
+  func test_rejectedRefreshToken_localPlaysStillCount() async throws {
+    let a = World.track("a", seconds: 200), b = World.track("b", seconds: 180)
+    let c = World.track("c", seconds: 150)
+    let script: (World) -> Void = { w in
+      w.play(a, for: 200).play(b, for: 180).play(c, for: 150)
+    }
+
+    let broken = World(); script(broken)
+    broken.webError = SpotifyAuthError.refreshRejected(400)
+    let run = try await broken.runCurrent(for: broken.sessionLength)
+    let healthy = World(); script(healthy)
+    let baseline = try await healthy.runCurrent(for: healthy.sessionLength)
+
+    XCTAssertEqual(run.countedUris, [a.uri, b.uri, c.uri])
+    XCTAssertEqual(run.countedUris, baseline.countedUris)
+    XCTAssertEqual(run.webAuthStates, [.needsAttention])
+    XCTAssertEqual(baseline.webAuthStates, [])
+  }
+
+  /// Signed out (no token at all): local plays count and the Web API isn't
+  /// called again until sign-in.
+  func test_missingToken_localPlaysCount_noWebChurn() async throws {
+    let a = World.track("a", seconds: 200), b = World.track("b", seconds: 180)
+    let w = World()
+    w.play(a, for: 200).play(b, for: 180)
+    w.webError = SpotifyAuthError.missingStoredToken
+
+    let run = try await w.runCurrent(for: w.sessionLength)
+
+    XCTAssertEqual(run.countedUris, [a.uri, b.uri])
+    XCTAssertEqual(run.webAuthStates, [.signedOut])
+    XCTAssertEqual(run.webCalls, 1)
+  }
+
   // MARK: Remote only
 
   func test_remoteOnly_appClosed_behavesLikeLegacy() async throws {

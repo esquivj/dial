@@ -141,30 +141,19 @@ final class AppCoordinator {
     poller.onStatusChange = { [weak self] status in
       DispatchQueue.main.async { self?.playbackSource = status }
     }
+    poller.onWebAuthChange = { [weak self] state in
+      DispatchQueue.main.async { self?.applyWebAuth(state) }
+    }
     startRecentPlayRepair(reason: "launch", delay: 8)
     startPeriodicRecentPlaySync()
     Task { @MainActor [weak self] in self?.lastFM.flushSoon() }
     Task { [weak self] in
       guard let self else { return }
+      // Auth problems no longer end this loop: they arrive through
+      // `onWebAuthChange`, and the Spotify app on this Mac keeps being read.
       do {
         for try await event in self.poller.stream() {
           await self.handle(event, source: .poll)
-        }
-      } catch let error as SpotifyAuthError where error == .missingStoredToken {
-        // No token exists locally. This is the real signed-out path; refresh
-        // rejections keep the credential and retry inside PollingService.
-        coordLog.error("missing Spotify token; surfacing connect view")
-        await MainActor.run { [weak self] in
-          self?.settings.markSignedOut()
-        }
-      } catch let error as SpotifyAuthError {
-        if case let .refreshRejected(status) = error {
-          coordLog.error("Spotify refresh rejected with status \(status); preserving token and surfacing reconnect view")
-          await MainActor.run { [weak self] in
-            self?.settings.markConnectionNeedsAttention()
-          }
-        } else {
-          coordLog.error("polling auth error: \(String(describing: error), privacy: .public)")
         }
       } catch {
         coordLog.error("polling error: \(String(describing: error), privacy: .public)")
@@ -350,6 +339,7 @@ final class AppCoordinator {
     _ = try await settings.auth.signIn()
     settings.markSignedIn()
     start()
+    poller.retryWebNow()
   }
 
   @MainActor
@@ -357,6 +347,26 @@ final class AppCoordinator {
     _ = try await settings.auth.signIn()
     settings.markSignedIn()
     start()
+    poller.retryWebNow()
+  }
+
+  /// Mirrors the poller's Web API credential state into Settings. Polling
+  /// itself keeps running in every state.
+  @MainActor
+  func applyWebAuth(_ state: WebAuthState) {
+    switch state {
+    case .ok:
+      settings.markSignedIn()
+    case .signedOut:
+      coordLog.error("missing Spotify token; surfacing connect view, local reads continue")
+      settings.markSignedOut()
+    case .needsAttention:
+      coordLog.error("Spotify refresh rejected repeatedly; preserving token, surfacing reconnect view, local reads continue")
+      settings.markConnectionNeedsAttention()
+    }
+    // Enrichment runs only while the Web API is usable, so start or stop it
+    // with every change, including a token that recovers on its own.
+    syncBackgroundEnrichment()
   }
 
   func importHistory(from folder: URL) async {

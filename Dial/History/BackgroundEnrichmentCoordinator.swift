@@ -56,7 +56,7 @@ final class BackgroundEnrichmentCoordinator {
   }
 
   func sync() {
-    guard settings.backgroundEnrichmentEnabled, settings.signedIn else {
+    guard settings.backgroundEnrichmentEnabled, settings.webAPIUsable else {
       stop()
       return
     }
@@ -65,7 +65,7 @@ final class BackgroundEnrichmentCoordinator {
 
   func restartNow() {
     stop(updateStatus: false)
-    guard settings.backgroundEnrichmentEnabled, settings.signedIn else {
+    guard settings.backgroundEnrichmentEnabled, settings.webAPIUsable else {
       update(.off, message: "Off", error: nil)
       return
     }
@@ -93,7 +93,7 @@ final class BackgroundEnrichmentCoordinator {
 
       let metadata = MetadataEnricher(dbq: dbq, client: client)
       while !Task.isCancelled {
-        guard settings.backgroundEnrichmentEnabled, settings.signedIn else { break }
+        guard settings.backgroundEnrichmentEnabled, settings.webAPIUsable else { break }
         do {
           let activeCooldown = await SpotifyRateLimitGate.shared.cooldownRemaining()
           if activeCooldown > 0 {
@@ -194,7 +194,7 @@ final class BackgroundEnrichmentCoordinator {
 
   private func finishTask() {
     task = nil
-    if !settings.backgroundEnrichmentEnabled || !settings.signedIn {
+    if !settings.backgroundEnrichmentEnabled || !settings.webAPIUsable {
       update(.off, message: "Off", error: nil)
     }
   }

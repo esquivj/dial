@@ -34,6 +34,17 @@ enum PlaybackSourceStatus: Equatable {
   }
 }
 
+/// Whether the Web API can be used with the stored Spotify credential.
+/// Reads of the Spotify app on this Mac never depend on it.
+enum WebAuthState: Equatable {
+  case ok
+  /// No token in the keychain. Web reads pause until `retryWebNow()`.
+  case signedOut
+  /// The refresh token was rejected several times in a row. The credential
+  /// is kept and retried on the normal failure backoff.
+  case needsAttention
+}
+
 /// How often each feed is asked, by situation.
 struct PollingTiming: Equatable {
   /// Web API is the only source (Spotify app closed, access off, or another
@@ -102,12 +113,20 @@ final class PollingService {
   private var lastWebAttemptAt: Date?
   private var webFailures = 0
   private var refreshRejections = 0
+  private var webAuth: WebAuthState = .ok
+  /// Set on `.missingStoredToken`: no Web API calls until `retryWebNow()`.
+  private var webPausedForSignIn = false
+  private let retryLock = NSLock()
+  private var retryRequested = false
   private var metadataPendingUri: String?
   private var metadataAttemptsMade = 0
   private var status: PlaybackSourceStatus?
 
   /// Called on the polling task whenever the answering source changes.
   var onStatusChange: ((PlaybackSourceStatus) -> Void)?
+  /// Called on the polling task whenever the Web API credential state
+  /// changes. Auth problems never end the stream; they only arrive here.
+  var onWebAuthChange: ((WebAuthState) -> Void)?
 
   init(client: PollingClient,
        interval: TimeInterval = 3.0,
@@ -127,18 +146,25 @@ final class PollingService {
     scheduler.wake()
   }
 
+  /// Ask the Web API again now, clearing any failure backoff. Call after
+  /// sign-in or reconnect. Safe from any thread.
+  func retryWebNow() {
+    retryLock.lock()
+    retryRequested = true
+    retryLock.unlock()
+    scheduler.wake()
+  }
+
+  /// Runs until cancelled. A Spotify auth problem doesn't end it: the Web
+  /// API backs off and reports through `onWebAuthChange`, while the Spotify
+  /// app on this Mac keeps being read.
   func stream() -> AsyncThrowingStream<PlaybackEvent, Error> {
     AsyncThrowingStream { continuation in
       let task = Task {
         pollingLog.notice("polling stream started, webInterval=\(self.timing.webInterval)s local=\(self.localSource != nil)")
         while !Task.isCancelled {
-          do {
-            let delay = try await self.cycle { continuation.yield($0) }
-            await self.scheduler.wait(upTo: delay)
-          } catch {
-            continuation.finish(throwing: error)
-            return
-          }
+          let delay = await self.cycle { continuation.yield($0) }
+          await self.scheduler.wait(upTo: delay)
         }
         continuation.finish()
       }
@@ -149,22 +175,35 @@ final class PollingService {
   // MARK: - One cycle
 
   /// Runs one read-and-emit cycle and returns how long to wait before the
-  /// next. Throws only errors that should end the stream (signed out).
-  private func cycle(_ emit: (PlaybackEvent) -> Void) async throws -> TimeInterval {
+  /// next.
+  private func cycle(_ emit: (PlaybackEvent) -> Void) async -> TimeInterval {
+    applyRetryRequest()
     let reading = await localSource?.read()
     if case let .playback(local)? = reading {
       if local.isPlaying {
-        return try await localPlayingCycle(local, emit)
+        return await localPlayingCycle(local, emit)
       }
-      return try await localIdleCycle(local, emit)
+      return await localIdleCycle(local, emit)
     }
-    return try await webOnlyCycle(reason: Self.reason(for: reading), emit)
+    return await webOnlyCycle(reason: Self.reason(for: reading), emit)
+  }
+
+  private func applyRetryRequest() {
+    retryLock.lock()
+    let requested = retryRequested
+    retryRequested = false
+    retryLock.unlock()
+    guard requested else { return }
+    webPausedForSignIn = false
+    webFailures = 0
+    refreshRejections = 0
+    lastWebAttemptAt = nil
   }
 
   private func localPlayingCycle(
     _ local: LocalPlaybackSnapshot,
     _ emit: (PlaybackEvent) -> Void
-  ) async throws -> TimeInterval {
+  ) async -> TimeInterval {
     authority = .local
     remotePlaying = false
     lastLocalPlayingAt = scheduler.now()
@@ -181,7 +220,7 @@ final class PollingService {
 
     if localWebIsDue() {
       if metadataPendingUri != nil { metadataAttemptsMade += 1 }
-      if let response = try await fetchWeb() {
+      if let response = await fetchWeb() {
         // Shuffle/repeat are account-wide, so they apply whatever the Web
         // API thinks is playing.
         for e in modeEvents(PlaybackSnapshot(web: response)) { emit(e) }
@@ -203,10 +242,10 @@ final class PollingService {
   private func localIdleCycle(
     _ local: LocalPlaybackSnapshot,
     _ emit: (PlaybackEvent) -> Void
-  ) async throws -> TimeInterval {
+  ) async -> TimeInterval {
     metadataPendingUri = nil
     let webInterval = remotePlaying ? timing.webInterval : timing.remoteCheckInterval
-    if webIsDue(every: webInterval), let response = try await fetchWeb() {
+    if webIsDue(every: webInterval), let response = await fetchWeb() {
       remotePlaying = response?.is_playing == true && !isLocalEcho(response, local: local)
       if remotePlaying {
         authority = .web
@@ -229,11 +268,11 @@ final class PollingService {
   private func webOnlyCycle(
     reason: PlaybackSourceStatus.WebAPIReason,
     _ emit: (PlaybackEvent) -> Void
-  ) async throws -> TimeInterval {
+  ) async -> TimeInterval {
     authority = .web
     metadataPendingUri = nil
     publish(.webAPI(reason))
-    if webIsDue(every: timing.webInterval), let response = try await fetchWeb() {
+    if webIsDue(every: timing.webInterval), let response = await fetchWeb() {
       remotePlaying = response?.is_playing == true
       for e in interpret(PlaybackSnapshot(web: response)) { emit(e) }
     }
@@ -252,6 +291,7 @@ final class PollingService {
   // MARK: - Web API
 
   private func localWebIsDue() -> Bool {
+    guard !webPausedForSignIn else { return false }
     if metadataPendingUri != nil, metadataAttemptsMade < timing.metadataAttempts {
       if metadataAttemptsMade == 0 { return true }
       return webIsDue(every: timing.metadataRetryInterval)
@@ -260,11 +300,14 @@ final class PollingService {
   }
 
   private func webIsDue(every interval: TimeInterval) -> Bool {
-    webWait(every: interval) <= 0
+    !webPausedForSignIn && webWait(every: interval) <= 0
   }
 
   /// Seconds until the Web API may be asked again, including failure backoff.
   private func webWait(every interval: TimeInterval) -> TimeInterval {
+    // Signed out: nothing to ask until `retryWebNow()` wakes the loop. Keep
+    // a modest cadence so a Spotify app that opens is still noticed.
+    if webPausedForSignIn { return max(interval, timing.remoteCheckInterval) }
     guard let last = lastWebAttemptAt else { return 0 }
     // Backoff schedule (webInterval = 2s baseline):
     //   1st fail: 2s, 2nd: 4s, 3rd: 8s, 4th: 16s, 5th: 32s, then 60s cap.
@@ -279,7 +322,10 @@ final class PollingService {
   /// One `/me/player` call. Returns nil when the call failed in a way worth
   /// retrying (the cycle then emits nothing from the Web API), `.some(nil)`
   /// when nothing is playing anywhere.
-  private func fetchWeb() async throws -> CurrentlyPlaying?? {
+  ///
+  /// Never throws. Auth problems are reported through `onWebAuthChange` so
+  /// they can't stop local reads or live play counting.
+  private func fetchWeb() async -> CurrentlyPlaying?? {
     // Spacing is measured from when the call finishes, like the old
     // call-then-sleep loop, so web-only polling is never faster than before.
     defer { lastWebAttemptAt = scheduler.now() }
@@ -294,16 +340,23 @@ final class PollingService {
       }
       webFailures = 0
       refreshRejections = 0
+      setWebAuth(.ok)
       return .some(cp)
     } catch {
-      // No local token means there is nothing to refresh. A rejected
-      // refresh token gets a short retry window, then surfaces as a
-      // connection-needs-attention state without deleting the credential.
+      // No local token means there is nothing to refresh: pause Web API
+      // calls until sign-in. A rejected refresh token gets a short retry
+      // window, then surfaces as needs-attention without deleting the
+      // credential, and keeps retrying on the backoff below.
       if let authError = error as? SpotifyAuthError {
-        if authError == .missingStoredToken { throw error }
+        if authError == .missingStoredToken {
+          webPausedForSignIn = true
+          setWebAuth(.signedOut)
+          pollingLog.error("no Spotify token; pausing Web API reads until sign-in")
+          return nil
+        }
         if case .refreshRejected = authError {
           refreshRejections += 1
-          if refreshRejections >= 3 { throw error }
+          if refreshRejections >= 3 { setWebAuth(.needsAttention) }
         } else {
           refreshRejections = 0
         }
@@ -317,6 +370,13 @@ final class PollingService {
       pollingLog.error("error #\(self.webFailures): \(String(describing: error), privacy: .public)")
       return nil
     }
+  }
+
+  private func setWebAuth(_ next: WebAuthState) {
+    guard next != webAuth else { return }
+    webAuth = next
+    pollingLog.notice("web auth: \(String(describing: next), privacy: .public)")
+    onWebAuthChange?(next)
   }
 
   private func publish(_ next: PlaybackSourceStatus) {
