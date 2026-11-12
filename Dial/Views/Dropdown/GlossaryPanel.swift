@@ -28,7 +28,7 @@ struct GlossaryPanel: View {
             kind: .deepCut,
             color: theme.accent,
             label: "DEEP CUT",
-            body: "A rare track from an artist you already play a lot.")
+            body: "A rare track from an artist you already play a lot, at most one a day.")
           glossaryRow(
             kind: .onStreak,
             color: theme.memoryAccent,

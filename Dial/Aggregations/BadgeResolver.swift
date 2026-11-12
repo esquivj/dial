@@ -60,9 +60,13 @@ enum BadgeResolver {
       if artistCount == 1 {
         events.append(event(.newArtist, play: play, context: context, scope: "new_artist:\(artistUri)"))
       }
-      if artistCount >= 20, trackCount <= 3 {
-        events.append(event(.deepCut, play: play, context: context, scope: "deep_cut:\(play.trackUri)"))
-      }
+    }
+
+    if play.source == "live",
+       try isDeepCut(
+         trackUri: play.trackUri, context: context, artistCount: artistCount, trackCount: trackCount,
+         anchorAt: play.playedAt, in: db) {
+      events.append(event(.deepCut, play: play, context: context, scope: "deep_cut:\(play.trackUri)"))
     }
 
     if play.source == "live",
@@ -133,13 +137,13 @@ enum BadgeResolver {
         explanation: "Shown because the previous play was \(days.formatted()) days ago. \(rediscoveryRuleText)")
     }
 
-    if context.artistUri != nil {
-      if artistCount >= 20, effectiveTrackCount <= 3 {
-        return BadgeInsight(
-          kind: .deepCut,
-          detail: "Rare track from a familiar artist",
-          explanation: "Shown because this artist has \(artistCount.formatted()) lifetime plays, while this track has only \(effectiveTrackCount.formatted()). Deep Cut requires 20+ artist plays and 3 or fewer track plays.")
-      }
+    if try isDeepCut(
+      trackUri: trackUri, context: context, artistCount: artistCount, trackCount: effectiveTrackCount,
+      anchorAt: anchorAt, in: db) {
+      return BadgeInsight(
+        kind: .deepCut,
+        detail: "Rare track from a familiar artist",
+        explanation: "Shown because this artist has \(artistCount.formatted()) lifetime plays, while this track has only \(effectiveTrackCount.formatted()). Deep Cut requires 20+ artist plays and 3 or fewer track plays, at most once a day.")
     }
 
     if ((countedCurrentPlay && trackCount == 1) || (!countedCurrentPlay && trackCount == 0)),
@@ -310,18 +314,46 @@ enum BadgeResolver {
       """, arguments: StatementArguments(arguments)) ?? 0
     guard priorPlays >= rediscoveryMinPriorPlays else { return nil }
 
+    guard try !anotherSongEarnedToday(.rediscovered, otherThan: uris, before: anchorAt, in: db) else { return nil }
+    return days
+  }
+
+  /// Deep Cut means "a rare track from an artist you love" (PLA-100). The
+  /// artist has 20+ counted plays and this track 3 or fewer, it's a live
+  /// play (or the track playing now), and no other song earned Deep Cut
+  /// earlier the same local day. Without the cap a new album from a familiar
+  /// artist made every track a Deep Cut: about 6 a day, up to 82 in one day.
+  private static func isDeepCut(
+    trackUri: String,
+    context: TrackContext,
+    artistCount: Int,
+    trackCount: Int,
+    anchorAt: Int64,
+    in db: Database
+  ) throws -> Bool {
+    guard context.artistUri != nil, artistCount >= familiarArtistPlayThreshold, trackCount <= 3 else { return false }
+    let uris = try matchingTrackUris(trackUri: trackUri, context: context, in: db)
+    return try !anotherSongEarnedToday(.deepCut, otherThan: uris, before: anchorAt, in: db)
+  }
+
+  /// Whether a song other than `uris` earned `kind` earlier on the local
+  /// day of `anchorAt`: the once-a-day cap on the rarer memories.
+  private static func anotherSongEarnedToday(
+    _ kind: BadgeMemoryKind,
+    otherThan uris: [String],
+    before anchorAt: Int64,
+    in db: Database
+  ) throws -> Bool {
     let dayStart = Int64(Calendar.current.startOfDay(for: Date(timeIntervalSince1970: TimeInterval(anchorAt)))
       .timeIntervalSince1970)
-    var dayArguments: [DatabaseValueConvertible] = [BadgeMemoryKind.rediscovered.rawValue, dayStart, anchorAt]
-    dayArguments.append(contentsOf: uris)
-    let earlierToday = try Int.fetchOne(db, sql: """
+    var arguments: [DatabaseValueConvertible] = [kind.rawValue, dayStart, anchorAt]
+    arguments.append(contentsOf: uris)
+    return try Int.fetchOne(db, sql: """
       SELECT 1 FROM badge_events
       WHERE kind = ? AND earned_at >= ? AND earned_at < ?
         AND (track_uri IS NULL OR track_uri NOT IN (\(placeholders(for: uris))))
       LIMIT 1
-      """, arguments: StatementArguments(dayArguments))
-    guard earlierToday == nil else { return nil }
-    return days
+      """, arguments: StatementArguments(arguments)) != nil
   }
 
   private static func rediscoveryGapDays(
