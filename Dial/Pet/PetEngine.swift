@@ -212,28 +212,53 @@ final class PetEngine {
     return row != nil
   }
 
+  /// The window, in seconds, that one recently-played row covers: the
+  /// track's length (at least 30 s), or 600 s when the length is unknown.
+  static func recentTwinWindowSec(durationMs: Int64?) -> Int64 {
+    guard let durationMs, durationMs > 0 else { return 600 }
+    return max(30, durationMs / 1000)
+  }
+
   /// Slack for matching a recently-played row to its live twin. Spotify's
   /// `played_at` is when the play *ended*; a live row stores the estimated
   /// *start* (`now - progress`, to the second). For a full play the two sit
-  /// about one track-duration apart, and in practice the live start lands
-  /// 0–3 s before `recent_at - duration`. Kept far below any track's length,
-  /// so the play before a back-to-back repeat (a full duration earlier)
-  /// never matches.
-  static let recentTwinToleranceSec: Int64 = 5
+  /// about one track-duration apart. Most land within 10 s of that, but
+  /// Spotify often stamps the end 10–60 s late (measured on a real archive,
+  /// Nov 2026), so the slack is 60 s.
+  ///
+  /// It stays under half the track's length, so the play before a
+  /// back-to-back repeat (a full duration earlier) never matches.
+  static func recentTwinToleranceSec(windowSec: Int64) -> Int64 {
+    min(60, windowSec / 2)
+  }
 
-  /// Returns true if a live or imported play already covers the
-  /// recently-played row: same track, `played_at` within one
-  /// track-duration (plus `recentTwinToleranceSec` on the early side,
-  /// because live rows are start-stamped and recent rows end-stamped).
+  /// A recently-played row closer than this to the end of an earlier
+  /// recently-played row of the same track wasn't a new full play: Spotify
+  /// lists a restart or scrub-back as another entry.
+  static let recentRepeatSlackSec: Int64 = 10
+
+  /// Returns true if the recently-played row is already covered:
+  ///  - a live or imported play of the same track sits within one
+  ///    track-duration of it (plus the early-side tolerance, because live
+  ///    rows are start-stamped and recent rows end-stamped);
+  ///  - the same, for the same song under another track id (Spotify
+  ///    relinking): same title and first artist, case and spacing aside;
+  ///  - or an earlier recently-played row of the same track ended less than
+  ///    one track-duration before it.
+  ///
+  /// `counted_plays` (v20) applies the same three rules to rows already in
+  /// the archive. Change both together.
   private static func duplicateRecentSyncPlayExists(of play: Play, in db: Database) throws -> Bool {
     let durationMs = try Int64.fetchOne(
       db,
       sql: "SELECT duration_ms FROM tracks WHERE uri = ?",
-      arguments: [play.trackUri]) ?? 0
-    let thresholdSec: Int64 = durationMs > 0 ? max(30, durationMs / 1000) : 600
-    let lower = play.playedAt - thresholdSec - recentTwinToleranceSec
-    let upper = play.playedAt + thresholdSec
-    let row = try Int.fetchOne(
+      arguments: [play.trackUri])
+    let window = recentTwinWindowSec(durationMs: durationMs)
+    let lower = play.playedAt - window - recentTwinToleranceSec(windowSec: window)
+    let upper = play.playedAt + window
+    let recent = RecentPlaysReconciler.source
+
+    let sameTrack = try Int.fetchOne(
       db,
       sql: """
         SELECT 1 FROM plays
@@ -243,8 +268,42 @@ final class PetEngine {
           AND played_at < ?
         LIMIT 1
         """,
-      arguments: [play.trackUri, RecentPlaysReconciler.source, lower, upper])
-    return row != nil
+      arguments: [play.trackUri, recent, lower, upper])
+    if sameTrack != nil { return true }
+
+    let relinked = try Int.fetchOne(
+      db,
+      sql: """
+        SELECT 1
+        FROM tracks tp
+        JOIN plays l ON l.played_at >= ? AND l.played_at < ?
+        JOIN tracks tl ON tl.uri = l.track_uri
+        WHERE tp.uri = ?
+          AND l.track_uri != tp.uri
+          AND l.source != ?
+          AND tp.name IS NOT NULL AND TRIM(tp.name) != ''
+          AND LOWER(TRIM(tl.name)) = LOWER(TRIM(tp.name))
+          AND json_valid(tp.artists_json) = 1
+          AND json_valid(tl.artists_json) = 1
+          AND LOWER(TRIM(json_extract(tl.artists_json, '$[0].name')))
+            = LOWER(TRIM(json_extract(tp.artists_json, '$[0].name')))
+        LIMIT 1
+        """,
+      arguments: [lower, upper, play.trackUri, recent])
+    if relinked != nil { return true }
+
+    let restart = try Int.fetchOne(
+      db,
+      sql: """
+        SELECT 1 FROM plays
+        WHERE track_uri = ?
+          AND source = ?
+          AND played_at > ?
+          AND played_at < ?
+        LIMIT 1
+        """,
+      arguments: [play.trackUri, recent, play.playedAt - window + recentRepeatSlackSec, play.playedAt])
+    return restart != nil
   }
 }
 

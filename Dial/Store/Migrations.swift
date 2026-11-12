@@ -465,6 +465,62 @@ enum Migrations {
         t.column("plays_replayed", .integer).notNull()
       }
     }
+
+    // PLA-96: recently-played rows still slipped past v18 and added about
+    // 3% extra plays. A recent row is now also hidden when:
+    //  - its live twin starts up to 60 s (at most half the track) earlier
+    //    than v18's 5 s allowed: Spotify often stamps the end late;
+    //  - the twin is the same song under another track id (relinking):
+    //    same title and first artist, case and spacing aside;
+    //  - an earlier recent row of the same track ended less than one
+    //    track-duration (minus 10 s) before it: a restart, not a new play.
+    // `PetEngine.duplicateRecentSyncPlayExists` applies the same rules on
+    // write. Imported-skip filtering is unchanged from v16.
+    m.registerMigration("v20_counted_plays_recent_twins") { db in
+      try db.execute(sql: """
+        DROP VIEW counted_plays;
+        CREATE VIEW counted_plays AS
+        SELECT p.*
+        FROM plays p
+        LEFT JOIN tracks tp ON tp.uri = p.track_uri
+        WHERE (p.source != 'import'
+           OR p.ms_played >= 30000
+           OR (tp.duration_ms > 0 AND p.ms_played * 2 >= tp.duration_ms))
+          AND (p.source != 'recent' OR (
+            NOT EXISTS (
+              SELECT 1 FROM plays l
+              WHERE l.track_uri = p.track_uri
+                AND l.source != 'recent'
+                AND l.played_at >= p.played_at
+                  - (CASE WHEN tp.duration_ms > 0 THEN max(30, tp.duration_ms / 1000) ELSE 600 END)
+                  - min(60, (CASE WHEN tp.duration_ms > 0 THEN max(30, tp.duration_ms / 1000) ELSE 600 END) / 2)
+                AND l.played_at < p.played_at
+                  + (CASE WHEN tp.duration_ms > 0 THEN max(30, tp.duration_ms / 1000) ELSE 600 END))
+            AND NOT EXISTS (
+              SELECT 1 FROM plays l
+              JOIN tracks tl ON tl.uri = l.track_uri
+              WHERE l.played_at >= p.played_at
+                  - (CASE WHEN tp.duration_ms > 0 THEN max(30, tp.duration_ms / 1000) ELSE 600 END)
+                  - min(60, (CASE WHEN tp.duration_ms > 0 THEN max(30, tp.duration_ms / 1000) ELSE 600 END) / 2)
+                AND l.played_at < p.played_at
+                  + (CASE WHEN tp.duration_ms > 0 THEN max(30, tp.duration_ms / 1000) ELSE 600 END)
+                AND l.track_uri != p.track_uri
+                AND l.source != 'recent'
+                AND tp.name IS NOT NULL AND TRIM(tp.name) != ''
+                AND LOWER(TRIM(tl.name)) = LOWER(TRIM(tp.name))
+                AND json_valid(tp.artists_json) = 1
+                AND json_valid(tl.artists_json) = 1
+                AND LOWER(TRIM(json_extract(tl.artists_json, '$[0].name')))
+                  = LOWER(TRIM(json_extract(tp.artists_json, '$[0].name'))))
+            AND NOT EXISTS (
+              SELECT 1 FROM plays r
+              WHERE r.track_uri = p.track_uri
+                AND r.source = 'recent'
+                AND r.played_at > p.played_at
+                  - (CASE WHEN tp.duration_ms > 0 THEN max(30, tp.duration_ms / 1000) ELSE 600 END) + 10
+                AND r.played_at < p.played_at)))
+        """)
+    }
     return m
   }
 }

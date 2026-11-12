@@ -47,7 +47,7 @@ Each source stamps a play differently:
 - The same listen counted live on both Macs gets two start estimates a few seconds apart and two progress values. The triples never match, so a merge through the index alone doubles every listen both Macs saw.
 - Dial already has twin rules inside one archive. `PetEngine` skips a live play when a live play of the same track started within one track duration before it (600 s if the duration is unknown). It also skips a `recent` row whose live or imported twin sits in a window around it, and `counted_plays` (v18) hides any `recent` row that has such a twin.
 - There is no rule that matches `import` rows to `live` rows. Importing a newer export over a stretch Dial recorded live double counts it today, on one Mac or two.
-- Stats and memories read `counted_plays` (v16, v18), which drops imported skips and hidden `recent` twins.
+- Stats and memories read `counted_plays` (v16, v18, v20), which drops imported skips and hidden `recent` twins.
 
 ### Both Macs record the same listens
 
@@ -219,7 +219,7 @@ Twin matching treats two rows as one listen when they're for the same track and:
 |---|---|
 | Any two | Same `played_at`, `track_uri` and `ms_played` (the unique index) |
 | `live` and `live` | Start times less than half the track's length apart, at most 60 s |
-| `recent` and any non-`recent` row | The other row's time is in [t − d − 5 s, t + d), where t is the `recent` row's time (the v18 window) |
+| `recent` and any non-`recent` row | The other row's time is in [t − d − s, t + d), where t is the `recent` row's time and s = min(60 s, d/2) (the v20 window; v18 used 5 s) |
 | Counted `import` and `live` | The live start is within the same half-length tolerance of the import's start: its time minus `ms_played` |
 | `import` and `import`, `recent` and `recent` | The exact key only; the same export or fetch gives the same row |
 

@@ -30,7 +30,7 @@ It's a personal project, built in SwiftUI and AppKit and designed like a piece o
 
 - **SwiftUI + AppKit**, macOS 14+. The Xcode project is generated from [`project.yml`](project.yml) with XcodeGen.
 - **Playback:** reads the Spotify app over Apple Events first and the Web API second (PKCE OAuth, Keychain tokens, a shared rate-limit gate). The Spotify app's playback notifications trigger an immediate read between polls.
-- **Archive:** a local SQLite database through GRDB, with append-only migrations (v1…v18). A play counts through four layers of rules, and stats read a `counted_plays` view so imported skips can't inflate them.
+- **Archive:** a local SQLite database through GRDB, with append-only migrations (v1…v20). A play counts through four layers of rules, and stats read a `counted_plays` view so imported skips can't inflate them.
 - **Spectrum:** system audio through ScreenCaptureKit and an FFT, captured only while something plays.
 - **Tests:** about 380 XCTest cases, including deterministic snapshot tests that pin dates and animation frames.
 - **Design docs:** product intent in [`PRODUCT.md`](PRODUCT.md), the visual system in [`DESIGN.md`](DESIGN.md), the locked HUD geometry in [`HUD_LOOK_LOCK.md`](HUD_LOOK_LOCK.md), and notes for coding agents in [`AGENTS.md`](AGENTS.md).
