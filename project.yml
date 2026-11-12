@@ -121,10 +121,15 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIconGel
     # Writes DialGitCommit, DialGitDirty and DialBuildDate into the built
     # Info.plist so any installed copy can say which commit it came from.
-    # Runs on every build, after Info.plist processing and before signing.
+    # Runs on every build, before signing. The processed Info.plist is
+    # declared as its input so Xcode's parallel build runs it after Info.plist
+    # processing; without that, the processing step could run later and
+    # overwrite the stamp (seen on the Mac mini, Nov 11).
     postBuildScripts:
       - name: Stamp build info
         script: '"${SRCROOT}/scripts/stamp-build-info.sh"'
+        inputFiles:
+          - $(TARGET_BUILD_DIR)/$(INFOPLIST_PATH)
         basedOnDependencyAnalysis: false
     dependencies:
       - package: GRDB
