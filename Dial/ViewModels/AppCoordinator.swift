@@ -703,6 +703,32 @@ final class AppCoordinator {
       visiblePublishPerf?.end()
       endPerf()
 
+    case let .restarted(uri):
+      // The same track again from the top: a fresh play for the memory
+      // pop-up, the HUD's counted state and Last.fm (PLA-101).
+      await MainActor.run {
+        guard nowPlaying.track?.uri == uri else { return }
+        currentTrackCountedAt = nil
+        resetMemoryPopup(forTrack: uri)
+        menubar.setOptimisticProgress(0)
+        lastFM.restarted(uri: uri)
+      }
+      endPerf()
+
+    case let .playEnded(uri, at, ms):
+      // After the play's own recording, which runs on the same chain.
+      let previousSideEffects = countedPlaySideEffectsTask
+      countedPlaySideEffectsTask = Task(priority: .utility) { [weak self] in
+        await previousSideEffects?.value
+        guard let self else { return }
+        do {
+          try self.engine.updateListenedTime(trackUri: uri, playedAt: at, msPlayed: ms)
+        } catch {
+          coordLog.error("listened time update failed for \(uri, privacy: .public): \(String(describing: error), privacy: .public)")
+        }
+      }
+      endPerf()
+
     case let .countedPlay(uri, ms, at):
       let visibleReadPerf = beginPollInterval("playback.visible_state_read")
       let countedContext = await MainActor.run {

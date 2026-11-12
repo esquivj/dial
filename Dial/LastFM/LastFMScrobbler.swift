@@ -114,6 +114,10 @@ final class LastFMScrobbler {
     perform(tracker.progress(ms))
   }
 
+  func restarted(uri: String) {
+    perform(tracker.restarted(uri: uri))
+  }
+
   func paused() {
     tracker.paused()
   }

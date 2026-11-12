@@ -62,6 +62,17 @@ struct ScrobbleTracker {
     return nowPlayingIfDue()
   }
 
+  /// The current track started again from the top: a new play of it,
+  /// which scrobbles on its own once Dial counts it (PLA-101).
+  mutating func restarted(uri: String) -> [Action] {
+    guard track?.uri == uri else { return [] }
+    positionMs = 0
+    playId = nil
+    queued = false
+    nowPlayingSent = false
+    return nowPlayingIfDue()
+  }
+
   mutating func progress(_ ms: Int) -> [Action] {
     guard track != nil else { return [] }
     positionMs = ms

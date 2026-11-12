@@ -99,6 +99,16 @@ final class PollingService {
   private var lastTrackUri: String?
   private var counted = false
   private var playbackState: Bool? = nil
+  /// The counted play in progress (PLA-101): its start stamp, how far it
+  /// got, and the track's length, so `.playEnded` can store the time
+  /// actually listened instead of the ~30 s at which it counted.
+  private var playAt: Int64?
+  private var playMaxMs = 0
+  private var playDurationMs = 0
+  private var lastProgressMs: Int?
+  /// When the current track was restarted from the top (a replay), so the
+  /// replay's own count can be checked against the time since.
+  private var restartedAt: Int64?
   // Track previous shuffle/repeat so we only emit modesChanged on actual
   // change, not every 3s. nil means we haven't observed yet — first
   // observation always emits.
@@ -401,12 +411,16 @@ final class PollingService {
 
   private func interpret(_ snapshot: PlaybackSnapshot) -> [PlaybackEvent] {
     guard let item = snapshot.track else {
+      let ended = endPlay()
       lastTrackUri = nil; counted = false; playbackState = nil
-      return [.noPlayback]
+      lastProgressMs = nil; restartedAt = nil
+      return ended + [.noPlayback]
     }
     var out: [PlaybackEvent] = []
     if item.uri != lastTrackUri {
+      out += endPlay()
       lastTrackUri = item.uri; counted = false
+      lastProgressMs = nil; restartedAt = nil
       out.append(Self.startedEvent(for: item, at: clock()))
       if let p = snapshot.progressMs,
          DedupRule.shouldCount(progressMs: p, durationMs: item.durationMs) {
@@ -415,15 +429,35 @@ final class PollingService {
         // recently-played reconciliation will repair any genuinely missed row.
         counted = true
       }
+    } else if let p = snapshot.progressMs, let last = lastProgressMs, counted,
+              Self.isReplay(fromMs: last, toMs: p, durationMs: item.durationMs) {
+      // Back at the top of a track that was mostly heard: the same song is
+      // playing again (repeat-one, or replayed by hand). End that play and
+      // let this one count on its own.
+      out += endPlay()
+      counted = false
+      restartedAt = clock() - Int64(max(0, p) / 1000)
+      out.append(.restarted(trackUri: item.uri))
     }
     if let p = snapshot.progressMs {
+      lastProgressMs = p
+      if playAt != nil { playMaxMs = max(playMaxMs, p) }
+      playDurationMs = item.durationMs
       out.append(.progress(ms: p))
       if snapshot.isPlaying,
          !counted,
          DedupRule.shouldCount(progressMs: p, durationMs: item.durationMs) {
         counted = true
-        let approximatePlayStartedAt = clock() - Int64(max(0, p) / 1000)
-        out.append(.countedPlay(trackUri: item.uri, msPlayed: Int64(p), at: approximatePlayStartedAt))
+        if let restartedAt, Int64(p) > (clock() - restartedAt + Self.restartSlackSec) * 1000 {
+          // Further into the track than could have been heard since the
+          // restart, so the "restart" was a stray reading, not a replay.
+          // Don't count the same listen twice.
+        } else {
+          let approximatePlayStartedAt = clock() - Int64(max(0, p) / 1000)
+          playAt = approximatePlayStartedAt
+          playMaxMs = p
+          out.append(.countedPlay(trackUri: item.uri, msPlayed: Int64(p), at: approximatePlayStartedAt))
+        }
       }
     }
     if playbackState != snapshot.isPlaying {
@@ -432,6 +466,28 @@ final class PollingService {
     }
     out.append(contentsOf: modeEvents(snapshot))
     return out
+  }
+
+  /// A replay: a counted track's position falls back to under
+  /// `restartStartMs` after the play reached half the track (or, with no
+  /// known length, `restartDropMs` further on). Any other seek back,
+  /// including restarting a song early on, keeps the same play.
+  static let restartStartMs = 15_000
+  static let restartDropMs = 30_000
+  static let restartSlackSec: Int64 = 15
+
+  static func isReplay(fromMs last: Int, toMs p: Int, durationMs: Int) -> Bool {
+    guard p < restartStartMs, last - p >= restartDropMs else { return false }
+    return durationMs <= 0 || last * 2 >= durationMs
+  }
+
+  /// `.playEnded` for the counted play in progress, if any, with the time
+  /// listened (the furthest position reached, capped at the track length).
+  private func endPlay() -> [PlaybackEvent] {
+    guard let at = playAt, let uri = lastTrackUri else { return [] }
+    playAt = nil
+    let listened = playDurationMs > 0 ? min(playMaxMs, playDurationMs) : playMaxMs
+    return [.playEnded(trackUri: uri, at: at, msPlayed: Int64(listened))]
   }
 
   /// Shuffle/repeat, only when they changed. The Spotify app's snapshot

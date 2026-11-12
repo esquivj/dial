@@ -50,8 +50,8 @@ Full logs are in `.build/logs/`. Don't pass your own `-derivedDataPath` to a new
 - **Migrations are append-only.** Add `v21_…` at the end of `Migrations.swift`; never edit a shipped migration.
 - **Play counting** has four layers:
   1. `DedupRule`: a live play counts at ≥30 s or ≥50% of the track.
-  2. `PollingService`: counts once per track change.
-  3. `PetEngine.recordPlay`: dedups `live` and `recent` plays against nearby rows.
+  2. `PollingService`: counts once per play. A play starts on a track change, or when a track that was at least half heard jumps back to its first 15 s (a replay, `.restarted`). When a counted play ends, `.playEnded` stores the time heard (`PetEngine.updateListenedTime`), so live `ms_played` isn't the ~30 s at which it counted.
+  3. `PetEngine.recordPlay`: dedups `live` and `recent` plays against nearby rows. A live play is a relaunch duplicate only if it starts within half the track (at most 60 s) of another live play of it.
   4. The unique `(played_at, track_uri, ms_played)` index.
 
   `Importer` inserts every streaming-history row, skips included, so the archive stays complete. **Stats, ranks and badges read the `counted_plays` view** (migration v16, rebuilt in v18 and v20), which drops imported rows under 30 s unless they cover ≥50% of a known duration, and hides `recent` rows that repeat a live or imported play (same track, or the same title and first artist under another id, within one track-duration plus up to 60 s) or restart an earlier `recent` row. `PetEngine.duplicateRecentSyncPlayExists` applies the same rules on write; change both together. New user-facing queries should read `counted_plays`. Use `plays` only for archive, enrichment and dedup work.
