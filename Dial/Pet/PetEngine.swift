@@ -27,11 +27,12 @@ final class PetEngine {
   /// app launch. If you quit Dial while a track is playing past the
   /// 30s/50% threshold and reopen mid-track, the new PollingService
   /// instance sees the same track at high progress and fires another
-  /// `.countedPlay` — duplicating the play. Detect this case by looking
-  /// for an existing live play of the same track within one track-duration
-  /// of the current `playedAt`; if present, skip the insert silently.
-  /// Replays after the track has finished correctly fall outside the
-  /// window (diff ≥ trackDuration) and count normally.
+  /// `.countedPlay` — duplicating the play. Both stamp the same estimated
+  /// start, so a live play of the same track that started within
+  /// `liveDuplicateWindowSec` of this one is that duplicate, and the insert
+  /// is skipped silently. A back-to-back replay starts about one track
+  /// length later and counts (PLA-101); a full track-length window used to
+  /// drop many of them, because both starts are estimates.
   ///
   /// Recently-played gap sync (`source: "recent"`) uses a similar but
   /// cross-source check: if Dial already saw a live/imported play for the
@@ -199,17 +200,40 @@ final class PetEngine {
       db,
       sql: "SELECT duration_ms FROM tracks WHERE uri = ?",
       arguments: [play.trackUri]) ?? 0
-    let thresholdSec: Int64 = durationMs > 0 ? (durationMs / 1000) : 600
-    let cutoff = play.playedAt - thresholdSec
+    let windowSec = liveDuplicateWindowSec(durationMs: durationMs)
     let row = try Int.fetchOne(
       db,
       sql: """
         SELECT 1 FROM plays
-        WHERE track_uri = ? AND source = 'live' AND played_at > ?
+        WHERE track_uri = ? AND source = 'live' AND played_at > ? AND played_at < ?
         LIMIT 1
         """,
-      arguments: [play.trackUri, cutoff])
+      arguments: [play.trackUri, play.playedAt - windowSec, play.playedAt + windowSec])
     return row != nil
+  }
+
+  /// How close two live plays' estimated starts must be to be the same
+  /// listen: half the track, at most 60 s (60 s when the length is unknown).
+  static func liveDuplicateWindowSec(durationMs: Int64) -> Int64 {
+    guard durationMs > 0 else { return 60 }
+    return max(1, min(60, durationMs / 2000))
+  }
+
+  /// Stores how long a counted live play was actually heard, once it ends
+  /// (PLA-101). It was recorded with the ~30 s at which it counted. Only
+  /// grows the value, and leaves plays merged from another Mac alone.
+  func updateListenedTime(trackUri: String, playedAt: Int64, msPlayed: Int64) throws {
+    try dbq.write { db in
+      do {
+        try db.execute(sql: """
+          UPDATE plays SET ms_played = ?
+          WHERE track_uri = ? AND played_at = ? AND source = 'live' AND origin IS NULL AND ms_played < ?
+          """, arguments: [msPlayed, trackUri, playedAt, msPlayed])
+      } catch let error as DatabaseError where error.resultCode == .SQLITE_CONSTRAINT {
+        // Another row already holds this exact (played_at, track, ms): keep both as they are.
+        petLog.notice("listened time update skipped for \(trackUri, privacy: .public): \(error.description, privacy: .public)")
+      }
+    }
   }
 
   /// The window, in seconds, that one recently-played row covers: the

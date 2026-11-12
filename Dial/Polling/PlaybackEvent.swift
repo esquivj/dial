@@ -20,6 +20,11 @@ enum PlaybackEvent: Equatable {
   case resumed
   case noPlayback
   case countedPlay(trackUri: String, msPlayed: Int64, at: Int64)
+  /// The same track started again from the top after it counted: a new
+  /// play of it begins (PLA-101).
+  case restarted(trackUri: String)
+  /// The counted play stamped `at` ended after `msPlayed` of listening.
+  case playEnded(trackUri: String, at: Int64, msPlayed: Int64)
   /// Fires only when shuffle or repeat has changed since the last poll —
   /// avoids re-broadcasting the same state every 3s.
   case modesChanged(shuffle: Bool, repeatMode: RepeatMode)
@@ -82,6 +87,15 @@ struct PlaybackStateReducer {
       let key = "\(uri):\(at)"
       guard lastCountedKey != key else { return nil }
       lastCountedKey = key
+      return PlaybackStateReduction(event: event, trackChanged: false, generation: generation)
+
+    case let .restarted(uri):
+      guard currentTrackUri == uri else { return nil }
+      lastCountedKey = nil
+      return PlaybackStateReduction(event: event, trackChanged: false, generation: generation)
+
+    case .playEnded:
+      // About a play that may already have been replaced on screen.
       return PlaybackStateReduction(event: event, trackChanged: false, generation: generation)
 
     case .progress:
