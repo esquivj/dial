@@ -55,11 +55,7 @@ final class BadgeResolverTests: XCTestCase {
       artistUri: "spotify:artist:strokes",
       artistName: "The Strokes")
 
-    try engine.recordPlay(.init(
-      playedAt: anchor - 120 * 86_400,
-      trackUri: "spotify:track:old-juicebox",
-      msPlayed: 60_000,
-      source: "import"))
+    try recordOldFavorite(engine, trackUri: "spotify:track:old-juicebox", lastPlayedAt: anchor - 200 * 86_400)
     try engine.recordPlay(.init(
       playedAt: anchor,
       trackUri: "spotify:track:live-juicebox",
@@ -88,11 +84,7 @@ final class BadgeResolverTests: XCTestCase {
       artistUri: "spotify:artist:foals",
       artistName: "FOALS")
 
-    try engine.recordPlay(.init(
-      playedAt: anchor - 120 * 86_400,
-      trackUri: "spotify:track:old-red-socks",
-      msPlayed: 60_000,
-      source: "import"))
+    try recordOldFavorite(engine, trackUri: "spotify:track:old-red-socks", lastPlayedAt: anchor - 200 * 86_400)
     try engine.recordPlay(.init(
       playedAt: anchor,
       trackUri: "spotify:track:live-red-socks",
@@ -140,17 +132,13 @@ final class BadgeResolverTests: XCTestCase {
       artistUri: "spotify:artist:strokes",
       artistName: "The Strokes")
 
-    try engine.recordPlay(.init(
-      playedAt: anchor - 120 * 86_400,
-      trackUri: "spotify:track:old-juicebox",
-      msPlayed: 60_000,
-      source: "import"))
+    try recordOldFavorite(engine, trackUri: "spotify:track:old-juicebox", lastPlayedAt: anchor - 200 * 86_400)
 
     let insight = try PlayAggregations(dbq: dbq, now: { anchor })
       .currentBadgeInsight(trackUri: "spotify:track:live-juicebox", currentPlayAt: nil)
 
     XCTAssertEqual(insight?.kind, .rediscovered)
-    XCTAssertEqual(insight?.detail, "Last played 120 days ago")
+    XCTAssertEqual(insight?.detail, "Last played 200 days ago")
   }
 
   func test_currentInsight_beforeCountedPlay_explainsRemasterVariantAsKnownTrack() throws {
@@ -170,20 +158,17 @@ final class BadgeResolverTests: XCTestCase {
       artistUri: "spotify:artist:foals",
       artistName: "FOALS")
 
-    try engine.recordPlay(.init(
-      playedAt: anchor - 120 * 86_400,
-      trackUri: "spotify:track:old-red-socks",
-      msPlayed: 60_000,
-      source: "import"))
+    try recordOldFavorite(engine, trackUri: "spotify:track:old-red-socks", lastPlayedAt: anchor - 200 * 86_400)
 
     let insight = try PlayAggregations(dbq: dbq, now: { anchor })
       .currentBadgeInsight(trackUri: "spotify:track:live-red-socks", currentPlayAt: nil)
 
     XCTAssertEqual(insight?.kind, .rediscovered)
-    XCTAssertEqual(insight?.detail, "Last played 120 days ago")
+    XCTAssertEqual(insight?.detail, "Last played 200 days ago")
     XCTAssertEqual(
       insight?.explanation,
-      "Shown because the previous play was 120 days ago. Rediscovered triggers after a 90+ day gap.")
+      "Shown because the previous play was 200 days ago. "
+        + "Rediscovered needs a 180+ day gap and 5+ earlier plays, at most once a day.")
   }
 
   func test_importedHistory_skipsDiscoverySpam_butRecordsMilestones() throws {
@@ -542,7 +527,7 @@ final class BadgeResolverTests: XCTestCase {
 
     for i in 0..<9 {
       try engine.recordPlay(.init(
-        playedAt: firstReturn - 100 * 86_400 - Int64(i) * 86_400,
+        playedAt: firstReturn - 200 * 86_400 - Int64(i) * 86_400,
         trackUri: "T",
         msPlayed: 60_000,
         source: "import"))
@@ -567,7 +552,7 @@ final class BadgeResolverTests: XCTestCase {
       .currentBadgeInsight(trackUri: "T", currentPlayAt: anchor)
 
     XCTAssertEqual(insight?.kind, .rediscovered)
-    XCTAssertEqual(insight?.detail, "Came back after 100 days")
+    XCTAssertEqual(insight?.detail, "Came back after 200 days")
   }
 
   func test_repeatAndAlbumMode_recordOnceWhenRunStarts() throws {
@@ -586,6 +571,95 @@ final class BadgeResolverTests: XCTestCase {
     let kinds = try BadgeEventsDAO(dbq: dbq).recent().map(\.kind)
     XCTAssertEqual(kinds.filter { $0 == .albumMode }.count, 1)
     XCTAssertEqual(kinds.filter { $0 == .repeatTrack }.count, 1)
+  }
+
+  // MARK: Rediscovered stays rare (PLA-95)
+
+  /// Noon local time, so a test's plays never straddle midnight.
+  private var localNoon: Int64 {
+    let day = Calendar.current.startOfDay(for: Date(timeIntervalSince1970: 1_700_000_000))
+    return Int64(day.timeIntervalSince1970) + 12 * 3_600
+  }
+
+  private func rediscoveredCount(_ dbq: DatabaseQueue) throws -> Int {
+    try BadgeEventsDAO(dbq: dbq).recent().filter { $0.kind == .rediscovered }.count
+  }
+
+  func test_rediscovered_needsLongGapAndRealHistory() throws {
+    let anchor = localNoon
+    func earns(priorPlays: Int, daysAgo: Int64) throws -> Bool {
+      let dbq = try InMemoryDatabase.make()
+      let engine = PetEngine(dbq: dbq, clock: { anchor })
+      try seedTrack(dbq, uri: "T", artistUri: "art:old", artistName: "Old Artist")
+      try recordOldFavorite(engine, trackUri: "T", lastPlayedAt: anchor - daysAgo * 86_400, plays: priorPlays)
+      try engine.recordPlay(.init(playedAt: anchor, trackUri: "T", msPlayed: 60_000, source: "live"))
+      return try rediscoveredCount(dbq) == 1
+    }
+    XCTAssertTrue(try earns(priorPlays: 5, daysAgo: 180))
+    XCTAssertFalse(try earns(priorPlays: 5, daysAgo: 179), "gap under 180 days")
+    XCTAssertFalse(try earns(priorPlays: 4, daysAgo: 400), "fewer than 5 earlier plays")
+  }
+
+  func test_rediscovered_neverAwardedToRecentlyPlayedBackfill() throws {
+    let dbq = try InMemoryDatabase.make()
+    let anchor = localNoon
+    let engine = PetEngine(dbq: dbq, clock: { anchor })
+    try seedTrack(dbq, uri: "T", artistUri: "art:old", artistName: "Old Artist")
+    try recordOldFavorite(engine, trackUri: "T", lastPlayedAt: anchor - 400 * 86_400)
+
+    try engine.recordPlay(.init(playedAt: anchor, trackUri: "T", msPlayed: 60_000, source: "recent"))
+
+    XCTAssertEqual(try rediscoveredCount(dbq), 0)
+  }
+
+  func test_rediscovered_atMostOncePerDay() throws {
+    let dbq = try InMemoryDatabase.make()
+    let anchor = localNoon
+    let engine = PetEngine(dbq: dbq, clock: { anchor })
+    for uri in ["A", "B"] {
+      try seedTrack(dbq, uri: uri, trackName: uri, artistUri: "art:\(uri)", artistName: "Artist \(uri)")
+      try recordOldFavorite(engine, trackUri: uri, lastPlayedAt: anchor - 300 * 86_400)
+    }
+
+    try engine.recordPlay(.init(playedAt: anchor, trackUri: "A", msPlayed: 60_000, source: "live"))
+    // B qualifies too, but A already came back today: no badge, and no
+    // pop-up for B either.
+    let insightForB = try PlayAggregations(dbq: dbq, now: { anchor + 600 })
+      .currentBadgeInsight(trackUri: "B", currentPlayAt: nil)
+    XCTAssertNotEqual(insightForB?.kind, .rediscovered)
+    try engine.recordPlay(.init(playedAt: anchor + 600, trackUri: "B", msPlayed: 60_000, source: "live"))
+    XCTAssertEqual(try BadgeEventsDAO(dbq: dbq).recent().filter { $0.kind == .rediscovered }.map(\.trackUri), ["A"])
+
+    // The next day B can come back.
+    let tomorrow = anchor + 86_400
+    try engine.recordPlay(.init(playedAt: tomorrow, trackUri: "B", msPlayed: 60_000, source: "live"))
+    XCTAssertEqual(try rediscoveredCount(dbq), 1, "B was played yesterday, so it is no longer a 180-day return")
+  }
+
+  func test_rediscovered_sameTrackKeepsItsAfterglowAfterEarningToday() throws {
+    let dbq = try InMemoryDatabase.make()
+    let anchor = localNoon
+    let engine = PetEngine(dbq: dbq, clock: { anchor })
+    try seedTrack(dbq, uri: "T", artistUri: "art:old", artistName: "Old Artist")
+    try recordOldFavorite(engine, trackUri: "T", lastPlayedAt: anchor - 300 * 86_400)
+    try engine.recordPlay(.init(playedAt: anchor, trackUri: "T", msPlayed: 60_000, source: "live"))
+
+    let insight = try PlayAggregations(dbq: dbq, now: { anchor })
+      .currentBadgeInsight(trackUri: "T", currentPlayAt: anchor)
+    XCTAssertEqual(insight?.kind, .rediscovered)
+    XCTAssertTrue(try PlayAggregations(dbq: dbq, now: { anchor + 60 }).rediscovered(trackUri: "T"))
+  }
+
+  /// Imports `plays` plays of a track, the latest at `lastPlayedAt` and the
+  /// rest a day apart before it.
+  private func recordOldFavorite(_ engine: PetEngine, trackUri: String, lastPlayedAt: Int64, plays: Int = 5) throws {
+    for i in 0..<plays {
+      try engine.recordPlay(.init(
+        playedAt: lastPlayedAt - Int64(i) * 86_400,
+        trackUri: trackUri,
+        msPlayed: 60_000,
+        source: "import"))
+    }
   }
 
   private func seedTrack(

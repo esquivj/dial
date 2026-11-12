@@ -73,6 +73,16 @@ final class MemoryReplayBenchmark: XCTestCase {
                           cost.count,
                           String(sql.prefix(160))))
     }
+    let kinds = try dbq.read { db in
+      try Row.fetchAll(db, sql: """
+        SELECT kind, COUNT(*) AS n, COUNT(DISTINCT date(earned_at, 'unixepoch', 'localtime')) AS days
+        FROM badge_events WHERE earned_at >= ? GROUP BY kind ORDER BY n DESC
+        """, arguments: [replayFrom])
+    }
+    lines.append("memories replayed, by kind:")
+    for row in kinds {
+      lines.append("  \(row["kind"] as String): \(row["n"] as Int) on \(row["days"] as Int) days")
+    }
     let report = lines.joined(separator: "\n")
     print("MEMORY REPLAY BENCHMARK\n" + report)
     let attachment = XCTAttachment(string: report)

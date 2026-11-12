@@ -21,7 +21,7 @@ There are 11 badge kinds (`BadgeMemoryKind` in `Dial/Store/Models/BadgeEvent.swi
 
 - [ ] Brand-new track → `FIRST LISTEN` chip in the track hero.
 - [ ] First track by an artist never heard before → `NEW ARTIST`.
-- [ ] Replay a track last heard 90+ days ago (seed via SQLite if needed) → `REDISCOVERED`.
+- [ ] Replay a track with 5+ plays, last heard 180+ days ago (seed via SQLite if needed) → `REDISCOVERED`, at most once a day.
 - [ ] When a track qualifies for several badges, only the highest-priority one shows.
 
 ## Pet

@@ -539,7 +539,7 @@ struct ArchiveMerger {
       """)
   }
 
-  private static func recomputeWeeks(_ dbq: DatabaseQueue, endingAfter start: Int64, now: Int64) throws {
+  static func recomputeWeeks(_ dbq: DatabaseQueue, endingAfter start: Int64, now: Int64) throws {
     let weeks = try dbq.read { db in
       try Row.fetchAll(db, sql: """
         SELECT week_start, week_end FROM main.weekly_memories WHERE week_end > ? ORDER BY week_start
@@ -554,7 +554,7 @@ struct ArchiveMerger {
     }
   }
 
-  private static func totals(_ db: Database) throws -> Totals {
+  static func totals(_ db: Database) throws -> Totals {
     func count(_ table: String) throws -> Int {
       try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM main.\(table)") ?? 0
     }
@@ -573,7 +573,7 @@ struct ArchiveMerger {
 
   /// Changes whenever Dial records something. A real merge refuses to swap
   /// if the archive changed after its working copy was taken.
-  private static func fingerprint(of archive: URL) throws -> String {
+  static func fingerprint(of archive: URL) throws -> String {
     var config = Configuration()
     config.readonly = true
     config.busyMode = .timeout(10)
@@ -589,7 +589,7 @@ struct ArchiveMerger {
     }
   }
 
-  private static func swap(_ working: URL, into archive: URL) throws {
+  static func swap(_ working: URL, into archive: URL) throws {
     let fileManager = FileManager.default
     // The old WAL belongs to the old file. Its commits are already in the
     // working copy, and SQLite must never replay it into the new one.
@@ -600,7 +600,7 @@ struct ArchiveMerger {
     try fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: archive.path)
   }
 
-  private static func fileStamp(_ unix: Int64) -> String {
+  static func fileStamp(_ unix: Int64) -> String {
     let formatter = DateFormatter()
     formatter.locale = Locale(identifier: "en_US_POSIX")
     formatter.dateFormat = "yyyyMMdd-HHmmss"

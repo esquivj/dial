@@ -11,6 +11,19 @@ enum BadgeResolver {
   private static let familiarArtistPlayThreshold = 20
   private static let familiarAlbumPlayThreshold = 3
 
+  /// Rediscovered means "you came back to something that mattered", so it
+  /// stays rare (PLA-95). With years of imported history almost any song
+  /// unplayed for a few months qualified under the old 90-day rule: about a
+  /// quarter of live plays, and up to 176 badges on one day.
+  ///
+  /// A play is a rediscovery when the song went unplayed for
+  /// `rediscoveryMinGapDays`, had at least `rediscoveryMinPriorPlays`
+  /// earlier counted plays, and no other song was rediscovered earlier the
+  /// same local day. Only live plays earn the badge; recently-played
+  /// backfills never do.
+  static let rediscoveryMinGapDays = 180
+  static let rediscoveryMinPriorPlays = 5
+
   static func recordMemories(for play: Play, mode: BadgeRecordMode, in db: Database) throws {
     let events = try resolveMemories(for: play, mode: mode, in: db)
     for event in events {
@@ -52,7 +65,9 @@ enum BadgeResolver {
       }
     }
 
-    if try wasRediscovered(play: play, in: db) {
+    if play.source == "live",
+       try rediscoveryGap(
+         trackUri: play.trackUri, context: context, anchorAt: play.playedAt, excludingPlayID: play.id, in: db) != nil {
       events.append(event(.rediscovered, play: play, context: context, scope: "rediscovered:\(play.trackUri):\(play.playedAt)"))
     }
 
@@ -111,12 +126,11 @@ enum BadgeResolver {
       }
     }
 
-    if let days = try rediscoveryGapDays(trackUri: trackUri, context: context, anchorAt: anchorAt, excludingPlayID: nil, in: db),
-       days >= 90 {
+    if let days = try rediscoveryGap(trackUri: trackUri, context: context, anchorAt: anchorAt, excludingPlayID: nil, in: db) {
       return BadgeInsight(
         kind: .rediscovered,
         detail: "Last played \(days.formatted()) days ago",
-        explanation: "Shown because the previous play was \(days.formatted()) days ago. Rediscovered triggers after a 90+ day gap.")
+        explanation: "Shown because the previous play was \(days.formatted()) days ago. \(rediscoveryRuleText)")
     }
 
     if context.artistUri != nil {
@@ -255,16 +269,59 @@ enum BadgeResolver {
     artistCount >= familiarArtistPlayThreshold || albumCount >= familiarAlbumPlayThreshold
   }
 
-  private static func wasRediscovered(play: Play, in db: Database) throws -> Bool {
-    let context = try TrackContext.fetch(trackUri: play.trackUri, in: db)
+  private static let rediscoveryRuleText =
+    "Rediscovered needs a \(rediscoveryMinGapDays)+ day gap and \(rediscoveryMinPriorPlays)+ earlier plays, at most once a day."
+
+  /// Whether playing this track at `anchorAt` would be a rediscovery, for
+  /// the pet's rediscovery expression.
+  static func isRediscovery(trackUri: String, anchorAt: Int64, in db: Database) throws -> Bool {
+    let context = try TrackContext.fetch(trackUri: trackUri, in: db)
+    return try rediscoveryGap(trackUri: trackUri, context: context, anchorAt: anchorAt, excludingPlayID: nil, in: db) != nil
+  }
+
+  /// Days since the song's previous counted play, when a play at `anchorAt`
+  /// is a rediscovery (see `rediscoveryMinGapDays`); nil otherwise.
+  private static func rediscoveryGap(
+    trackUri: String,
+    context: TrackContext,
+    anchorAt: Int64,
+    excludingPlayID: Int64?,
+    in db: Database
+  ) throws -> Int? {
     guard let days = try rediscoveryGapDays(
-      trackUri: play.trackUri,
-      context: context,
-      anchorAt: play.playedAt,
-      excludingPlayID: play.id,
-      in: db)
-    else { return false }
-    return days >= 90
+      trackUri: trackUri, context: context, anchorAt: anchorAt, excludingPlayID: excludingPlayID, in: db),
+      days >= rediscoveryMinGapDays
+    else { return nil }
+
+    let uris = try matchingTrackUris(trackUri: trackUri, context: context, in: db)
+    var exclusion = ""
+    var arguments: [DatabaseValueConvertible] = uris
+    if let excludingPlayID {
+      exclusion = "AND id != ?"
+      arguments.append(excludingPlayID)
+    }
+    arguments.append(anchorAt)
+    arguments.append(rediscoveryMinPriorPlays)
+    let priorPlays = try Int.fetchOne(db, sql: """
+      SELECT COUNT(*) FROM (
+        SELECT 1 FROM counted_plays
+        WHERE track_uri IN (\(placeholders(for: uris))) \(exclusion) AND played_at < ?
+        LIMIT ?)
+      """, arguments: StatementArguments(arguments)) ?? 0
+    guard priorPlays >= rediscoveryMinPriorPlays else { return nil }
+
+    let dayStart = Int64(Calendar.current.startOfDay(for: Date(timeIntervalSince1970: TimeInterval(anchorAt)))
+      .timeIntervalSince1970)
+    var dayArguments: [DatabaseValueConvertible] = [BadgeMemoryKind.rediscovered.rawValue, dayStart, anchorAt]
+    dayArguments.append(contentsOf: uris)
+    let earlierToday = try Int.fetchOne(db, sql: """
+      SELECT 1 FROM badge_events
+      WHERE kind = ? AND earned_at >= ? AND earned_at < ?
+        AND (track_uri IS NULL OR track_uri NOT IN (\(placeholders(for: uris))))
+      LIMIT 1
+      """, arguments: StatementArguments(dayArguments))
+    guard earlierToday == nil else { return nil }
+    return days
   }
 
   private static func rediscoveryGapDays(
@@ -322,7 +379,7 @@ enum BadgeResolver {
     return BadgeInsight(
       kind: event.kind,
       detail: detail,
-      explanation: "\(detail). Rediscovered stays visible for same-day replays after the original 90+ day return.")
+      explanation: "\(detail). Rediscovered stays visible for same-day replays after the original return.")
   }
 
   private static func recentDetail(for event: BadgeEvent, trackUri: String, context: TrackContext, in db: Database) throws -> String {

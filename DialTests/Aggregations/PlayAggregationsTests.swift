@@ -198,11 +198,13 @@ final class PlayAggregationsTests: XCTestCase {
       durationMs: nil,
       artistsJson: #"[{"name":"The Strokes","uri":"spotify:artist:0epOFNiUfyON9EYx7Tpr6V"}]"#))
 
-    try plays.insert(.init(
-      playedAt: now - 120 * 86_400,
-      trackUri: "spotify:track:imported-version",
-      msPlayed: 200_000,
-      source: "import"))
+    for i in 0..<5 {
+      try plays.insert(.init(
+        playedAt: now - 200 * 86_400 - Int64(i) * 86_400,
+        trackUri: "spotify:track:imported-version",
+        msPlayed: 200_000,
+        source: "import"))
+    }
     try plays.insert(.init(
       playedAt: now,
       trackUri: "spotify:track:live-version",
@@ -213,7 +215,7 @@ final class PlayAggregationsTests: XCTestCase {
     XCTAssertTrue(try agg.rediscovered(trackUri: "spotify:track:live-version"))
     XCTAssertEqual(
       try agg.lastPlayedAt(trackUri: "spotify:track:live-version", before: now),
-      now - 120 * 86_400)
+      now - 200 * 86_400)
   }
 
   func test_firstListen_falseForRareTrackFromFamiliarCatalog() throws {
@@ -273,11 +275,13 @@ final class PlayAggregationsTests: XCTestCase {
       durationMs: nil,
       artistsJson: #"[{"name":"FOALS","uri":"spotify:artist:foals"}]"#))
 
-    try plays.insert(.init(
-      playedAt: now - 120 * 86_400,
-      trackUri: "spotify:track:red-socks-import",
-      msPlayed: 200_000,
-      source: "import"))
+    for i in 0..<5 {
+      try plays.insert(.init(
+        playedAt: now - 200 * 86_400 - Int64(i) * 86_400,
+        trackUri: "spotify:track:red-socks-import",
+        msPlayed: 200_000,
+        source: "import"))
+    }
     try plays.insert(.init(
       playedAt: now,
       trackUri: "spotify:track:red-socks-live",
@@ -286,10 +290,10 @@ final class PlayAggregationsTests: XCTestCase {
 
     XCTAssertFalse(try agg.firstListen(trackUri: "spotify:track:red-socks-live"))
     XCTAssertTrue(try agg.rediscovered(trackUri: "spotify:track:red-socks-live"))
-    XCTAssertEqual(try agg.playsYTD(trackUri: "spotify:track:red-socks-live"), 2)
+    XCTAssertEqual(try agg.playsYTD(trackUri: "spotify:track:red-socks-live"), 6)
     XCTAssertEqual(
       try agg.lastPlayedAt(trackUri: "spotify:track:red-socks-live", before: now),
-      now - 120 * 86_400)
+      now - 200 * 86_400)
   }
 
   func test_rank7dMergesAlternateTrackIdentitiesBeforeRanking() throws {
@@ -330,11 +334,15 @@ final class PlayAggregationsTests: XCTestCase {
     XCTAssertEqual(try agg.rank7d(trackUri: "spotify:track:signal-live"), 1)
   }
 
-  func test_rediscovered_gapAtLeast90Days() throws {
+  func test_rediscovered_needs180DayGapAndFiveEarlierPlays() throws {
     let plays = PlaysDAO(dbq: dbq)
     let now: Int64 = 1_700_000_000
-    try plays.insert(.init(playedAt: now - 100 * 86_400, trackUri: "OLD", msPlayed: 200_000, source: "import"))
-    try plays.insert(.init(playedAt: now, trackUri: "OLD", msPlayed: 200_000, source: "live"))
+    for i in 0..<4 {
+      try plays.insert(.init(
+        playedAt: now - 200 * 86_400 - Int64(i) * 86_400, trackUri: "OLD", msPlayed: 200_000, source: "import"))
+    }
+    XCTAssertFalse(try agg.rediscovered(trackUri: "OLD"), "only 4 earlier plays")
+    try plays.insert(.init(playedAt: now - 210 * 86_400, trackUri: "OLD", msPlayed: 200_000, source: "import"))
     XCTAssertTrue(try agg.rediscovered(trackUri: "OLD"))
   }
 

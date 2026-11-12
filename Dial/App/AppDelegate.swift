@@ -338,6 +338,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
   private enum ArchiveRequest {
     case export(path: String)
     case merge(path: String, dryRun: Bool, sourceName: String?)
+    case rebuildMemories(from: String, dryRun: Bool)
   }
 
   private func archiveRequestFromArgs() -> ArchiveRequest? {
@@ -351,6 +352,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         dryRun: args.contains("--dry-run"),
         sourceName: Self.argumentValue("--source-name", in: args))
     }
+    if let from = Self.argumentValue("--rebuild-memories", in: args) {
+      return .rebuildMemories(from: from, dryRun: args.contains("--dry-run"))
+    }
     return nil
   }
 
@@ -363,10 +367,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
   }
 
   /// Export and dry runs only read the archive, so they're safe while the
-  /// menu bar app is running. A real merge swaps the archive file, so it
-  /// refuses to run until Dial is quit.
+  /// menu bar app is running. A real merge or rebuild swaps the archive
+  /// file, so it refuses to run until Dial is quit.
   private func runHeadlessArchive(_ request: ArchiveRequest) {
-    if case let .merge(_, dryRun, _) = request, !dryRun {
+    let swapsArchive: Bool
+    switch request {
+    case .export: swapsArchive = false
+    case let .merge(_, dryRun, _), let .rebuildMemories(_, dryRun): swapsArchive = !dryRun
+    }
+    if swapsArchive {
       let myPID = ProcessInfo.processInfo.processIdentifier
       let bundleID = Bundle.main.bundleIdentifier ?? "com.dial.Dial"
       let others = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID)
@@ -396,6 +405,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
           stderr("→ Merging into \(archiveURL.path)\(dryRun ? " (dry run)" : "")")
           let report = try ArchiveMerger(archiveURL: archiveURL, snapshotURL: snapshot, options: options).run()
           for line in report.summaryLines() {
+            stderr(line)
+          }
+        case let .rebuildMemories(fromText, dryRun):
+          guard let from = MemoryRebuilder.startOfDay(fromText) else {
+            stderr("✗ --rebuild-memories needs a date as yyyy-MM-dd, got \(fromText)")
+            exit(1)
+          }
+          var rebuilder = MemoryRebuilder(archiveURL: archiveURL, from: from)
+          rebuilder.dryRun = dryRun
+          rebuilder.log = { [self] line in self.stderr(line) }
+          stderr("→ Rebuilding memories in \(archiveURL.path)\(dryRun ? " (dry run)" : "")")
+          for line in try rebuilder.run().summaryLines() {
             stderr(line)
           }
         }
