@@ -573,6 +573,56 @@ final class BadgeResolverTests: XCTestCase {
     XCTAssertEqual(kinds.filter { $0 == .repeatTrack }.count, 1)
   }
 
+  // MARK: Deep Cut stays rare (PLA-100)
+
+  /// 20 imported plays of other tracks by "Loved Artist", so its rare tracks
+  /// R1 and R2 qualify as deep cuts.
+  private func seedFamiliarArtist(_ dbq: DatabaseQueue, engine: PetEngine, anchor: Int64) throws {
+    for i in 0..<20 {
+      try seedTrack(dbq, uri: "F\(i)", trackName: "Hit \(i)", artistUri: "art:loved", artistName: "Loved Artist")
+      try engine.recordPlay(.init(
+        playedAt: anchor - 400 * 86_400 + Int64(i) * 3_600, trackUri: "F\(i)", msPlayed: 60_000, source: "import"))
+    }
+    for uri in ["R1", "R2"] {
+      try seedTrack(dbq, uri: uri, trackName: "Rare \(uri)", artistUri: "art:loved", artistName: "Loved Artist")
+    }
+  }
+
+  private func deepCuts(_ dbq: DatabaseQueue) throws -> [String] {
+    try BadgeEventsDAO(dbq: dbq).recent().filter { $0.kind == .deepCut }.compactMap(\.trackUri).sorted()
+  }
+
+  func test_deepCut_neverAwardedToRecentlyPlayedBackfill() throws {
+    let dbq = try InMemoryDatabase.make()
+    let anchor = localNoon
+    let engine = PetEngine(dbq: dbq, clock: { anchor })
+    try seedFamiliarArtist(dbq, engine: engine, anchor: anchor)
+
+    try engine.recordPlay(.init(playedAt: anchor, trackUri: "R1", msPlayed: 60_000, source: "recent"))
+
+    XCTAssertEqual(try deepCuts(dbq), [])
+  }
+
+  func test_deepCut_atMostOncePerDay() throws {
+    let dbq = try InMemoryDatabase.make()
+    let anchor = localNoon
+    let engine = PetEngine(dbq: dbq, clock: { anchor })
+    try seedFamiliarArtist(dbq, engine: engine, anchor: anchor)
+
+    try engine.recordPlay(.init(playedAt: anchor, trackUri: "R1", msPlayed: 60_000, source: "live"))
+    // R2 qualifies too, but R1 was already today's deep cut: no badge and
+    // no pop-up for R2. R1 itself keeps showing it.
+    let agg = PlayAggregations(dbq: dbq, now: { anchor + 600 })
+    XCTAssertNotEqual(try agg.currentBadgeInsight(trackUri: "R2", currentPlayAt: nil)?.kind, .deepCut)
+    XCTAssertEqual(try agg.currentBadgeInsight(trackUri: "R1", currentPlayAt: anchor)?.kind, .deepCut)
+    try engine.recordPlay(.init(playedAt: anchor + 600, trackUri: "R2", msPlayed: 60_000, source: "live"))
+    XCTAssertEqual(try deepCuts(dbq), ["R1"])
+
+    // The next day R2 (still only 2 plays) gets its turn.
+    try engine.recordPlay(.init(playedAt: anchor + 86_400, trackUri: "R2", msPlayed: 60_000, source: "live"))
+    XCTAssertEqual(try deepCuts(dbq), ["R1", "R2"])
+  }
+
   // MARK: Rediscovered stays rare (PLA-95)
 
   /// Noon local time, so a test's plays never straddle midnight.
