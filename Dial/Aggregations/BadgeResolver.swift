@@ -33,8 +33,10 @@ enum BadgeResolver {
       return events
     }
 
-    let artistCount = try artistLifetimeCount(context: context, in: db)
-    let albumCount = try albumLifetimeCount(context: context, in: db)
+    // Recording only compares these with thresholds (artist == 1, >= 20;
+    // album >= 3), so stop counting at the highest one (PLA-98).
+    let artistCount = try artistLifetimeCount(context: context, upTo: familiarArtistPlayThreshold, in: db)
+    let albumCount = try albumLifetimeCount(context: context, upTo: familiarAlbumPlayThreshold, in: db)
 
     if trackCount == 1,
        !isKnownCatalogContext(artistCount: artistCount, albumCount: albumCount) {
@@ -210,58 +212,43 @@ enum BadgeResolver {
       arguments: StatementArguments(uris)) ?? 0
   }
 
-  private static func artistLifetimeCount(context: TrackContext, in db: Database) throws -> Int {
-    let normalizedName = context.normalizedArtistName
-    return try Int.fetchOne(db, sql: """
-      SELECT COUNT(*)
-      FROM counted_plays p
-      JOIN tracks t ON t.uri = p.track_uri
-      LEFT JOIN artist_identity_aliases alias
-        ON alias.source_uri = CASE WHEN json_valid(t.artists_json) = 1
-                                   THEN json_extract(t.artists_json, '$[0].uri')
-                                   ELSE NULL END
-      WHERE t.artists_json IS NOT NULL
-        AND json_valid(t.artists_json) = 1
-        AND (
-          (? IS NOT NULL AND COALESCE(alias.canonical_uri, json_extract(t.artists_json, '$[0].uri')) = ?)
-          OR
-          (? IS NOT NULL AND LOWER(TRIM(json_extract(t.artists_json, '$[0].name'))) = ?)
-        )
-      """, arguments: [
-        context.artistUri,
-        context.artistUri,
-        normalizedName,
-        normalizedName,
-      ]) ?? 0
+  /// Counted plays by this track's first artist. With `limit`, counting
+  /// stops there: enough for threshold checks, and far cheaper for artists
+  /// with thousands of plays.
+  private static func artistLifetimeCount(context: TrackContext, upTo limit: Int? = nil, in db: Database) throws -> Int {
+    let tracks = try TrackArtistSQL.trackURIs(
+      artistUri: context.artistUri,
+      normalizedName: context.normalizedArtistName,
+      in: db)
+    return try countCountedPlays(inTracks: tracks, upTo: limit, in: db)
   }
 
-  private static func albumLifetimeCount(context: TrackContext, in db: Database) throws -> Int {
+  private static func albumLifetimeCount(context: TrackContext, upTo limit: Int? = nil, in db: Database) throws -> Int {
     guard let albumName = context.normalizedAlbumName else { return 0 }
-    let normalizedName = context.normalizedArtistName
-    return try Int.fetchOne(db, sql: """
-      SELECT COUNT(*)
-      FROM counted_plays p
-      JOIN tracks t ON t.uri = p.track_uri
-      LEFT JOIN artist_identity_aliases alias
-        ON alias.source_uri = CASE WHEN json_valid(t.artists_json) = 1
-                                   THEN json_extract(t.artists_json, '$[0].uri')
-                                   ELSE NULL END
-      WHERE t.album_name IS NOT NULL
-        AND LOWER(TRIM(t.album_name)) = ?
-        AND t.artists_json IS NOT NULL
-        AND json_valid(t.artists_json) = 1
-        AND (
-          (? IS NOT NULL AND COALESCE(alias.canonical_uri, json_extract(t.artists_json, '$[0].uri')) = ?)
-          OR
-          (? IS NOT NULL AND LOWER(TRIM(json_extract(t.artists_json, '$[0].name'))) = ?)
-        )
-      """, arguments: [
-        albumName,
-        context.artistUri,
-        context.artistUri,
-        normalizedName,
-        normalizedName,
-      ]) ?? 0
+    let tracks = try TrackArtistSQL.trackURIs(
+      artistUri: context.artistUri,
+      normalizedName: context.normalizedArtistName,
+      extraCondition: "t.album_name IS NOT NULL AND LOWER(TRIM(t.album_name)) = ?",
+      extraArguments: [albumName],
+      in: db)
+    return try countCountedPlays(inTracks: tracks, upTo: limit, in: db)
+  }
+
+  private static func countCountedPlays(
+    inTracks tracks: (sql: String, arguments: StatementArguments),
+    upTo limit: Int?,
+    in db: Database
+  ) throws -> Int {
+    guard let limit else {
+      return try Int.fetchOne(
+        db,
+        sql: "SELECT COUNT(*) FROM counted_plays WHERE track_uri IN (\(tracks.sql))",
+        arguments: tracks.arguments) ?? 0
+    }
+    return try Int.fetchOne(
+      db,
+      sql: "SELECT COUNT(*) FROM (SELECT 1 FROM counted_plays WHERE track_uri IN (\(tracks.sql)) LIMIT ?)",
+      arguments: tracks.arguments + [limit]) ?? 0
   }
 
   private static func isKnownCatalogContext(artistCount: Int, albumCount: Int) -> Bool {

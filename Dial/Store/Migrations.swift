@@ -521,6 +521,19 @@ enum Migrations {
                 AND r.played_at < p.played_at)))
         """)
     }
+
+    // PLA-98: "every track by this artist" evaluated JSON for all tracks and
+    // joined all counted plays, about 0.6 s per recorded or replayed play.
+    // Index the first artist's id and normalized name. The expressions must
+    // match `TrackArtistSQL` exactly or SQLite won't use them.
+    m.registerMigration("v21_tracks_first_artist_indexes") { db in
+      try db.execute(sql: """
+        CREATE INDEX tracks_by_first_artist_uri ON tracks(
+          (CASE WHEN json_valid(artists_json) = 1 THEN json_extract(artists_json, '$[0].uri') END));
+        CREATE INDEX tracks_by_first_artist_name ON tracks(
+          (CASE WHEN json_valid(artists_json) = 1 THEN LOWER(TRIM(json_extract(artists_json, '$[0].name'))) END));
+        """)
+    }
     return m
   }
 }
