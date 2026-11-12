@@ -8,16 +8,31 @@ import XCTest
 /// under the pointer, and a press action on that element. These tests go
 /// through the real controllers the way VoiceOver does: hit test the
 /// window, then press what comes back.
+///
+/// SwiftUI builds a hosting view's accessibility elements only after an
+/// assistive app has reached the process (a request through the
+/// accessibility server, or AXEnhancedUserInterface set on the app); until
+/// then the hit test stops at the hosting view, an empty AXGroup. Asking
+/// in-process doesn't count, so each test sets the attribute the way
+/// VoiceOver does. Without it the tests passed only while some other
+/// accessibility client happened to have touched the test host.
 @MainActor
 final class VoiceOverPressTests: XCTestCase {
   private var shownWindows: [NSWindow] = []
   private var defaultsSuites: [String] = []
+  private var enhancedUserInterfaceWasOn = false
+
+  override func setUp() async throws {
+    enhancedUserInterfaceWasOn = enhancedUserInterface
+    enhancedUserInterface = true
+  }
 
   override func tearDown() async throws {
     shownWindows.forEach { $0.orderOut(nil) }
     shownWindows = []
     defaultsSuites.forEach { UserDefaults().removePersistentDomain(forName: $0) }
     defaultsSuites = []
+    enhancedUserInterface = enhancedUserInterfaceWasOn
   }
 
   func test_desktopMemoryObjectIsAButtonVoiceOverCanPress() throws {
@@ -79,6 +94,21 @@ final class VoiceOverPressTests: XCTestCase {
       window.contentView?.layoutSubtreeIfNeeded()
     }
     return window
+  }
+
+  /// The attribute VoiceOver sets on an app it drives. NSApplication takes
+  /// it only through the old attribute methods, called here by selector.
+  private var enhancedUserInterface: Bool {
+    get {
+      let value = NSApp.perform(NSSelectorFromString("accessibilityAttributeValue:"), with: "AXEnhancedUserInterface")
+      return (value?.takeUnretainedValue() as? NSNumber)?.boolValue ?? false
+    }
+    set {
+      _ = NSApp.perform(
+        NSSelectorFromString("accessibilitySetValue:forAttribute:"),
+        with: NSNumber(value: newValue),
+        with: "AXEnhancedUserInterface")
+    }
   }
 
   // SwiftUI's accessibility nodes answer the NSAccessibility methods
