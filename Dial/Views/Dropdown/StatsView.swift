@@ -25,6 +25,8 @@ struct StatsView: View {
   @State private var badgeSummaries: [StatsQueries.BadgeSummary] = []
   @State private var recentBadges: [StatsQueries.BadgeMemoryRow] = []
   @State private var selectedRange: StatsRange = .ytd
+  /// True once data has loaded, so the empty state never flashes mid-load.
+  @State private var loaded: Bool
   @State private var reloadLoader = CoalescedSnapshotLoader<StatsViewSnapshot>("stats.snapshot.load")
   @Environment(\.dialTheme) private var theme
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -54,6 +56,7 @@ struct StatsView: View {
     _rhythmBuckets = State(initialValue: initialSnapshot?.rhythmBuckets ?? [])
     _badgeSummaries = State(initialValue: initialSnapshot?.badgeSummaries ?? [])
     _recentBadges = State(initialValue: initialSnapshot?.recentBadges ?? [])
+    _loaded = State(initialValue: initialSnapshot != nil)
   }
 
   var body: some View {
@@ -190,7 +193,8 @@ struct StatsView: View {
             .dialHitSlop(horizontal: 5, vertical: 13)
         }
         .buttonStyle(.pressable)
-        .accessibilityLabel("\(range.label) stats range")
+        .help(range.help)
+        .accessibilityLabel(range.help)
         .accessibilityValue(selectedRange == range ? "Selected" : "Not selected")
       }
     }
@@ -206,7 +210,44 @@ struct StatsView: View {
 
   // MARK: Overview
 
+  @ViewBuilder
   private var overviewPanel: some View {
+    if loaded && totals.plays == 0 {
+      emptyOverview
+    } else {
+      filledOverview
+    }
+  }
+
+  /// PLA-113: a range with no plays says so, instead of a dash over
+  /// "total listening time" and a row of zeros.
+  private var emptyOverview: some View {
+    VStack(alignment: .leading, spacing: 4) {
+      Text(selectedRange.heroTitle)
+        .font(Dial.Typography.monoLabel)
+        .tracking(Dial.Tracking.stamp)
+        .foregroundStyle(theme.textFaint)
+      Text("No plays yet")
+        .font(.custom("GeistMono-Medium", size: 20))
+        .foregroundStyle(theme.textPrimary)
+        .padding(.top, 4)
+      Text(selectedRange.emptyLine)
+        .font(Dial.Typography.monoSmall)
+        .foregroundStyle(theme.textFaint)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+    .padding(EdgeInsets(top: 11, leading: 11, bottom: 12, trailing: 11))
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .dialRecessedPanel(
+      shape: RoundedRectangle(cornerRadius: Dial.Radius.control, style: .continuous),
+      fill: theme.subtle,
+      strokeOpacity: 0.24,
+      topSheenOpacity: 0.16,
+      innerShadowOpacity: 0.34)
+    .accessibilityElement(children: .combine)
+  }
+
+  private var filledOverview: some View {
     VStack(alignment: .leading, spacing: 10) {
       HStack(alignment: .top, spacing: 12) {
         VStack(alignment: .leading, spacing: 2) {
@@ -546,6 +587,7 @@ struct StatsView: View {
   }
 
   private func apply(_ snapshot: StatsViewSnapshot, range: StatsRange) {
+    loaded = true
     totals = snapshot.totals
     topTracks = snapshot.topTracks
     topArtists = snapshot.topArtists
