@@ -77,7 +77,7 @@ struct CurrentTrackWhyPanel: View {
 
         Text("\(track.artistName) · \(track.albumName)")
           .font(Dial.Typography.monoSmall)
-          .foregroundStyle(theme.textMuted.opacity(0.82))
+          .foregroundStyle(theme.textFaint)
           .lineLimit(1)
           .minimumScaleFactor(0.70)
       } else {
@@ -113,7 +113,7 @@ struct CurrentTrackWhyPanel: View {
           Text(title)
             .font(Dial.Typography.monoTiny)
             .tracking(1.2)
-            .foregroundStyle(theme.textMuted.opacity(0.74))
+            .foregroundStyle(theme.textFaint)
           Text(value.uppercased())
             .font(Dial.Typography.monoLabel)
             .tracking(1.0)
@@ -123,7 +123,7 @@ struct CurrentTrackWhyPanel: View {
         }
         Text(detail)
           .font(Dial.Typography.monoSmall)
-          .foregroundStyle(theme.textMuted.opacity(0.82))
+          .foregroundStyle(theme.textFaint)
           .lineLimit(2)
           .minimumScaleFactor(0.72)
       }
@@ -142,13 +142,13 @@ struct CurrentTrackWhyPanel: View {
       Text(label)
         .font(Dial.Typography.monoTiny)
         .tracking(0.9)
-        .foregroundStyle(theme.textMuted.opacity(0.74))
+        .foregroundStyle(theme.textFaint)
         .lineLimit(1)
         .minimumScaleFactor(0.70)
       Text(value)
         .font(Dial.Typography.monoValue)
         .monospacedDigit()
-        .foregroundStyle(value == "-" ? theme.textMuted.opacity(0.66) : theme.accent)
+        .foregroundStyle(value == "-" ? theme.textFaint : theme.accent)
         .lineLimit(1)
         .minimumScaleFactor(0.70)
     }
@@ -219,7 +219,7 @@ struct CurrentTrackWhyPanel: View {
   }
 
   private var badgeColor: Color {
-    guard let kind = badgeInsight?.kind else { return theme.textMuted.opacity(0.80) }
+    guard let kind = badgeInsight?.kind else { return theme.textFaint }
     switch kind {
     case .firstListen, .newArtist, .onStreak, .repeatTrack, .albumMode:
       return theme.memoryAccent

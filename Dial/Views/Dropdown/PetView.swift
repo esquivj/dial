@@ -138,7 +138,7 @@ struct PetView: View {
       Text(pet.stage.rawValue.uppercased())
         .font(Dial.Typography.monoLabel)
         .tracking(1.4)
-        .foregroundStyle(theme.textMuted.opacity(0.74))
+        .foregroundStyle(theme.textFaint)
         .contentTransition(.opacity)
     }
     .padding(EdgeInsets(
@@ -164,7 +164,7 @@ struct PetView: View {
       Text(pet.stage.rawValue.uppercased())
         .font(Dial.Typography.monoLabel)
         .tracking(1.4)
-        .foregroundStyle(theme.textMuted.opacity(0.74))
+        .foregroundStyle(theme.textFaint)
         .lineLimit(1)
         .minimumScaleFactor(0.72)
         .contentTransition(.opacity)
@@ -256,7 +256,7 @@ struct PetView: View {
               Text("WEEKLY DROP")
                 .font(Dial.Typography.monoTiny)
                 .tracking(0.8)
-                .foregroundStyle(theme.textMuted.opacity(0.70))
+                .foregroundStyle(theme.textFaint)
 
               Text(memory.trait.uppercased())
                 .font(Dial.Typography.monoTiny)
@@ -275,7 +275,7 @@ struct PetView: View {
 
             Text(memory.recapLine)
               .font(Dial.Typography.monoTiny)
-              .foregroundStyle(theme.textMuted.opacity(0.78))
+              .foregroundStyle(theme.textFaint)
               .lineLimit(1)
               .minimumScaleFactor(0.66)
           }
@@ -318,7 +318,7 @@ struct PetView: View {
             Text("THIS WEEK")
               .font(Dial.Typography.monoTiny)
               .tracking(0.8)
-              .foregroundStyle(theme.textMuted.opacity(0.70))
+              .foregroundStyle(theme.textFaint)
 
             Text("NO ROOM MEMORY YET")
               .font(Dial.Typography.monoLabel)
@@ -327,7 +327,7 @@ struct PetView: View {
 
             Text("Listening writes a trait, memento, and object.")
               .font(Dial.Typography.monoTiny)
-              .foregroundStyle(theme.textMuted.opacity(0.74))
+              .foregroundStyle(theme.textFaint)
               .lineLimit(1)
               .minimumScaleFactor(0.70)
           }
@@ -337,7 +337,7 @@ struct PetView: View {
           Text("WAITING")
             .font(Dial.Typography.monoTiny)
             .tracking(0.8)
-            .foregroundStyle(theme.textMuted.opacity(0.70))
+            .foregroundStyle(theme.textFaint)
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 5)
@@ -374,7 +374,7 @@ struct PetView: View {
 
       Text(actionFeedback ?? snapshot.reason)
         .font(Dial.Typography.monoSmall)
-        .foregroundStyle(actionFeedback == nil ? theme.textMuted.opacity(0.76) : theme.accent)
+        .foregroundStyle(actionFeedback == nil ? theme.textFaint : theme.accent)
         .lineLimit(1)
         .minimumScaleFactor(0.78)
         .contentTransition(.opacity)
@@ -399,7 +399,7 @@ struct PetView: View {
           Text("MEMORIES")
             .font(Dial.Typography.monoTiny)
             .tracking(0.8)
-            .foregroundStyle(theme.textMuted.opacity(0.72))
+            .foregroundStyle(theme.textFaint)
           Text(countLabel)
             .font(Dial.Typography.monoTiny)
             .foregroundStyle(theme.accent)
@@ -408,7 +408,7 @@ struct PetView: View {
 
         Text(latestLabel)
           .font(Dial.Typography.monoSmall)
-          .foregroundStyle(artifacts.isEmpty ? theme.textMuted.opacity(0.72) : theme.textPrimary.opacity(0.86))
+          .foregroundStyle(artifacts.isEmpty ? theme.textFaint : theme.textPrimary.opacity(0.86))
           .lineLimit(1)
           .minimumScaleFactor(0.74)
       }
@@ -485,7 +485,7 @@ struct PetView: View {
       Text("BOND")
         .font(Dial.Typography.monoTiny)
         .tracking(0.8)
-        .foregroundStyle(theme.textMuted.opacity(0.70))
+        .foregroundStyle(theme.textFaint)
 
       GeometryReader { proxy in
         ZStack(alignment: .leading) {
@@ -519,7 +519,7 @@ struct PetView: View {
         Text("EVOLUTION")
           .font(Dial.Typography.monoTiny)
           .tracking(0.8)
-          .foregroundStyle(theme.textMuted.opacity(0.70))
+          .foregroundStyle(theme.textFaint)
         Spacer()
         Text(evolutionStatus)
           .font(Dial.Typography.monoSmall)
@@ -581,7 +581,7 @@ struct PetView: View {
         .foregroundStyle(theme.textPrimary.opacity(0.82))
       Text("->")
         .font(Dial.Typography.monoTiny)
-        .foregroundStyle(theme.textMuted.opacity(0.58))
+        .foregroundStyle(theme.textFaint)
       if let next = nextStage {
         Text(stageName(next))
           .font(Dial.Typography.monoTiny)

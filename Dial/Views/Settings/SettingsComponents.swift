@@ -58,7 +58,8 @@ enum SettingsPalette {
   static let preview = smoke.subtle
   static let text = smoke.textPrimary
   static let muted = smoke.textMuted
-  static let faint = smoke.textMuted.opacity(0.72)
+  /// Solid so small text keeps >= 4.8:1 on canvas, sidebar, tray and controls.
+  static let faint = Color(red: 0x90/255, green: 0x90/255, blue: 0x8D/255)
   static let rule = smoke.hairline.opacity(0.70)
   static let accent = smoke.accent
   static let prominentText = smoke.ground

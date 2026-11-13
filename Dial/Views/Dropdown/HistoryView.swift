@@ -114,7 +114,7 @@ struct HistoryView: View {
       Text(headerCount)
         .font(Dial.Typography.monoLabel)
         .tracking(1.4)
-        .foregroundStyle(theme.textMuted.opacity(0.74))
+        .foregroundStyle(theme.textFaint)
         .contentTransition(.numericText())
     }
     .padding(EdgeInsets(
@@ -140,7 +140,7 @@ struct HistoryView: View {
       Text(headerCount)
         .font(Dial.Typography.monoLabel)
         .tracking(1.4)
-        .foregroundStyle(theme.textMuted.opacity(0.74))
+        .foregroundStyle(theme.textFaint)
         .lineLimit(1)
         .minimumScaleFactor(0.72)
         .contentTransition(.numericText())
@@ -269,7 +269,7 @@ private struct HistoryRowView: View {
           .lineLimit(1)
         Text(displaySubtitle)
           .font(Dial.Typography.monoSmall)
-          .foregroundStyle(theme.textMuted.opacity(0.82))
+          .foregroundStyle(theme.textFaint)
           .lineLimit(1)
       }
 
@@ -278,7 +278,7 @@ private struct HistoryRowView: View {
       Text(relative(row.playedAt))
         .font(Dial.Typography.monoTiny)
         .tracking(0.6)
-        .foregroundStyle(theme.textMuted.opacity(0.72))
+        .foregroundStyle(theme.textFaint)
     }
     .padding(EdgeInsets(top: 7, leading: 14, bottom: 7, trailing: 14))
   }

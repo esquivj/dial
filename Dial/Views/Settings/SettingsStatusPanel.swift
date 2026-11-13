@@ -378,7 +378,7 @@ private enum HealthTone {
     case .ok:
       return SettingsPalette.accent
     case .quiet:
-      return SettingsPalette.muted.opacity(0.82)
+      return SettingsPalette.faint
     case .watch:
       return Dial.Palette.accentAlt
     }

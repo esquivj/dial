@@ -95,7 +95,7 @@ struct MenuBarSettingsPreview: View {
         Text("•")
           .foregroundStyle(SettingsPalette.accent.opacity(0.72))
         Text("Tainy")
-          .foregroundStyle(SettingsPalette.muted.opacity(0.88))
+          .foregroundStyle(SettingsPalette.muted)
       }
       .font(.custom("GeistMono-Medium", size: 13))
       .lineLimit(1)
