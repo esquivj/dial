@@ -169,7 +169,7 @@ struct HistoryView: View {
       Text("No plays yet")
         .font(Dial.Typography.sansTitle)
         .foregroundStyle(theme.textPrimary)
-      Text("Play a track in Spotify and it'll show up here.")
+      Text("Import your Spotify history in Settings,\nor play something.")
         .font(Dial.Typography.sansCaption)
         .foregroundStyle(theme.textMuted)
         .multilineTextAlignment(.center)
