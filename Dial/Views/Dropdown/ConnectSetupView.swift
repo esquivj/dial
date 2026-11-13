@@ -113,8 +113,15 @@ struct ConnectSetupView: View {
       .help(showingGlossary ? "Hide glossary" : "What do these badges mean?")
       .accessibilityLabel(showingGlossary ? "Hide glossary" : "Show badge glossary")
     }
+    // Same geometry as the HUD's StatusRail (PLA-110): the rail has to sit
+    // inside the shell's rail opening, not span the content width and land
+    // on the lip and bolts.
     .padding(.horizontal, Dial.Layout.StatusRail.horizontalPadding)
     .padding(.vertical, Dial.Layout.StatusRail.verticalPadding)
+    .frame(width: Dial.Layout.StatusRail.contentWidth, height: Dial.Layout.StatusRail.railHeight)
+    .frame(maxWidth: .infinity)
+    .frame(height: Dial.Layout.Dropdown.hudTopChromeHeight)
+    .offset(y: Dial.Layout.Dropdown.hudRailContentYOffset)
     .padding(.top, Dial.Layout.Setup.railTopPadding)
   }
 

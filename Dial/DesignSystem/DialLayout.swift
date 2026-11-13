@@ -29,7 +29,8 @@ extension Dial {
 
     enum Setup {
       static let railTopPadding: CGFloat = 8
-      static let contentTopPadding: CGFloat = 14
+      // 14 - 8: the rail block grew by 8 when it took StatusRail's slot (PLA-110).
+      static let contentTopPadding: CGFloat = 6
       static let contentBottomPadding: CGFloat = 8
       static let wordmarkTextGap: CGFloat = 8
       static let textPreviewGap: CGFloat = 10

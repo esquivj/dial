@@ -83,6 +83,25 @@ final class VisualRegressionTests: XCTestCase {
     }
   }
 
+  /// PLA-110: the signed-out Setup screen's rail sits inside the shell's
+  /// rail opening (it used to span the content width and land on the lip
+  /// and bolts). Real DropdownView, shell included.
+  func test_signedOutSetupRailSitsInTheRailOpening() async throws {
+    let coord = try makeStateGridCoordinator()
+    coord.settings.signedIn = false
+    coord.settings.hudColorMode = .classic
+    let visibility = DropdownVisibility()
+    visibility.isVisible = true
+    let view = DropdownView(coord: coord, visibility: visibility)
+      .preferredColorScheme(.dark)
+
+    let image = try render(view, size: CGSize(width: DropdownLayout.width, height: DropdownLayout.height))
+    let snapshotName = "dial-setup-signed-out"
+    try attach(image, name: snapshotName)
+    try assertMatchesBaseline(image, name: snapshotName)
+    XCTAssertGreaterThan(opaquePixelCount(in: image), 40_000, "Setup screen rendered blank.")
+  }
+
   /// PLA-107: a first play reads FIRST and UNRANKED, not dashes.
   func test_firstPlayHUDReadsAsAMoment() throws {
     let context = try makeSnapshotContext(themeID: .classic)
