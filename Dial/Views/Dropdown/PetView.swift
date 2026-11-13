@@ -386,25 +386,17 @@ struct PetView: View {
     let visibleArtifacts = Array(artifacts.prefix(4))
     let latestMemory = weeklyMemoryLog.first.map { "\(weekLabel($0.weekStart)) · \($0.trait.uppercased())" }
     let latestArtifact = artifacts.first.map { "LATEST \($0.kind.label.uppercased())" }
+    // PLA-112: no "0W · 0 OBJ" counter; an empty shelf says what fills it.
     let latestLabel = livingMemoriesEnabled
-      ? (latestMemory ?? latestArtifact ?? "BADGES + TRICKS")
-      : (latestArtifact ?? "BADGES + TRICKS")
-    let countLabel = livingMemoriesEnabled
-      ? "\(weeklyMemoryLog.count)W · \(artifacts.count) OBJ"
-      : "\(artifacts.count) OBJ"
+      ? (latestMemory ?? latestArtifact ?? Self.emptyShelfLine)
+      : (latestArtifact ?? Self.emptyShelfLine)
 
     return HStack(alignment: .center, spacing: 8) {
       VStack(alignment: .leading, spacing: 2) {
-        HStack(spacing: 5) {
-          Text("MEMORIES")
-            .font(Dial.Typography.monoTiny)
-            .tracking(Dial.Tracking.tight)
-            .foregroundStyle(theme.textFaint)
-          Text(countLabel)
-            .font(Dial.Typography.monoTiny)
-            .foregroundStyle(theme.accent)
-            .monospacedDigit()
-        }
+        Text("MEMORIES")
+          .font(Dial.Typography.monoTiny)
+          .tracking(Dial.Tracking.tight)
+          .foregroundStyle(theme.textFaint)
 
         Text(latestLabel)
           .font(Dial.Typography.monoSmall)
@@ -528,7 +520,6 @@ struct PetView: View {
           .contentTransition(.numericText())
       }
       progressBar
-      stageRail
     }
     .padding(.horizontal, 8)
     .padding(.vertical, 5)
@@ -571,30 +562,6 @@ struct PetView: View {
     }
     .frame(maxWidth: .infinity)
     .frame(height: xpBarHeight)
-  }
-
-  private var stageRail: some View {
-    HStack(alignment: .firstTextBaseline) {
-      Text(stageName(pet.stage))
-        .font(Dial.Typography.monoTiny)
-        .tracking(Dial.Tracking.tight)
-        .foregroundStyle(theme.textPrimary.opacity(0.82))
-      Text("->")
-        .font(Dial.Typography.monoTiny)
-        .foregroundStyle(theme.textFaint)
-      if let next = nextStage {
-        Text(stageName(next))
-          .font(Dial.Typography.monoTiny)
-          .tracking(Dial.Tracking.tight)
-          .foregroundStyle(theme.accent.opacity(0.9))
-      } else {
-        Text("MAX")
-          .font(Dial.Typography.monoTiny)
-          .tracking(Dial.Tracking.tight)
-          .foregroundStyle(theme.accent.opacity(0.9))
-      }
-      Spacer(minLength: 8)
-    }
   }
 
   // MARK: - Reload
@@ -854,8 +821,10 @@ struct PetView: View {
     if next == .elder, xpUntilNext == 0, let until = daysUntilElder, until > 0 {
       return "\(until)D TO ELDER"
     }
-    return "\(formatXP(xpUntilNext)) TO \(stageName(next).uppercased())"
+    return "\(formatXP(xpUntilNext)) XP TO \(stageName(next).uppercased())"
   }
+
+  static let emptyShelfLine = "Your first badge lands here"
 
   private var xpDetailText: String {
     guard let next = nextStage else {
