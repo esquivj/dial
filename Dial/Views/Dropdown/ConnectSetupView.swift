@@ -3,6 +3,8 @@ import AppKit
 
 struct ConnectSetupView: View {
   @Binding var showingGlossary: Bool
+  /// PLA-103: why the last sign-in failed; replaces the footer line.
+  var signInError: String? = nil
   let onConnect: () -> Void
   let onOpenSettings: () -> Void
 
@@ -63,10 +65,11 @@ struct ConnectSetupView: View {
           .modifier(SetupAppear(delay: 0.18))
           .padding(.top, Dial.Layout.Setup.previewCTAGap)
 
-          Text("Secure OAuth. Token stays in Keychain.")
+          Text(signInError ?? "Secure OAuth. Token stays in Keychain.")
             .font(Dial.Typography.monoTiny)
             .tracking(Dial.Tracking.tight)
-            .foregroundStyle(Dial.Palette.textMuted.opacity(0.82))
+            .foregroundStyle(signInError == nil ? Dial.Palette.textMuted.opacity(0.82) : Dial.Palette.accentAlt)
+            .accessibilityLabel(signInError.map { "Sign-in failed. \($0)" } ?? "Secure OAuth. Token stays in Keychain.")
             .lineLimit(1)
             .minimumScaleFactor(0.78)
             .frame(maxWidth: .infinity, alignment: .center)

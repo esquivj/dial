@@ -26,19 +26,28 @@ struct GeneralSettingsTab: View {
                    : vm.signedIn ? "Spotify connected" : "Spotify offline")
                 .font(SettingsType.rowTitle)
                 .foregroundStyle(SettingsPalette.text)
-              Text(vm.connectionNeedsAttention
-                   ? "Plays from Spotify on this Mac still count. Reconnect for other devices and likes."
-                   : vm.signedIn
-                   ? "Playback, likes, and history are on."
-                   : "Playback and likes are off.")
-                .font(SettingsType.caption)
-                .foregroundStyle(SettingsPalette.muted)
+              if let error = vm.signInError {
+                // PLA-103: a failed sign-in says why, next to Try Again.
+                Text(error)
+                  .font(SettingsType.caption)
+                  .foregroundStyle(Dial.Palette.accentAlt)
+                  .fixedSize(horizontal: false, vertical: true)
+                  .accessibilityLabel("Sign-in failed. \(error)")
+              } else {
+                Text(vm.connectionNeedsAttention
+                     ? "Plays from Spotify on this Mac still count. Reconnect for other devices and likes."
+                     : vm.signedIn
+                     ? "Playback, likes, and history are on."
+                     : "Playback and likes are off.")
+                  .font(SettingsType.caption)
+                  .foregroundStyle(SettingsPalette.muted)
+              }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .layoutPriority(1)
             Spacer()
             if vm.connectionNeedsAttention {
-              Button("Reconnect") { Task { await onSignIn() } }
+              Button(vm.signInError == nil ? "Reconnect" : "Try Again") { Task { await onSignIn() } }
                 .buttonStyle(SettingsButtonStyle(prominent: true))
                 .help("Sign in to Spotify again. Your history and settings stay as they are.")
             } else if vm.signedIn {
@@ -55,7 +64,7 @@ struct GeneralSettingsTab: View {
                   Text("Dial will stop updating playback and likes until you reconnect. Your imported history stays local.")
                 }
             } else {
-              Button("Connect") { Task { await onSignIn() } }
+              Button(vm.signInError == nil ? "Connect" : "Try Again") { Task { await onSignIn() } }
                 .buttonStyle(SettingsButtonStyle(prominent: true))
                 .help("Connect Spotify so Dial can read playback and liked tracks.")
             }
@@ -77,6 +86,7 @@ struct GeneralSettingsTab: View {
               Text(historyImportSubtitle)
                 .font(SettingsType.caption)
                 .foregroundStyle(SettingsPalette.muted)
+                .help(vm.importSummary?.folderName.map { "Imported from “\($0)”." } ?? "")
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .layoutPriority(1)
@@ -177,10 +187,19 @@ struct GeneralSettingsTab: View {
   }
 
   private var historyImportSubtitle: String {
-    if let last = vm.lastImport {
-      return "Last import: \(last.rowsInserted.formatted(.number)) plays"
-    }
-    return "No history folder imported."
+    Self.importSubtitle(vm.importSummary)
+  }
+
+  /// `Last import Apr 27, 2026 · 192,564 plays` (PLA-103). Read from the
+  /// archive, so it's right after a relaunch too.
+  static func importSubtitle(_ summary: ImportSummary?, locale: Locale = .current, timeZone: TimeZone = .current) -> String {
+    guard let summary else { return "No history folder imported." }
+    let plays = "\(summary.importedPlays.formatted(.number.locale(locale))) \(summary.importedPlays == 1 ? "play" : "plays")"
+    guard let at = summary.lastImportedAt else { return "\(plays) imported" }
+    var style = Date.FormatStyle(date: .abbreviated, time: .omitted)
+    style.locale = locale
+    style.timeZone = timeZone
+    return "Last import \(Date(timeIntervalSince1970: TimeInterval(at)).formatted(style)) · \(plays)"
   }
 
   private var canRunTagPass: Bool {

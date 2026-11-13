@@ -227,7 +227,10 @@ final class SettingsViewModel {
   /// True when Web API calls can be expected to work.
   var webAPIUsable: Bool { signedIn && !connectionNeedsAttention }
   var importProgress: Double = 0
-  var lastImport: ImportLogEntry?
+  /// Last streaming-history import, loaded from the archive (PLA-103).
+  var importSummary: ImportSummary?
+  /// Why the last Spotify sign-in failed, until the next one succeeds.
+  var signInError: String?
 
   var menuBarDisplayMode: MenuBarDisplayMode {
     didSet { defaults.set(menuBarDisplayMode.rawValue, forKey: Key.menuBarDisplayMode) }
@@ -407,6 +410,8 @@ final class SettingsViewModel {
   ) {
     self.auth = auth
     self.dbq = dbq
+    // Read from the archive so the last import survives a relaunch (PLA-103).
+    self.importSummary = try? ImportsLogDAO(dbq: dbq).summary()
     self.tokenStore = tokenStore
     self.lastFMAPIKeyStore = lastFMAPIKeyStore
     self.lastFMSharedSecretStore = lastFMSharedSecretStore
@@ -489,6 +494,17 @@ final class SettingsViewModel {
   func markSignedIn() {
     signedIn = true
     connectionNeedsAttention = false
+    signInError = nil
+  }
+
+  /// Keep a short reason for a failed sign-in (nil when the window was
+  /// just closed). Shown next to the Connect/Reconnect button.
+  func recordSignInFailure(_ error: Error) {
+    signInError = SignInFailure.message(for: error)
+  }
+
+  func reloadImportSummary() {
+    importSummary = try? ImportsLogDAO(dbq: dbq).summary()
   }
 
   /// Show the reconnect prompt without destroying the stored refresh token.

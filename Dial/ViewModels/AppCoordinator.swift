@@ -334,9 +334,18 @@ final class AppCoordinator {
 
   /// Composes the full sign-in flow: OAuth → mark signed in → start polling.
   /// Called from the Settings "Connect Spotify" button.
+  /// A failure is kept in `settings.signInError` before it's rethrown, so
+  /// every entry point (Settings, the HUD's connect screen, the like
+  /// button's reconnect) shows why instead of doing nothing (PLA-103).
   @MainActor
   func signIn() async throws {
-    _ = try await settings.auth.signIn()
+    do {
+      _ = try await settings.auth.signIn()
+    } catch {
+      coordLog.error("Spotify sign-in failed: \(String(describing: error), privacy: .public)")
+      settings.recordSignInFailure(error)
+      throw error
+    }
     settings.markSignedIn()
     start()
     poller.retryWebNow()
@@ -344,10 +353,7 @@ final class AppCoordinator {
 
   @MainActor
   func reconnectForLibraryAccess() async throws {
-    _ = try await settings.auth.signIn()
-    settings.markSignedIn()
-    start()
-    poller.retryWebNow()
+    try await signIn()
   }
 
   /// Mirrors the poller's Web API credential state into Settings. Polling
@@ -391,10 +397,9 @@ final class AppCoordinator {
       await MainActor.run { settings.importProgress = progress }
     }
 
-    let last = (try? ImportsLogDAO(dbq: dbq).last()) ?? nil
     await MainActor.run {
       invalidateDropdownSnapshots()
-      settings.lastImport = last
+      settings.reloadImportSummary()
       settings.importProgress = 0
       pet.syncFromStore(dbq: dbq)
       aggCache.refresh(
