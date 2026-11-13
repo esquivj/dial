@@ -83,6 +83,27 @@ final class VisualRegressionTests: XCTestCase {
     }
   }
 
+  /// PLA-105: the idle HUD shows the last spin and today's listening under READY.
+  func test_idleHUDShowsLastSpinAndToday() throws {
+    let context = try makeSnapshotContext(themeID: .classic)
+    context.menubar.state = .nothingPlaying
+    let memory = StatsQueries.IdleMemory(
+      lastSpin: StatsQueries.HistoryRow(
+        id: 1, playedAt: fixtureNow - 12 * 60, trackUri: "spotify:track:visual-idle",
+        trackName: "Signal Drift", artistName: "Dial Test", albumName: nil, albumArtUrl: nil),
+      todayPlays: 14,
+      todayMs: 52 * 60_000 + 30_000)
+    let view = IdleHUDSnapshotHarness(context: context, memory: memory)
+      .environment(\.dialTheme, DialTheme.palette(for: .classic))
+      .preferredColorScheme(.dark)
+
+    let image = try render(view, size: CGSize(width: DropdownLayout.width, height: DropdownLayout.height))
+    let snapshotName = "dial-hud-idle"
+    try attach(image, name: snapshotName)
+    try assertMatchesBaseline(image, name: snapshotName)
+    XCTAssertGreaterThan(opaquePixelCount(in: image), 40_000, "Idle HUD rendered blank.")
+  }
+
   func test_menuBarSettingsSurfaceRendersSelectedPreviewState() throws {
     let context = try makeSnapshotContext(themeID: .aqua)
     context.settings.menuBarDisplayMode = .albumArtTrackArtist
@@ -1223,6 +1244,56 @@ private struct MainHUDSnapshotHarness: View {
         )
         ReadoutsRow(vm: context.nowPlaying, onOpenStats: {}, onOpenHistory: {})
         PixelGridVisualizer(engine: context.visualizer)
+      }
+      .padding(.top, Dial.Layout.Dropdown.hudContentTopPadding)
+      .padding(.bottom, Dial.Layout.Dropdown.hudContentBottomPadding)
+      .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+      .overlay(LCDScanlines())
+      .lcdPanel()
+      .padding(.horizontal, Dial.Layout.Dropdown.panelHorizontalPadding)
+
+      ControlsBar(menubar: context.menubar, client: context.client)
+        .transportPanel()
+        .padding(.horizontal, Dial.Layout.Transport.panelHorizontalPadding)
+    }
+    .padding(.top, Dial.Layout.Dropdown.outerTopPadding)
+    .padding(.bottom, Dial.Layout.Dropdown.outerBottomPadding)
+    .frame(width: DropdownLayout.width, height: DropdownLayout.height)
+    .dialChassisPlastic(shape: deviceShape)
+  }
+}
+
+private struct IdleHUDSnapshotHarness: View {
+  let context: SnapshotContext
+  let memory: StatsQueries.IdleMemory
+  @State private var showingInfoPanel = false
+
+  private var deviceShape: RoundedRectangle {
+    RoundedRectangle(cornerRadius: Dial.Layout.Dropdown.cornerRadius, style: .continuous)
+  }
+
+  var body: some View {
+    VStack(spacing: Dial.Layout.Dropdown.shellSpacing) {
+      StatusRail(
+        vm: context.menubar,
+        showingInfoPanel: $showingInfoPanel,
+        onOpenHistory: {},
+        onOpenStats: {},
+        onOpenSettings: {}
+      )
+
+      VStack(spacing: 0) {
+        IdleHUDView(
+          pet: context.pet,
+          showPet: true,
+          memoryPanel: IdleMemoryPanel(
+            dbq: nil,
+            initialMemory: memory,
+            onOpenHistory: {},
+            onOpenStats: {}),
+          onOpenHistory: {},
+          onOpenStats: {},
+          onOpenPet: {})
       }
       .padding(.top, Dial.Layout.Dropdown.hudContentTopPadding)
       .padding(.bottom, Dial.Layout.Dropdown.hudContentBottomPadding)

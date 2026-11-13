@@ -62,6 +62,34 @@ struct StatsQueries {
     }
   }
 
+  // MARK: - Idle memory
+
+  /// What the idle HUD says when nothing is playing: the last counted play
+  /// and today's listening (local day).
+  struct IdleMemory: Equatable {
+    let lastSpin: HistoryRow?
+    let todayPlays: Int
+    let todayMs: Int64
+  }
+
+  func idleMemory(now: Int64 = Int64(Date().timeIntervalSince1970)) throws -> IdleMemory {
+    let lastSpin = try recentPlays(limit: 1).first
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = .current
+    let startOfDay = Int64(calendar.startOfDay(for: Date(timeIntervalSince1970: TimeInterval(now))).timeIntervalSince1970)
+    return try dbq.read { db in
+      let row = try Row.fetchOne(db, sql: """
+        SELECT COUNT(*) AS c, COALESCE(SUM(ms_played), 0) AS ms
+        FROM counted_plays
+        WHERE played_at >= ? AND played_at <= ?
+      """, arguments: [startOfDay, now])
+      return IdleMemory(
+        lastSpin: lastSpin,
+        todayPlays: row?["c"] ?? 0,
+        todayMs: row?["ms"] ?? 0)
+    }
+  }
+
   // MARK: - Top tracks / artists
 
   struct TopRow: Identifiable, Hashable {

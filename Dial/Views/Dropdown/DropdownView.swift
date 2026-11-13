@@ -421,6 +421,10 @@ struct DropdownView: View {
         IdleHUDView(
           pet: coord.pet,
           showPet: coord.settings.petEnabled,
+          memoryPanel: IdleMemoryPanel(
+            dbq: coord.dbq,
+            onOpenHistory: openHistory,
+            onOpenStats: openStats),
           onOpenHistory: openHistory,
           onOpenStats: openStats,
           onOpenPet: openPet)
@@ -599,9 +603,11 @@ private struct EntranceAppear: ViewModifier {
   }
 }
 
-private struct IdleHUDView: View {
+struct IdleHUDView: View {
   @Bindable var pet: PetViewModel
   let showPet: Bool
+  /// PLA-105: last spin and today's listening, under the READY card.
+  let memoryPanel: IdleMemoryPanel
   let onOpenHistory: () -> Void
   let onOpenStats: () -> Void
   let onOpenPet: () -> Void
@@ -651,6 +657,9 @@ private struct IdleHUDView: View {
         contactShadowRadius: 1.5,
         contactShadowY: 0.75,
         innerShadowOpacity: 0.10)
+
+      memoryPanel
+        .padding(.top, 8)
 
       Spacer(minLength: 0)
     }
