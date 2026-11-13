@@ -142,7 +142,7 @@ enum BadgeResolver {
       anchorAt: anchorAt, in: db) {
       return BadgeInsight(
         kind: .deepCut,
-        detail: "Rare track from a familiar artist",
+        detail: "\(effectiveTrackCount.formatted()) \(effectiveTrackCount == 1 ? "play" : "plays") · \(artistCount.formatted()) from this artist",
         explanation: "Shown because this artist has \(artistCount.formatted()) lifetime plays, while this track has only \(effectiveTrackCount.formatted()). Deep Cut requires 20+ artist plays and 3 or fewer track plays, at most once a day.")
     }
 
@@ -151,7 +151,7 @@ enum BadgeResolver {
       let displayCount = countedCurrentPlay ? trackCount : trackCount + 1
       return BadgeInsight(
         kind: .firstListen,
-        detail: "No plays in your history",
+        detail: "First time in your history",
         explanation: "Shown because this track has \(displayCount.formatted()) counted lifetime play and the artist/album are not already familiar in your library. Familiar catalog tracks use Deep Cut instead of First Listen.")
     }
 

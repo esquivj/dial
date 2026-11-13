@@ -74,7 +74,7 @@ struct StateGridFixtures {
     plays: Int = 27,
     rank: Int? = 7,
     lastPlayedDaysAgo: Int? = 3,
-    badge: BadgeInsight? = BadgeInsight(kind: .deepCut, detail: "DEEP CUT", explanation: "A rare track in this listener's rotation.")
+    badge: BadgeInsight? = BadgeInsight(kind: .deepCut, detail: "2 plays · 48 from this artist", explanation: "A rare track in this listener's rotation.")
   ) {
     coord.nowPlaying.track = track
     coord.nowPlaying.playsYTD = plays
@@ -269,7 +269,7 @@ extension StateGridFixtures {
           f.signIn(coord, themeID: .classic)
           f.emptyArchive(coord)
           f.play(coord, track: f.track(), plays: 0, rank: nil, lastPlayedDaysAgo: nil,
-                 badge: BadgeInsight(kind: .firstListen, detail: "FIRST LISTEN", explanation: "First time Dial has seen this track."))
+                 badge: BadgeInsight(kind: .firstListen, detail: "First time in your history", explanation: "First time Dial has seen this track."))
           coord.aggCache.firstListen = true
           coord.pet.stage = .egg
           coord.visualizer.setPreviewState(.denied)
@@ -311,7 +311,7 @@ extension StateGridFixtures {
           f.signIn(coord, themeID: .classic)
           f.play(coord, track: f.track(name: longTitle, artist: longArtist, album: longAlbum),
                  plays: 12_345, rank: 128, lastPlayedDaysAgo: 400,
-                 badge: BadgeInsight(kind: .anniversary, detail: "ANNIVERSARY", explanation: "One year since the first play."))
+                 badge: BadgeInsight(kind: .anniversary, detail: "Same calendar day, at least a year apart", explanation: "One year since the first play."))
           coord.aggCache.albumPlaysYTD = 48_200
         }),
       .init(
@@ -323,7 +323,7 @@ extension StateGridFixtures {
           f.signIn(coord, themeID: .aqua)
           f.play(coord, track: f.track(name: longTitle, artist: longArtist, album: longAlbum),
                  plays: 12_345, rank: 128, lastPlayedDaysAgo: 400,
-                 badge: BadgeInsight(kind: .rediscovered, detail: "REDISCOVERED", explanation: "Back after a long gap."))
+                 badge: BadgeInsight(kind: .rediscovered, detail: "Last played 412 days ago", explanation: "Back after a long gap."))
         }),
 
       .init(
