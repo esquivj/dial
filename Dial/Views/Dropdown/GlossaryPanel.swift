@@ -75,7 +75,9 @@ struct GlossaryPanel: View {
         }
       }
       .padding(EdgeInsets(top: 16, leading: 18, bottom: 18, trailing: 18))
+      .dialScrollFadeInset()
     }
+    .dialScrollFade()
   }
 
   private func section<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {

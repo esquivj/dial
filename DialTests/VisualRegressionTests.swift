@@ -378,7 +378,10 @@ final class VisualRegressionTests: XCTestCase {
       .environment(\.dialTheme, DialTheme.classic)
       .preferredColorScheme(.dark)
 
-    let image = try render(view, size: CGSize(width: DropdownLayout.width, height: DropdownLayout.height))
+    // Hosted render: ImageRenderer leaves ScrollView content blank on macOS.
+    let image = try renderHosted(view, size: CGSize(width: DropdownLayout.width, height: DropdownLayout.height))
+    try attach(image, name: "dial-stats-weekly")
+    try assertMatchesBaseline(image, name: "dial-stats-weekly")
 
     XCTAssertNotNil(snapshot.weeklyMemory)
     XCTAssertGreaterThan(opaquePixelCount(in: image), 35_000, "Stats screen rendered blank.")
