@@ -28,6 +28,19 @@ struct LikedTrackButton: View {
         .padding(9)
         .contentShape(Rectangle())
         .padding(-9)
+        .overlay(alignment: .topTrailing) {
+          // PLA-114: a second shape cue, so "reconnect" isn't carried by
+          // a dim pink alone. The slashed heart says why; the dot says
+          // it needs you.
+          if menubar.likedTrackState == .needsReconnect {
+            Circle()
+              .fill(theme.memoryAccent)
+              .frame(width: 6, height: 6)
+              .overlay(Circle().stroke(theme.ground, lineWidth: 1.5))
+              .offset(x: 2, y: -2)
+              .accessibilityHidden(true)
+          }
+        }
         .opacity(menubar.likedTrackState == .checking ? 0.45 : 1)
     }
     .buttonStyle(.pressable)
@@ -59,7 +72,7 @@ struct LikedTrackButton: View {
     switch menubar.likedTrackState {
     case .liked:          return theme.memoryAccent
     case .checking:       return theme.textMuted
-    case .needsReconnect: return theme.memoryAccent.opacity(0.55)
+    case .needsReconnect: return theme.memoryAccent
     case .notLiked,
          .unknown:        return theme.textMuted
     }
@@ -94,7 +107,7 @@ struct LikedTrackButton: View {
     case .liked:          return "Remove from Liked Songs"
     case .notLiked:       return "Add to Liked Songs"
     case .checking:       return "Checking Liked Songs"
-    case .needsReconnect: return "Reconnect Spotify to enable Liked Songs"
+    case .needsReconnect: return "Reconnect Spotify to like songs"
     case .unknown:        return menubar.hasLibraryTrack ? "Add to Liked Songs" : "No track to like"
     }
   }
@@ -104,7 +117,7 @@ struct LikedTrackButton: View {
     case .liked:          return "Remove current track from Liked Songs"
     case .notLiked:       return "Add current track to Liked Songs"
     case .checking:       return "Checking whether current track is in Liked Songs"
-    case .needsReconnect: return "Reconnect Spotify to enable Liked Songs"
+    case .needsReconnect: return "Liked Songs unavailable. Reconnect Spotify to like songs."
     case .unknown:        return "Add current track to Liked Songs"
     }
   }
