@@ -139,7 +139,7 @@ struct StatsView: View {
       BackButton(action: onBack)
       Text("STATS")
         .font(Dial.Typography.monoLabel)
-        .tracking(1.6)
+        .tracking(Dial.Tracking.stamp)
         .foregroundStyle(theme.accent)
       Spacer()
       rangeControl
@@ -157,7 +157,7 @@ struct StatsView: View {
         BackButton(action: onBack)
         Text("STATS")
           .font(Dial.Typography.monoLabel)
-          .tracking(1.6)
+          .tracking(Dial.Tracking.stamp)
           .foregroundStyle(theme.accent)
       }
       .offset(x: Dial.Layout.SecondaryShell.railLeadingOffset)
@@ -180,7 +180,7 @@ struct StatsView: View {
         } label: {
           Text(range.label)
             .font(Dial.Typography.monoTiny)
-            .tracking(0.9)
+            .tracking(Dial.Tracking.tight)
             .foregroundStyle(selectedRange == range ? theme.ground : theme.textFaint)
             .frame(width: 34, height: 18)
             .background(
@@ -212,7 +212,7 @@ struct StatsView: View {
         VStack(alignment: .leading, spacing: 2) {
           Text(selectedRange.heroTitle)
             .font(Dial.Typography.monoLabel)
-            .tracking(1.6)
+            .tracking(Dial.Tracking.stamp)
             .foregroundStyle(theme.textFaint)
           Text(hoursFormatted(totals.listeningMs))
             .font(.custom("GeistMono-Medium", size: 34))
@@ -270,7 +270,7 @@ struct StatsView: View {
     VStack(alignment: .trailing, spacing: 2) {
       Text(label)
         .font(Dial.Typography.monoTiny)
-        .tracking(1.0)
+        .tracking(Dial.Tracking.tight)
         .foregroundStyle(theme.textFaint)
       Text(value)
         .font(.custom("GeistMono-Medium", size: 14))
@@ -285,7 +285,7 @@ struct StatsView: View {
     VStack(alignment: .leading, spacing: 1) {
       Text(label)
         .font(Dial.Typography.monoTiny)
-        .tracking(1.0)
+        .tracking(Dial.Tracking.tight)
         .foregroundStyle(theme.textFaint)
       Text(value)
         .font(.custom("GeistMono-Medium", size: 15))
@@ -318,7 +318,7 @@ struct StatsView: View {
           HStack {
             Text("RECENT")
               .font(Dial.Typography.monoTiny)
-              .tracking(1.2)
+              .tracking(Dial.Tracking.label)
               .foregroundStyle(theme.textFaint)
             Spacer()
           }
@@ -347,7 +347,7 @@ struct StatsView: View {
         .frame(width: 5, height: 5)
       Text(summary.category.label.uppercased())
         .font(Dial.Typography.monoTiny)
-        .tracking(0.8)
+        .tracking(Dial.Tracking.tight)
       Text(summary.count.formatted(.number.notation(.compactName)))
         .font(Dial.Typography.monoTiny)
         .monospacedDigit()
@@ -469,7 +469,7 @@ struct StatsView: View {
     HStack(spacing: 6) {
       Text(title)
         .font(Dial.Typography.monoLabel)
-        .tracking(1.6)
+        .tracking(Dial.Tracking.stamp)
         .foregroundStyle(theme.textFaint)
       if let detail {
         Spacer()
@@ -583,12 +583,12 @@ private struct WeeklyMemoryStatsCard: View {
           HStack(alignment: .firstTextBaseline, spacing: 6) {
             Text("WEEKLY DROP")
               .font(Dial.Typography.monoTiny)
-              .tracking(1.0)
+              .tracking(Dial.Tracking.tight)
               .foregroundStyle(theme.textFaint)
 
             Text(memory.trait.uppercased())
               .font(Dial.Typography.monoTiny)
-              .tracking(1.0)
+              .tracking(Dial.Tracking.tight)
               .foregroundStyle(accent)
               .lineLimit(1)
               .minimumScaleFactor(0.75)
@@ -596,7 +596,7 @@ private struct WeeklyMemoryStatsCard: View {
 
           Text(memory.memento.uppercased())
             .font(Dial.Typography.monoLabel)
-            .tracking(1.1)
+            .tracking(Dial.Tracking.label)
             .foregroundStyle(theme.textPrimary)
             .lineLimit(1)
             .minimumScaleFactor(0.78)
@@ -612,14 +612,14 @@ private struct WeeklyMemoryStatsCard: View {
         VStack(alignment: .trailing, spacing: 3) {
           Text((memory.dominantGenre ?? memory.theme.label).uppercased())
             .font(Dial.Typography.monoTiny)
-            .tracking(0.8)
+            .tracking(Dial.Tracking.tight)
             .foregroundStyle(accent.opacity(0.95))
             .lineLimit(1)
             .minimumScaleFactor(0.62)
 
           Text(roomObjectLabel(memory.roomObjectName))
             .font(Dial.Typography.monoTiny)
-            .tracking(0.8)
+            .tracking(Dial.Tracking.tight)
             .foregroundStyle(theme.textPrimary.opacity(0.80))
             .lineLimit(2)
             .multilineTextAlignment(.trailing)
@@ -656,7 +656,7 @@ private struct WeeklyMemoryStatsCard: View {
     HStack(alignment: .firstTextBaseline, spacing: 4) {
       Text(label)
         .font(Dial.Typography.monoTiny)
-        .tracking(0.8)
+        .tracking(Dial.Tracking.tight)
         .foregroundStyle(theme.textFaint)
       Text(value)
         .font(Dial.Typography.monoSmall)
@@ -799,11 +799,11 @@ private struct FeaturedBadgeMemory: View {
         HStack(spacing: 6) {
           Text(row.kind.label.uppercased())
             .font(Dial.Typography.monoTiny)
-            .tracking(1.0)
+            .tracking(Dial.Tracking.tight)
             .foregroundStyle(memoryColor(row.category, theme: theme))
           Text(row.category.label.uppercased())
             .font(Dial.Typography.monoTiny)
-            .tracking(0.8)
+            .tracking(Dial.Tracking.tight)
             .foregroundStyle(theme.textFaint)
         }
         Text(subtitle)
@@ -855,7 +855,7 @@ private struct BadgeMemoryRowView: View {
       Spacer(minLength: 6)
       Text(relativeBadgeTime(row.earnedAt))
         .font(Dial.Typography.monoTiny)
-        .tracking(0.6)
+        .tracking(Dial.Tracking.tight)
         .foregroundStyle(theme.textFaint)
     }
     .padding(.vertical, 5)

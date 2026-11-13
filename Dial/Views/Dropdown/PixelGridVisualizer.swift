@@ -41,7 +41,7 @@ struct PixelGridVisualizer: View {
     HStack {
       Text("SPECTRUM")
         .font(Dial.Typography.monoLabel)
-        .tracking(1.4)
+        .tracking(Dial.Tracking.label)
         .foregroundStyle(theme.textMuted)
       Spacer()
       Text(rightLabel)
@@ -154,7 +154,7 @@ struct PixelGridVisualizer: View {
       VStack(spacing: 4) {
         Text(engine.state == .denied ? "ENABLE VISUALIZER" : "VISUALIZER OFFLINE")
           .font(Dial.Typography.monoLabel)
-          .tracking(1.4)
+          .tracking(Dial.Tracking.label)
           .foregroundStyle(theme.accent)
         if engine.state == .denied {
           Text("System Settings → Screen Recording")

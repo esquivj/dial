@@ -109,14 +109,14 @@ struct IdleMemoryStrip: View {
       HStack(spacing: 6) {
         Text(label)
           .font(Dial.Typography.pixelLabel)
-          .tracking(1.2)
+          .tracking(Dial.Tracking.label)
           .foregroundStyle(theme.textFaint)
           .lineLimit(1)
         Spacer(minLength: 0)
         if let stamp {
           Text(stamp)
             .font(Dial.Typography.pixelLabel)
-            .tracking(1.2)
+            .tracking(Dial.Tracking.label)
             .foregroundStyle(theme.accent)
             .lineLimit(1)
             .fixedSize()

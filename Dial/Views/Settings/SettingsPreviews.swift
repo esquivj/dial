@@ -140,7 +140,7 @@ struct HUDSettingsPreview: View {
           if vm.showBadgesInHUD {
             Text("REDISCOVERED")
               .font(.custom("GeistPixel-Square", size: 7.5 * CGFloat(vm.hudBadgeScale)))
-              .tracking(1.0)
+              .tracking(Dial.Tracking.tight)
               .foregroundStyle(theme.accent)
               .padding(.horizontal, 7 * CGFloat(vm.hudBadgeScale))
               .frame(height: 18 * CGFloat(vm.hudBadgeScale))
@@ -240,7 +240,7 @@ struct ColorModeOption: View {
         VStack(alignment: .leading, spacing: 2) {
           Text(mode.label.uppercased())
             .font(SettingsType.section)
-            .tracking(1.1)
+            .tracking(Dial.Tracking.label)
             .foregroundStyle(selected ? accent : SettingsPalette.text)
             .lineLimit(1)
             .minimumScaleFactor(0.82)

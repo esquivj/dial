@@ -56,7 +56,7 @@ struct HotkeyFlashView: View {
         .frame(width: 14, height: 14)
       Text(content.label)
         .font(Dial.Typography.pixelBadge)
-        .tracking(1.2)
+        .tracking(Dial.Tracking.label)
         .foregroundStyle(color)
         .fixedSize()
       if let level = content.level {

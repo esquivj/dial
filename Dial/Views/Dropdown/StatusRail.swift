@@ -38,7 +38,7 @@ struct StatusRail: View {
           .animation(.easeOut(duration: 0.5), value: trackPulse)
         Text(railLabel)
           .font(Dial.Typography.monoLabel)
-          .tracking(1.4)
+          .tracking(Dial.Tracking.label)
           .foregroundStyle(theme.accent)
         Spacer(minLength: 18)
         // Inline nav icons — surface History / Stats here so they're 1-tap

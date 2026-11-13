@@ -221,6 +221,15 @@ enum Dial {
     static let lcd      = Color(red: 0xB5/255, green: 0xBA/255, blue: 0x91/255)
   }
 
+  /// Letter-spacing (PLA-109). Three values instead of twelve:
+  /// `tight` for small labels, times and chips; `label` for section
+  /// stamps and readout labels; `stamp` for headline stamps and decals.
+  enum Tracking {
+    static let tight: CGFloat = 0.8
+    static let label: CGFloat = 1.2
+    static let stamp: CGFloat = 1.6
+  }
+
   enum Typography {
     /// Geist Pixel is the printed/LCD accent layer: section stamps,
     /// badge labels, tiny shell copy. Keep body and values in Geist Mono

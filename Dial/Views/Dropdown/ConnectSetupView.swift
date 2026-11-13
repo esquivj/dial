@@ -44,7 +44,7 @@ struct ConnectSetupView: View {
                 .frame(width: 13, height: 13)
               Text("CONNECT SPOTIFY")
                 .font(Dial.Typography.monoLabel)
-                .tracking(1.25)
+                .tracking(Dial.Tracking.label)
             }
             .foregroundStyle(Dial.Palette.ground)
             .frame(maxWidth: .infinity)
@@ -65,7 +65,7 @@ struct ConnectSetupView: View {
 
           Text("Secure OAuth. Token stays in Keychain.")
             .font(Dial.Typography.monoTiny)
-            .tracking(0.55)
+            .tracking(Dial.Tracking.tight)
             .foregroundStyle(Dial.Palette.textMuted.opacity(0.82))
             .lineLimit(1)
             .minimumScaleFactor(0.78)
@@ -90,7 +90,7 @@ struct ConnectSetupView: View {
         .shadow(color: theme.accent.opacity(0.55), radius: 3)
       Text("SETUP")
         .font(Dial.Typography.monoLabel)
-        .tracking(1.4)
+        .tracking(Dial.Tracking.label)
         .foregroundStyle(theme.accent)
       Spacer()
       Button(action: onOpenSettings) {
@@ -187,7 +187,7 @@ private struct DialChromeWordmark: View {
       } else {
         Text("DIAL")
           .font(.custom("GeistPixel-Square", size: 42))
-          .tracking(2.0)
+          .tracking(Dial.Tracking.stamp)
           .foregroundStyle(Dial.Palette.textPrimary)
           .lineLimit(1)
       }

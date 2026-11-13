@@ -67,7 +67,7 @@ struct CurrentTrackWhyPanel: View {
     VStack(alignment: .leading, spacing: 4) {
       Text("WHY THIS SPIN")
         .font(Dial.Typography.monoLabel)
-        .tracking(1.4)
+        .tracking(Dial.Tracking.label)
         .foregroundStyle(theme.accent)
 
       if let track = vm.track {
@@ -114,11 +114,11 @@ struct CurrentTrackWhyPanel: View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
           Text(title)
             .font(Dial.Typography.monoTiny)
-            .tracking(1.2)
+            .tracking(Dial.Tracking.label)
             .foregroundStyle(theme.textFaint)
           Text(value.uppercased())
             .font(Dial.Typography.monoLabel)
-            .tracking(1.0)
+            .tracking(Dial.Tracking.tight)
             .foregroundStyle(color)
             .lineLimit(1)
             .minimumScaleFactor(0.74)
@@ -151,7 +151,7 @@ struct CurrentTrackWhyPanel: View {
     VStack(alignment: .leading, spacing: 3) {
       Text(label)
         .font(Dial.Typography.monoTiny)
-        .tracking(0.9)
+        .tracking(Dial.Tracking.tight)
         .foregroundStyle(theme.textFaint)
         .lineLimit(1)
         .minimumScaleFactor(0.70)
@@ -201,7 +201,7 @@ struct CurrentTrackWhyPanel: View {
         .frame(width: 12, height: 12)
       Text(label)
         .font(Dial.Typography.monoTiny)
-        .tracking(1.0)
+        .tracking(Dial.Tracking.tight)
     }
     .foregroundStyle(theme.textPrimary.opacity(0.86))
     .frame(maxWidth: .infinity)

@@ -271,7 +271,7 @@ struct TrackHero: View {
       BadgePixelIcon(kind: kind, color: color, size: Dial.Layout.Hero.badgeIconBaseSize * badgeScale)
       Text(badgeLabel(for: kind))
         .font(badgeFont)
-        .tracking(1.2)
+        .tracking(Dial.Tracking.label)
         .foregroundStyle(color)
         .lineLimit(1)
         .minimumScaleFactor(0.78)

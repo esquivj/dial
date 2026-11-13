@@ -87,7 +87,7 @@ struct SettingsSidebar: View {
     VStack(alignment: .leading, spacing: 18) {
       Text("DIAL")
         .font(SettingsType.section)
-        .tracking(1.6)
+        .tracking(Dial.Tracking.stamp)
         .foregroundStyle(SettingsPalette.muted)
         .padding(.horizontal, 14)
         .padding(.top, 4)
@@ -160,7 +160,7 @@ struct SettingsSection<Content: View>: View {
     VStack(alignment: .leading, spacing: 12) {
       Text(title)
         .font(SettingsType.section)
-        .tracking(1.4)
+        .tracking(Dial.Tracking.label)
         .foregroundStyle(SettingsPalette.muted)
       content
         .padding(SettingsLayout.sectionPadding)

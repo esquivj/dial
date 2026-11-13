@@ -144,14 +144,14 @@ struct DesktopMemoryView: View {
         }
         Text(content.stampLabel)
           .font(Dial.Typography.pixelBadge)
-          .tracking(1.2)
+          .tracking(Dial.Tracking.label)
           .foregroundStyle(stampColor)
           .lineLimit(1)
         Spacer(minLength: 4)
         if let tag = content.playbackTag {
           Text(tag)
             .font(Dial.Typography.pixelBadge)
-            .tracking(1.2)
+            .tracking(Dial.Tracking.label)
             .foregroundStyle(theme.textMuted)
             .fixedSize()
         }

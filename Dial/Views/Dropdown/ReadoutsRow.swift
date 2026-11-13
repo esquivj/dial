@@ -131,7 +131,7 @@ private struct Readout: View {
     VStack(alignment: .leading, spacing: Dial.Layout.Readouts.cellLabelValueSpacing) {
       Text(label)
         .font(Dial.Typography.monoLabel)
-        .tracking(1.2)
+        .tracking(Dial.Tracking.label)
         .foregroundStyle(theme.textMuted)
         .lineLimit(1)
         .minimumScaleFactor(0.82)
