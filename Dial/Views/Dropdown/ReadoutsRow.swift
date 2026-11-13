@@ -114,7 +114,7 @@ private struct Readout: View {
   }
 
   private var valueColor: Color {
-    value == "—" ? theme.textMuted.opacity(0.72) : theme.accent
+    value == "—" ? theme.textFaint : theme.accent
   }
 
   var body: some View {

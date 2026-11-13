@@ -199,7 +199,7 @@ struct TrackHero: View {
           .opacity(0.88)
       } else {
         DialThickIcon("music.note", size: 22)
-          .foregroundStyle(theme.textMuted.opacity(0.72))
+          .foregroundStyle(theme.textFaint)
       }
     }
   }
@@ -222,7 +222,7 @@ struct TrackHero: View {
           if let album = vm.track?.albumName {
             Text(album)
               .font(albumFont)
-              .foregroundStyle(theme.textMuted.opacity(0.92))
+              .foregroundStyle(theme.textMuted)
               .lineLimit(1)
               .truncationMode(.tail)
           }

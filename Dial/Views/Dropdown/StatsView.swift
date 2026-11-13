@@ -179,7 +179,7 @@ struct StatsView: View {
           Text(range.label)
             .font(Dial.Typography.monoTiny)
             .tracking(0.9)
-            .foregroundStyle(selectedRange == range ? theme.ground : theme.textMuted.opacity(0.78))
+            .foregroundStyle(selectedRange == range ? theme.ground : theme.textFaint)
             .frame(width: 34, height: 18)
             .background(
               RoundedRectangle(cornerRadius: Dial.Radius.tiny)
@@ -211,7 +211,7 @@ struct StatsView: View {
           Text(selectedRange.heroTitle)
             .font(Dial.Typography.monoLabel)
             .tracking(1.6)
-            .foregroundStyle(theme.textMuted.opacity(0.82))
+            .foregroundStyle(theme.textFaint)
           Text(hoursFormatted(totals.listeningMs))
             .font(.custom("GeistMono-Medium", size: 34))
             .foregroundStyle(theme.accent)
@@ -220,7 +220,7 @@ struct StatsView: View {
             .monospacedDigit()
           Text(overviewCaption)
             .font(Dial.Typography.monoSmall)
-            .foregroundStyle(theme.textMuted.opacity(0.70))
+            .foregroundStyle(theme.textFaint)
             .lineLimit(1)
         }
         Spacer(minLength: 8)
@@ -269,7 +269,7 @@ struct StatsView: View {
       Text(label)
         .font(Dial.Typography.monoTiny)
         .tracking(1.0)
-        .foregroundStyle(theme.textMuted.opacity(0.72))
+        .foregroundStyle(theme.textFaint)
       Text(value)
         .font(.custom("GeistMono-Medium", size: 14))
         .foregroundStyle(theme.textPrimary)
@@ -284,7 +284,7 @@ struct StatsView: View {
       Text(label)
         .font(Dial.Typography.monoTiny)
         .tracking(1.0)
-        .foregroundStyle(theme.textMuted.opacity(0.70))
+        .foregroundStyle(theme.textFaint)
       Text(value)
         .font(.custom("GeistMono-Medium", size: 15))
         .foregroundStyle(theme.textPrimary)
@@ -317,7 +317,7 @@ struct StatsView: View {
             Text("RECENT")
               .font(Dial.Typography.monoTiny)
               .tracking(1.2)
-              .foregroundStyle(theme.textMuted.opacity(0.66))
+              .foregroundStyle(theme.textFaint)
             Spacer()
           }
           .padding(.top, 2)
@@ -381,7 +381,7 @@ struct StatsView: View {
 
         Text(rhythmFootnote)
           .font(Dial.Typography.monoSmall)
-          .foregroundStyle(theme.textMuted.opacity(0.62))
+          .foregroundStyle(theme.textFaint)
           .lineLimit(1)
       }
     }
@@ -438,7 +438,7 @@ struct StatsView: View {
             HStack(spacing: 10) {
               Text(String(format: "%02d", idx + 1))
                 .font(Dial.Typography.monoTiny)
-                .foregroundStyle(theme.textMuted.opacity(0.72))
+                .foregroundStyle(theme.textFaint)
                 .frame(width: 18, alignment: .leading)
               Text(row.name)
                 .font(Dial.Typography.sansCaption)
@@ -468,7 +468,7 @@ struct StatsView: View {
       Text(title)
         .font(Dial.Typography.monoLabel)
         .tracking(1.6)
-        .foregroundStyle(theme.textMuted.opacity(0.78))
+        .foregroundStyle(theme.textFaint)
       if let detail {
         Spacer()
         Text(detail)
@@ -485,7 +485,7 @@ struct StatsView: View {
   private func emptyHint(_ text: String = "Not enough data yet") -> some View {
     Text(text)
       .font(Dial.Typography.monoSmall)
-      .foregroundStyle(theme.textMuted.opacity(0.66))
+      .foregroundStyle(theme.textFaint)
       .padding(.vertical, 4)
   }
 
@@ -582,7 +582,7 @@ private struct WeeklyMemoryStatsCard: View {
             Text("WEEKLY DROP")
               .font(Dial.Typography.monoTiny)
               .tracking(1.0)
-              .foregroundStyle(theme.textMuted.opacity(0.72))
+              .foregroundStyle(theme.textFaint)
 
             Text(memory.trait.uppercased())
               .font(Dial.Typography.monoTiny)
@@ -601,7 +601,7 @@ private struct WeeklyMemoryStatsCard: View {
 
           Text(memory.recapLine)
             .font(Dial.Typography.monoSmall)
-            .foregroundStyle(theme.textMuted.opacity(0.72))
+            .foregroundStyle(theme.textFaint)
             .lineLimit(1)
             .minimumScaleFactor(0.64)
         }
@@ -655,7 +655,7 @@ private struct WeeklyMemoryStatsCard: View {
       Text(label)
         .font(Dial.Typography.monoTiny)
         .tracking(0.8)
-        .foregroundStyle(theme.textMuted.opacity(0.70))
+        .foregroundStyle(theme.textFaint)
       Text(value)
         .font(Dial.Typography.monoSmall)
         .foregroundStyle(theme.textPrimary.opacity(0.86))
@@ -696,7 +696,7 @@ private struct RhythmBar: View {
       }
       Text(bucket.label)
         .font(Dial.Typography.monoTiny)
-        .foregroundStyle(isPeak ? theme.accent : theme.textMuted.opacity(0.70))
+        .foregroundStyle(isPeak ? theme.accent : theme.textFaint)
         .lineLimit(1)
         .minimumScaleFactor(0.75)
     }
@@ -756,7 +756,7 @@ private struct GenreSignalRow: View {
       .frame(height: 4)
       Text(detailText)
         .font(Dial.Typography.monoSmall)
-        .foregroundStyle(theme.textMuted.opacity(0.66))
+        .foregroundStyle(theme.textFaint)
         .lineLimit(1)
     }
     .padding(EdgeInsets(top: 6, leading: 8, bottom: 6, trailing: 8))
@@ -802,7 +802,7 @@ private struct FeaturedBadgeMemory: View {
           Text(row.category.label.uppercased())
             .font(Dial.Typography.monoTiny)
             .tracking(0.8)
-            .foregroundStyle(theme.textMuted.opacity(0.66))
+            .foregroundStyle(theme.textFaint)
         }
         Text(subtitle)
           .font(Dial.Typography.sansCaption)
@@ -810,7 +810,7 @@ private struct FeaturedBadgeMemory: View {
           .lineLimit(1)
         Text(relativeBadgeTime(row.earnedAt))
           .font(Dial.Typography.monoSmall)
-          .foregroundStyle(theme.textMuted.opacity(0.70))
+          .foregroundStyle(theme.textFaint)
           .lineLimit(1)
       }
       Spacer(minLength: 0)
@@ -847,14 +847,14 @@ private struct BadgeMemoryRowView: View {
           .lineLimit(1)
         Text(subtitle)
           .font(Dial.Typography.monoSmall)
-          .foregroundStyle(theme.textMuted.opacity(0.78))
+          .foregroundStyle(theme.textFaint)
           .lineLimit(1)
       }
       Spacer(minLength: 6)
       Text(relativeBadgeTime(row.earnedAt))
         .font(Dial.Typography.monoTiny)
         .tracking(0.6)
-        .foregroundStyle(theme.textMuted.opacity(0.68))
+        .foregroundStyle(theme.textFaint)
     }
     .padding(.vertical, 5)
   }
@@ -898,7 +898,7 @@ private struct TopTrackRow: View {
     HStack(spacing: 10) {
       Text(String(format: "%02d", rank))
         .font(Dial.Typography.monoTiny)
-        .foregroundStyle(theme.textMuted.opacity(0.72))
+        .foregroundStyle(theme.textFaint)
         .frame(width: 18, alignment: .leading)
       Group {
         if let urlString = row.artUrl, let image = artworkCache.image(for: urlString) {
@@ -925,7 +925,7 @@ private struct TopTrackRow: View {
         if let subtitle = row.subtitle, !subtitle.isEmpty {
           Text(subtitle)
             .font(Dial.Typography.monoSmall)
-            .foregroundStyle(theme.textMuted.opacity(0.78))
+            .foregroundStyle(theme.textFaint)
             .lineLimit(1)
         }
       }

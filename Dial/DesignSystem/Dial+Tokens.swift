@@ -29,6 +29,10 @@ struct DialTheme {
   let accentAlt: Color
   let textPrimary: Color
   let textMuted: Color
+  /// Faint text: the muted color blended toward `surface`, solid, so it
+  /// keeps >= 4.8:1 on ground, surface and subtle (WCAG AA for small
+  /// text). Use it instead of `textMuted.opacity(...)` for text.
+  let textFaint: Color
   let lcd: Color
   let buttonRubber: Color
   let buttonChrome: Color
@@ -46,6 +50,7 @@ struct DialTheme {
     accentAlt: Color(red: 0xB8/255, green: 0xB8/255, blue: 0xB2/255),
     textPrimary: Color(red: 0xEF/255, green: 0xEF/255, blue: 0xEC/255),
     textMuted: Color(red: 0xA4/255, green: 0xA4/255, blue: 0xA0/255),
+    textFaint: Color(red: 0x85/255, green: 0x85/255, blue: 0x82/255),
     lcd: Color(red: 0xB3/255, green: 0xB3/255, blue: 0xA8/255),
     buttonRubber: Color(red: 0x12/255, green: 0x12/255, blue: 0x12/255),
     buttonChrome: Color(red: 0xD5/255, green: 0xD5/255, blue: 0xD0/255),
@@ -61,6 +66,7 @@ struct DialTheme {
     accentAlt: Color(red: 0xFF/255, green: 0xD5/255, blue: 0x43/255),
     textPrimary: Color(red: 0xEC/255, green: 0xF4/255, blue: 0xE4/255),
     textMuted: Color(red: 0x98/255, green: 0xA5/255, blue: 0x8E/255),
+    textFaint: Color(red: 0x7E/255, green: 0x8B/255, blue: 0x76/255),
     lcd: Color(red: 0xC3/255, green: 0xD5/255, blue: 0x95/255),
     buttonRubber: Color(red: 0xEE/255, green: 0xC8/255, blue: 0x3C/255),
     buttonChrome: Color(red: 0xD0/255, green: 0xD7/255, blue: 0xC7/255),
@@ -76,6 +82,7 @@ struct DialTheme {
     accentAlt: Color(red: 0x74/255, green: 0xA0/255, blue: 0xFF/255),
     textPrimary: Color(red: 0xE9/255, green: 0xF0/255, blue: 0xF6/255),
     textMuted: Color(red: 0xA8/255, green: 0xB5/255, blue: 0xC4/255),
+    textFaint: Color(red: 0x7B/255, green: 0x87/255, blue: 0x97/255),
     lcd: Color(red: 0xB7/255, green: 0xC6/255, blue: 0xAE/255),
     buttonRubber: Color(red: 0xE9/255, green: 0xEC/255, blue: 0xEA/255),
     buttonChrome: Color(red: 0xB8/255, green: 0xC8/255, blue: 0xDA/255),
@@ -91,6 +98,7 @@ struct DialTheme {
     accentAlt: Color(red: 0xFF/255, green: 0xB1/255, blue: 0xE8/255),
     textPrimary: Color(red: 0xF8/255, green: 0xE8/255, blue: 0xF4/255),
     textMuted: Color(red: 0xC8/255, green: 0xA2/255, blue: 0xBB/255),
+    textFaint: Color(red: 0x9B/255, green: 0x7A/255, blue: 0x91/255),
     lcd: Color(red: 0xD7/255, green: 0xB8/255, blue: 0xCC/255),
     buttonRubber: Color(red: 0xA9/255, green: 0x43/255, blue: 0x87/255),
     buttonChrome: Color(red: 0xF5/255, green: 0xB8/255, blue: 0xE4/255),

@@ -121,7 +121,7 @@ struct DesktopMemoryView: View {
           .opacity(0.88)
       } else {
         DialThickIcon("music.note", size: 44)
-          .foregroundStyle(theme.textMuted.opacity(0.72))
+          .foregroundStyle(theme.textFaint)
       }
     }
   }
