@@ -258,6 +258,9 @@ final class StatusBarController {
     guard let button = item.button, let buttonWindow = button.window else { return }
     memoryPopup.dismiss(animated: false)
     panelVisibility.isVisible = true
+    // While nothing plays, polling slows down (PLA-102). Opening the HUD
+    // asks Spotify right away so what's on screen is current.
+    coord?.poller.wake()
 
     let buttonFrameInWindow = button.convert(button.bounds, to: nil)
     let buttonFrameOnScreen = buttonWindow.convertToScreen(buttonFrameInWindow)

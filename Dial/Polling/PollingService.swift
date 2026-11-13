@@ -65,6 +65,14 @@ struct PollingTiming: Equatable {
   /// app stops playing, a Web API "playing" report for the same track is the
   /// app's own echo, not a phone taking over.
   var localEchoWindow: TimeInterval = 5
+  /// Nothing playing anywhere (PLA-102): the Web API is asked this often,
+  /// then every `deepIdleWebInterval` once nothing has played for
+  /// `deepIdleAfter` seconds. The first "playing" answer returns to the
+  /// normal cadence; `wake()` (a Spotify notification, the HUD opening)
+  /// asks right away.
+  var idleWebInterval: TimeInterval = 15
+  var deepIdleWebInterval: TimeInterval = 30
+  var deepIdleAfter: TimeInterval = 120
 
   static func standard(webInterval: TimeInterval) -> PollingTiming {
     PollingTiming(webInterval: webInterval)
@@ -128,6 +136,13 @@ final class PollingService {
   private var webPausedForSignIn = false
   private let retryLock = NSLock()
   private var retryRequested = false
+  /// Set by `wake()`: the next cycle asks the Web API now, whatever the
+  /// idle cadence, and reports "nothing playing" again if that's the answer.
+  private var wakeRequested = false
+  /// When the Web API last started answering "nothing playing".
+  private var webIdleSince: Date?
+  /// `.noPlayback` already went out for the current stretch of silence.
+  private var noPlaybackReported = false
   private var metadataPendingUri: String?
   private var metadataAttemptsMade = 0
   private var status: PlaybackSourceStatus?
@@ -153,6 +168,9 @@ final class PollingService {
 
   /// Read again now. Wired to Spotify's PlaybackStateChanged notification.
   func wake() {
+    retryLock.lock()
+    wakeRequested = true
+    retryLock.unlock()
     scheduler.wake()
   }
 
@@ -188,14 +206,39 @@ final class PollingService {
   /// next.
   private func cycle(_ emit: (PlaybackEvent) -> Void) async -> TimeInterval {
     applyRetryRequest()
+    let woke = consumeWake()
+    if woke { noPlaybackReported = false }
     let reading = await localSource?.read()
     if case let .playback(local)? = reading {
       if local.isPlaying {
         return await localPlayingCycle(local, emit)
       }
-      return await localIdleCycle(local, emit)
+      return await localIdleCycle(local, forced: woke, emit)
     }
-    return await webOnlyCycle(reason: Self.reason(for: reading), emit)
+    return await webOnlyCycle(reason: Self.reason(for: reading), forced: woke, emit)
+  }
+
+  private func consumeWake() -> Bool {
+    retryLock.lock(); defer { retryLock.unlock() }
+    let woke = wakeRequested
+    wakeRequested = false
+    return woke
+  }
+
+  /// The Web API cadence for `base`, slowed while nothing plays anywhere.
+  private func idleAware(_ base: TimeInterval) -> TimeInterval {
+    guard let since = webIdleSince else { return base }
+    let idleFor = scheduler.now().timeIntervalSince(since)
+    return max(base, idleFor >= timing.deepIdleAfter ? timing.deepIdleWebInterval : timing.idleWebInterval)
+  }
+
+  /// Tracks whether the Web API currently sees anything playing.
+  private func noteWebAnswer(_ response: CurrentlyPlaying?) {
+    if response?.is_playing == true {
+      webIdleSince = nil
+    } else if webIdleSince == nil {
+      webIdleSince = scheduler.now()
+    }
   }
 
   private func applyRetryRequest() {
@@ -251,11 +294,12 @@ final class PollingService {
 
   private func localIdleCycle(
     _ local: LocalPlaybackSnapshot,
+    forced: Bool,
     _ emit: (PlaybackEvent) -> Void
   ) async -> TimeInterval {
     metadataPendingUri = nil
-    let webInterval = remotePlaying ? timing.webInterval : timing.remoteCheckInterval
-    if webIsDue(every: webInterval), let response = await fetchWeb() {
+    if webIsDue(every: forced ? 0 : remoteCheckInterval), let response = await fetchWeb() {
+      noteWebAnswer(response)
       remotePlaying = response?.is_playing == true && !isLocalEcho(response, local: local)
       if remotePlaying {
         authority = .web
@@ -272,21 +316,28 @@ final class PollingService {
       for e in interpret(PlaybackSnapshot(local: local)) { emit(e) }
     }
     publish(authority == .web ? .webAPI(.remoteDevice) : .spotifyApp)
-    return min(timing.localInterval, webWait(every: remotePlaying ? timing.webInterval : timing.remoteCheckInterval))
+    return min(timing.localInterval, webWait(every: remoteCheckInterval))
+  }
+
+  /// Spotify app open but idle: how often to look for another device.
+  private var remoteCheckInterval: TimeInterval {
+    remotePlaying ? timing.webInterval : idleAware(timing.remoteCheckInterval)
   }
 
   private func webOnlyCycle(
     reason: PlaybackSourceStatus.WebAPIReason,
+    forced: Bool,
     _ emit: (PlaybackEvent) -> Void
   ) async -> TimeInterval {
     authority = .web
     metadataPendingUri = nil
     publish(.webAPI(reason))
-    if webIsDue(every: timing.webInterval), let response = await fetchWeb() {
+    if webIsDue(every: forced ? 0 : idleAware(timing.webInterval)), let response = await fetchWeb() {
+      noteWebAnswer(response)
       remotePlaying = response?.is_playing == true
       for e in interpret(PlaybackSnapshot(web: response)) { emit(e) }
     }
-    return webWait(every: timing.webInterval)
+    return webWait(every: idleAware(timing.webInterval))
   }
 
   private func isLocalEcho(_ response: CurrentlyPlaying?, local: LocalPlaybackSnapshot) -> Bool {
@@ -414,8 +465,12 @@ final class PollingService {
       let ended = endPlay()
       lastTrackUri = nil; counted = false; playbackState = nil
       lastProgressMs = nil; restartedAt = nil
+      // Once per stretch of silence: an unchanged answer isn't news.
+      guard !noPlaybackReported || !ended.isEmpty else { return ended }
+      noPlaybackReported = true
       return ended + [.noPlayback]
     }
+    noPlaybackReported = false
     var out: [PlaybackEvent] = []
     if item.uri != lastTrackUri {
       out += endPlay()
@@ -440,10 +495,11 @@ final class PollingService {
       out.append(.restarted(trackUri: item.uri))
     }
     if let p = snapshot.progressMs {
+      let moved = p != lastProgressMs
       lastProgressMs = p
       if playAt != nil { playMaxMs = max(playMaxMs, p) }
       playDurationMs = item.durationMs
-      out.append(.progress(ms: p))
+      if moved || snapshot.isPlaying { out.append(.progress(ms: p)) }
       if snapshot.isPlaying,
          !counted,
          DedupRule.shouldCount(progressMs: p, durationMs: item.durationMs) {
