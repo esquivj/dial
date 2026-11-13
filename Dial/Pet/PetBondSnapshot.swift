@@ -25,11 +25,11 @@ enum PetBondPrimaryAction: Equatable {
     switch self {
     case .reactToBadge: return "REACT TO BADGE"
     case .teachTrick(let trick): return "UNLOCK \(trick.shortLabel.uppercased())"
-    case .wakeUp: return "CHECK IN"
+    case .wakeUp: return "SAY HI"
     case .showFavorite: return "SHOW FAVORITE"
     case .showTrick(let trick): return "SHOW \(trick.shortLabel.uppercased())"
     case .syncToBeat: return "SYNC"
-    case .checkIn: return "CHECK IN"
+    case .checkIn: return "SAY HI"
     }
   }
 }

@@ -250,8 +250,9 @@ struct TrackHero: View {
       }
       .frame(height: max(badgeChipHeight, Dial.Layout.Hero.badgeMinHeight), alignment: .leading)
       // PLA-111: the badge says why, at a glance, not only behind (i).
-      if let reason = badgeInsight?.detail, !reason.isEmpty {
-        Text(reason)
+      // First Listen is its own reason; a line under it would only repeat it.
+      if let insight = badgeInsight, insight.kind != .firstListen, !insight.detail.isEmpty {
+        Text(insight.detail)
           .font(Dial.Typography.monoSmall)
           .foregroundStyle(theme.textFaint)
           .lineLimit(1)

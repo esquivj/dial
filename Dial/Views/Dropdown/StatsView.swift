@@ -125,11 +125,15 @@ struct StatsView: View {
         if let weeklyMemory {
           WeeklyMemoryStatsCard(memory: weeklyMemory)
         }
-        genreSignalSection
-        rhythmSection
-        topTracksSection
-        topArtistsSection
-        memoriesSection
+        // PLA-116: an empty range shows its card alone, not four empty
+        // sections stacked under it.
+        if !isEmptyRange {
+          genreSignalSection
+          rhythmSection
+          topTracksSection
+          topArtistsSection
+          memoriesSection
+        }
       }
       .padding(Dial.Layout.SecondaryScreen.contentPadding)
       .dialScrollFadeInset()
@@ -210,9 +214,11 @@ struct StatsView: View {
 
   // MARK: Overview
 
+  private var isEmptyRange: Bool { loaded && totals.plays == 0 }
+
   @ViewBuilder
   private var overviewPanel: some View {
-    if loaded && totals.plays == 0 {
+    if isEmptyRange {
       emptyOverview
     } else {
       filledOverview
