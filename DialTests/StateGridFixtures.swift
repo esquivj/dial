@@ -387,6 +387,11 @@ extension StateGridFixtures {
         f.signIn(coord, themeID: .slime)
         f.play(coord, track: f.track())
       }),
+      .init(name: "menubar-memory-reason", caption: "Memory reason (10 s)", mode: .albumArtTrackArtist, configure: { coord, f in
+        f.signIn(coord, themeID: .classic)
+        f.play(coord, track: f.track())
+        coord.menubar.showMemoryReason("Last played Mar 2025", for: .seconds(3_600))
+      }),
       .init(name: "menubar-tiny-chaos", caption: "Tiny chaos · Aqua", mode: .tinyChaos, themeID: .aqua, configure: { coord, f in
         f.signIn(coord, themeID: .aqua)
         f.play(coord, track: f.track())

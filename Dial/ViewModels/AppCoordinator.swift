@@ -55,6 +55,8 @@ final class AppCoordinator {
   private var currentTrackCountedAt: Int64?
   private var playbackReducer = PlaybackStateReducer()
   private var memoryPopupGate = MemoryPopupGate()
+  /// PLA-117: the track whose memory reason the menu bar already showed.
+  private var menubarReasonTrackUri: String?
 
   /// The track whose memory `aggCache` holds right now. A new track's
   /// aggregates land a moment after the track itself, so surfaces that
@@ -1087,6 +1089,8 @@ final class AppCoordinator {
   @MainActor
   func resetMemoryPopup(forTrack uri: String?) {
     memoryPopupGate.trackStarted(uri: uri)
+    menubarReasonTrackUri = nil
+    menubar.clearMemoryReason()
   }
 
   /// Called once the current track's badge insight is fresh: right after
@@ -1100,6 +1104,13 @@ final class AppCoordinator {
       artistName: track.artistName,
       lastPlayedAt: aggCache.lastPlayedAt,
       enabledCategories: settings.enabledBadgeCategories)
+    if let content,
+       MenubarMemoryReason.shows(content, moment: moment),
+       menubarReasonTrackUri != uri
+    {
+      menubarReasonTrackUri = uri
+      menubar.showMemoryReason(content.line)
+    }
     let conditions = MemoryPopupGate.Conditions(
       enabled: settings.showMemoryPopups,
       hudOpen: memoryPopupPresenter?.isHUDOpen ?? true,

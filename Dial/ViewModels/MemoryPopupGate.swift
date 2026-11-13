@@ -116,6 +116,18 @@ struct MemoryPopupGate {
   }
 }
 
+/// PLA-117: whether the menu bar swaps the artist for a memory's reason.
+/// Same moments as the pop-up (milestones wait for the play to count), but
+/// not First Listen: like the HUD, a first play needs no reason line. The
+/// pop-up toggle, an open HUD and Focus don't matter: the menu bar text is
+/// quiet and goes back to the artist on its own.
+enum MenubarMemoryReason {
+  static func shows(_ content: MemoryPopupContent, moment: MemoryPopupGate.Moment) -> Bool {
+    guard content.kind != .firstListen else { return false }
+    return moment == .trackStarted || content.kind.category == .milestone
+  }
+}
+
 /// Where the coordinator sends a pop-up. `StatusBarController` implements
 /// it because it owns the status item position and the HUD panel.
 protocol MemoryPopupPresenting: AnyObject {

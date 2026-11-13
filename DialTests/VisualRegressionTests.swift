@@ -142,6 +142,41 @@ final class VisualRegressionTests: XCTestCase {
     XCTAssertGreaterThan(opaquePixelCount(in: image), 40_000, "Idle HUD rendered blank.")
   }
 
+  /// PLA-117: when a memory fires, its reason stands in for the artist
+  /// and the strip keeps the width of "title • artist".
+  func test_menuBarShowsMemoryReasonInTheArtistSlot() async throws {
+    let fixtures = StateGridFixtures(
+      artworkURL: try StateGridFixtures.makeArtworkFile().absoluteString,
+      now: fixtureNow)
+    let coord = try makeStateGridCoordinator()
+    fixtures.signIn(coord, themeID: .classic)
+    fixtures.play(coord, track: fixtures.track())
+    coord.settings.menuBarDisplayMode = .albumArtTrackArtist
+    coord.settings.showAlbumArtInMenuBar = true
+    coord.settings.showProgressInMenuBar = true
+    coord.settings.menuBarTitleWidth = 220
+    _ = await coord.artworkCache.load(coord.nowPlaying.track?.artUrl)
+
+    func strip() -> some View {
+      MenubarStripView(
+        vm: coord.menubar,
+        settings: coord.settings,
+        pet: coord.pet,
+        nowPlaying: coord.nowPlaying,
+        artworkCache: coord.artworkCache)
+        .environment(\.colorScheme, .dark)
+    }
+    func fittingWidth() -> CGFloat { NSHostingView(rootView: strip()).fittingSize.width }
+
+    let artistWidth = fittingWidth()
+    coord.menubar.showMemoryReason("Last played Mar 2025", for: .seconds(3_600))
+    let image = try render(MenubarGridBar(scheme: .dark) { strip() }, size: menubarGridBarSize)
+    let snapshotName = "dial-menubar-memory-reason"
+    try attach(image, name: snapshotName)
+    try assertMatchesBaseline(image, name: snapshotName)
+    XCTAssertEqual(fittingWidth(), artistWidth, accuracy: 0.5, "The strip changed width.")
+  }
+
   func test_menuBarSettingsSurfaceRendersSelectedPreviewState() throws {
     let context = try makeSnapshotContext(themeID: .aqua)
     context.settings.menuBarDisplayMode = .albumArtTrackArtist

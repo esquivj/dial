@@ -20,11 +20,15 @@ enum MenuBarTextMetrics {
 
   static func width(for text: String, max maxWidth: CGFloat) -> CGFloat {
     let clampedMax = CGFloat(clampedSettingWidth(Double(maxWidth)))
-    let rawWidth = ceil((text as NSString).size(withAttributes: [
+    return min(clampedMax, max(minimumWidth, naturalWidth(for: text)))
+  }
+
+  /// The width `text` needs to show in full, before the user's cap.
+  static func naturalWidth(for text: String) -> CGFloat {
+    ceil((text as NSString).size(withAttributes: [
       .font: appKitFont,
       .kern: kerning,
-    ]).width)
-    return min(clampedMax, max(minimumWidth, rawWidth + 2))
+    ]).width) + 2
   }
 
   static func clampedSettingWidth(_ value: Double) -> Double {
