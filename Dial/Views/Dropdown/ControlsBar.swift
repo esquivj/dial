@@ -13,6 +13,16 @@ struct ControlsBar: View {
     .padding(Dial.Layout.Transport.padding)
   }
 
+  /// PLA-116: with nothing loaded the tray reads idle. Previous, next,
+  /// shuffle and repeat dim and disable; Play stays live to start Spotify.
+  private var hasTrack: Bool { menubar.track != nil }
+
+  private func idleDim<V: View>(_ control: V) -> some View {
+    control
+      .disabled(!hasTrack)
+      .opacity(hasTrack ? 1 : 0.4)
+  }
+
   private var commands: TransportCommands {
     TransportCommands(menubar: menubar, transport: client)
   }
@@ -22,19 +32,19 @@ struct ControlsBar: View {
       TransportWellRow()
 
       HStack(spacing: 0) {
-        shuffleButton
+        idleDim(shuffleButton)
 
         Spacer(minLength: 12)
 
         HStack(spacing: TransportHardware.centralSpacing) {
-          previousButton
+          idleDim(previousButton)
           playPauseButton
-          nextButton
+          idleDim(nextButton)
         }
 
         Spacer(minLength: 12)
 
-        repeatButton
+        idleDim(repeatButton)
       }
       .padding(.horizontal, TransportHardware.deckHorizontalPadding)
     }
@@ -249,6 +259,7 @@ private struct PlaybackScrubber: View {
         Capsule()
           .fill(theme.accent.opacity(0.86))
           .frame(width: max(Dial.Layout.Transport.trackHeight, fillWidth), height: Dial.Layout.Transport.trackHeight)
+          .opacity(isSeekable ? 1 : 0)  // no stray start dot with nothing loaded
 
         Circle()
           .fill(theme.buttonChrome)
@@ -256,6 +267,7 @@ private struct PlaybackScrubber: View {
           .shadow(color: Color.black.opacity(0.45), radius: 1.5, x: 0, y: 1)
           .frame(width: thumbSize, height: thumbSize)
           .offset(x: min(max(0, fillWidth - thumbSize / 2), width - thumbSize))
+          .opacity(isSeekable ? 1 : 0)
       }
       .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
       .contentShape(Rectangle())
