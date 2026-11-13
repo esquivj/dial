@@ -83,6 +83,25 @@ final class VisualRegressionTests: XCTestCase {
     }
   }
 
+  /// PLA-107: a first play reads FIRST and UNRANKED, not dashes.
+  func test_firstPlayHUDReadsAsAMoment() throws {
+    let context = try makeSnapshotContext(themeID: .classic)
+    context.nowPlaying.playsYTD = 0
+    context.menubar.playsYTD = 0
+    context.agg.rank7d = nil
+    context.agg.lastPlayedAt = nil
+    context.agg.firstListen = true
+    let view = MainHUDSnapshotHarness(context: context, badgeKind: .firstListen)
+      .environment(\.dialTheme, DialTheme.palette(for: .classic))
+      .preferredColorScheme(.dark)
+
+    let image = try render(view, size: CGSize(width: DropdownLayout.width, height: DropdownLayout.height))
+    let snapshotName = "dial-hud-first-play"
+    try attach(image, name: snapshotName)
+    try assertMatchesBaseline(image, name: snapshotName)
+    XCTAssertGreaterThan(opaquePixelCount(in: image), 40_000, "First-play HUD rendered blank.")
+  }
+
   /// PLA-105: the idle HUD shows the last spin and today's listening under READY.
   func test_idleHUDShowsLastSpinAndToday() throws {
     let context = try makeSnapshotContext(themeID: .classic)
@@ -527,14 +546,19 @@ final class VisualRegressionTests: XCTestCase {
       confidence: 0.92,
       source: .artistTags,
       reason: "Visual regression fixture")
-    nowPlaying.playsYTD = 8
+    // PLA-107: data that obeys the badge rules. The harness shows DEEP CUT,
+    // which needs 3 or fewer plays; ranked this week, last heard 40 days ago.
+    nowPlaying.playsYTD = 2
+    agg.rank7d = 12
+    agg.firstListen = false
+    agg.lastPlayedAt = Int64(Date().timeIntervalSince1970) - 40 * 86_400
     menubar.track = track
     menubar.state = .playing
     menubar.durationMs = 212_000
     menubar.progressMs = 91_000
     menubar.lastProgressUpdate = nil
     menubar.likedTrackState = .notLiked
-    menubar.playsYTD = 8
+    menubar.playsYTD = 2
     pet.stage = .companion
     pet.behavior = .beatSync(bpm: 128)
     pet.reactionText = "Listening."
@@ -1208,6 +1232,7 @@ private struct SettingsMenuBarSnapshotHarness: View {
 
 private struct MainHUDSnapshotHarness: View {
   let context: SnapshotContext
+  var badgeKind: BadgeMemoryKind = .deepCut
   @State private var showingInfoPanel = false
 
   private var deviceShape: RoundedRectangle {
@@ -1234,7 +1259,7 @@ private struct MainHUDSnapshotHarness: View {
           client: context.client,
           onReconnect: {},
           badgeInsight: BadgeInsight(
-            kind: .deepCut,
+            kind: badgeKind,
             detail: "Visual regression fixture",
             explanation: "Keeps badge geometry present."),
           showPet: true,
