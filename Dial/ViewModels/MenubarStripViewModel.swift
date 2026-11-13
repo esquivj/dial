@@ -42,6 +42,28 @@ final class MenubarStripViewModel {
   private var pendingShuffle: PendingPlayerMode<Bool>?
   private var pendingRepeatMode: PendingPlayerMode<RepeatMode>?
 
+  /// PLA-117: when a memory fires, its reason ("Last played Mar 2025")
+  /// stands in for the artist for a few seconds, then the artist returns.
+  private(set) var memoryReason: String?
+  @ObservationIgnored private var memoryReasonTask: Task<Void, Never>?
+  static let memoryReasonDuration: Duration = .seconds(10)
+
+  func showMemoryReason(_ reason: String, for duration: Duration = memoryReasonDuration) {
+    memoryReasonTask?.cancel()
+    memoryReason = reason
+    memoryReasonTask = Task { @MainActor [weak self] in
+      try? await Task.sleep(for: duration)
+      guard !Task.isCancelled else { return }
+      self?.memoryReason = nil
+    }
+  }
+
+  func clearMemoryReason() {
+    memoryReasonTask?.cancel()
+    memoryReasonTask = nil
+    memoryReason = nil
+  }
+
   var hasSeekableTrack: Bool {
     track != nil && durationMs > 0
   }

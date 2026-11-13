@@ -147,13 +147,44 @@ struct MenubarStripView: View {
     let artist = vm.track?.artistName ?? ""
 
     return Group {
-      if title.isEmpty || artist.isEmpty {
+      if let reason = vm.memoryReason, !title.isEmpty {
+        memoryReasonLine(title: title, reason: reason)
+          .transition(.opacity)
+          .id("reason")
+      } else if title.isEmpty || artist.isEmpty {
         dynamicMenuBarText(trackArtistString, foreground: ink(Color.white.opacity(0.93), light: 0.85))
       } else {
         dynamicMenuBarPair(primary: title, secondary: artist, widthKey: trackArtistString)
+          .transition(.opacity)
+          .id("artist")
       }
     }
+    .animation(reduceMotion ? nil : .easeInOut(duration: 0.3), value: vm.memoryReason)
   }
+
+  /// The strip keeps the width of "title • artist" so nothing else in the
+  /// menu bar moves. "title • reason" shows when it fits that width;
+  /// otherwise the reason shows alone (and scrolls if it still doesn't fit).
+  @ViewBuilder
+  private func memoryReasonLine(title: String, reason: String) -> some View {
+    let slot = menuBarTextWidth(for: trackArtistString)
+    let pair = "\(title) • \(reason)"
+    if MenuBarTextMetrics.naturalWidth(for: pair) <= slot {
+      dynamicMenuBarPair(
+        primary: title,
+        secondary: reason,
+        secondaryForeground: memoryReasonInk,
+        widthKey: trackArtistString,
+        accessibilityLabel: pair)
+    } else {
+      MenubarTickerText(
+        segments: [.init(text: reason, foreground: memoryReasonInk)],
+        width: slot,
+        accessibilityLabel: pair)
+    }
+  }
+
+  private var memoryReasonInk: Color { ink(theme.accent, light: 0.7) }
 
   private var trackArtistString: String {
     let title = vm.track?.name ?? ""
@@ -187,15 +218,23 @@ struct MenubarStripView: View {
       accessibilityLabel: text)
   }
 
-  private func dynamicMenuBarPair(primary: String, secondary: String, widthKey: String) -> some View {
+  private func dynamicMenuBarPair(
+    primary: String,
+    secondary: String,
+    secondaryForeground: Color? = nil,
+    widthKey: String,
+    accessibilityLabel: String? = nil
+  ) -> some View {
     MenubarTickerText(
       segments: [
         .init(text: primary, foreground: ink(Color.white.opacity(0.94), light: 0.85)),
         .init(text: " • ", foreground: ink(theme.accent.opacity(0.70), light: 0.35)),
-        .init(text: secondary, foreground: ink(Dial.Palette.textMuted.opacity(0.88), light: 0.55)),
+        .init(
+          text: secondary,
+          foreground: secondaryForeground ?? ink(Dial.Palette.textMuted.opacity(0.88), light: 0.55)),
       ],
       width: menuBarTextWidth(for: widthKey),
-      accessibilityLabel: widthKey)
+      accessibilityLabel: accessibilityLabel ?? widthKey)
   }
 
   private func menuBarTextWidth(for text: String) -> CGFloat {
