@@ -75,6 +75,26 @@ enum StatsRange: String, CaseIterable, Identifiable {
     }
   }
 
+  /// Spelled out for the range button's tooltip (PLA-113).
+  var help: String {
+    switch self {
+    case .all:    return "All known history: imported and live plays"
+    case .ytd:    return "Year to date: since January 1"
+    case .thirty: return "The last 30 days"
+    case .seven:  return "The last 7 days"
+    }
+  }
+
+  /// What fills an empty range (PLA-113).
+  var emptyLine: String {
+    switch self {
+    case .all:    return "Import your Spotify history in Settings, or play something."
+    case .ytd:    return "Nothing played this year. Play something and it shows up here."
+    case .thirty: return "Nothing played in the last 30 days."
+    case .seven:  return "Nothing played in the last 7 days."
+    }
+  }
+
   var heroTitle: String {
     switch self {
     case .all:    return "ALL KNOWN HISTORY"

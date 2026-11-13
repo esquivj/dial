@@ -116,6 +116,7 @@ struct HistoryView: View {
         .tracking(Dial.Tracking.label)
         .foregroundStyle(theme.textFaint)
         .contentTransition(.numericText())
+        .help("The most recent counted plays shown here, out of every counted play in your archive.")
     }
     .padding(EdgeInsets(
       top: Dial.Layout.Header.topPadding,
