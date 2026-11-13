@@ -19,7 +19,11 @@ final class PollingServiceTests: XCTestCase {
       lock.lock(); defer { lock.unlock() }
       return scripted.isEmpty ? nil : scripted.removeFirst()
     }
-    let svc = PollingService(client: client, interval: 0, clock: { 1_700_000_000 })
+    // About counting, not cadence: no idle back-off between scripted polls.
+    var timing = PollingTiming.standard(webInterval: 0)
+    timing.idleWebInterval = 0
+    timing.deepIdleWebInterval = 0
+    let svc = PollingService(client: client, interval: 0, timing: timing, clock: { 1_700_000_000 })
     var events: [PlaybackEvent] = []
     let exp = expectation(description: "events received")
     exp.expectedFulfillmentCount = 1
