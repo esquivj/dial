@@ -27,7 +27,12 @@ struct StatsView: View {
   @State private var selectedRange: StatsRange = .ytd
   /// True once data has loaded, so the empty state never flashes mid-load.
   @State private var loaded: Bool
-  @State private var reloadLoader = CoalescedSnapshotLoader<StatsViewSnapshot>("stats.snapshot.load")
+  @State private var reloadLoader = CoalescedSnapshotLoader<StatsViewSnapshot?>("stats.snapshot.load")
+  /// The range the numbers on screen belong to. Behind `selectedRange`
+  /// while a newly picked range loads; the numbers dim until they catch up.
+  @State private var shownRange: StatsRange = .ytd
+  /// The last load of each range this visit, so going back is instant.
+  @State private var rangeCache: [StatsRange: StatsViewSnapshot] = [:]
   @Environment(\.dialTheme) private var theme
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -57,6 +62,7 @@ struct StatsView: View {
     _badgeSummaries = State(initialValue: initialSnapshot?.badgeSummaries ?? [])
     _recentBadges = State(initialValue: initialSnapshot?.recentBadges ?? [])
     _loaded = State(initialValue: initialSnapshot != nil)
+    _rangeCache = State(initialValue: initialSnapshot.map { [.ytd: $0] } ?? [:])
   }
 
   var body: some View {
@@ -77,7 +83,10 @@ struct StatsView: View {
         reload()
       }
     }
-    .onChange(of: selectedRange) { _, _ in reload() }
+    .onChange(of: selectedRange) { _, range in
+      if let cached = rangeCache[range] { apply(cached, range: range) }
+      reload()
+    }
     .onDisappear {
       reloadLoader.cancel()
     }
@@ -135,6 +144,8 @@ struct StatsView: View {
           memoriesSection
         }
       }
+      .opacity(isShowingStaleRange ? 0.4 : 1)
+      .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: isShowingStaleRange)
       .padding(Dial.Layout.SecondaryScreen.contentPadding)
       .dialScrollFadeInset()
     }
@@ -214,7 +225,9 @@ struct StatsView: View {
 
   // MARK: Overview
 
-  private var isEmptyRange: Bool { loaded && totals.plays == 0 }
+  private var isEmptyRange: Bool { loaded && !isShowingStaleRange && totals.plays == 0 }
+
+  private var isShowingStaleRange: Bool { shownRange != selectedRange }
 
   @ViewBuilder
   private var overviewPanel: some View {
@@ -588,11 +601,19 @@ struct StatsView: View {
     reloadLoader.schedule {
       await StatsViewSnapshot.load(dbq: dbq, range: range)
     } apply: { snapshot in
+      guard let snapshot else { return }
       apply(snapshot, range: range)
     }
   }
 
   private func apply(_ snapshot: StatsViewSnapshot, range: StatsRange) {
+    rangeCache[range] = snapshot
+    if range == .ytd {
+      onSnapshot(snapshot)
+    }
+    // A load for a range the user already left only fills the cache.
+    guard range == selectedRange else { return }
+    shownRange = range
     loaded = true
     totals = snapshot.totals
     topTracks = snapshot.topTracks
@@ -602,9 +623,6 @@ struct StatsView: View {
     rhythmBuckets = snapshot.rhythmBuckets
     badgeSummaries = snapshot.badgeSummaries
     recentBadges = snapshot.recentBadges
-    if range == .ytd {
-      onSnapshot(snapshot)
-    }
   }
 }
 

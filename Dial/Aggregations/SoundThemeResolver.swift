@@ -602,8 +602,14 @@ struct SoundThemeResolver {
   ]
 
   static func theme(forRawTags rawTags: [String], fallbackFamily: String?) -> DialThemeID? {
-    let signals = rawTags.compactMap {
-      themeSignal(rawTag: $0, artistName: "weekly memory", score: 1, rank: nil, artistIndex: 0)
+    // A genre row repeats the same few tags thousands of times (11k tags
+    // for "ALL" on a real archive); each distinct tag is matched once.
+    var matched: [String: ThemeSignal?] = [:]
+    let signals = rawTags.compactMap { rawTag -> ThemeSignal? in
+      if let known = matched[rawTag] { return known }
+      let signal = themeSignal(rawTag: rawTag, artistName: "weekly memory", score: 1, rank: nil, artistIndex: 0)
+      matched[rawTag] = signal
+      return signal
     }
     if let decision = decision(forSignals: signals, source: .artistTags) {
       return decision.theme
