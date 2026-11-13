@@ -116,7 +116,8 @@ extension Dial {
     enum Spectrum {
       static let padding = EdgeInsets(top: 7, leading: 14, bottom: 7, trailing: 14)
       static let labelGridSpacing: CGFloat = 5
-      static let rows = 8
+      // 8 -> 6 (PLA-111): 12pt for the badge's reason line under the chip.
+      static let rows = 6
       static let cellGap: CGFloat = 1
       static let cellHeight: CGFloat = 5
       static let hotZoneFraction = 0.30

@@ -782,7 +782,7 @@ final class VisualRegressionTests: XCTestCase {
   }
 
   private func marketingBadgeInsight(for themeID: DialThemeID) -> BadgeInsight {
-    BadgeInsight(kind: .deepCut, detail: "DEEP CUT", explanation: "A rare track in this listener's rotation.")
+    BadgeInsight(kind: .deepCut, detail: "2 plays · 48 from this artist", explanation: "A rare track in this listener's rotation.")
   }
 
   private func marketingDurationMs(for themeID: DialThemeID) -> Int {
@@ -1282,7 +1282,8 @@ private struct MainHUDSnapshotHarness: View {
           onReconnect: {},
           badgeInsight: BadgeInsight(
             kind: badgeKind,
-            detail: "Visual regression fixture",
+            // Realistic reasons: PLA-111 shows the detail under the chip.
+            detail: badgeKind == .firstListen ? "First time in your history" : "2 plays · 48 from this artist",
             explanation: "Keeps badge geometry present."),
           showPet: true,
           onOpenPet: {},

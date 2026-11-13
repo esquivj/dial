@@ -112,7 +112,7 @@ final class BadgeResolverTests: XCTestCase {
       .currentBadgeInsight(trackUri: "LIVE", currentPlayAt: nil)
 
     XCTAssertEqual(insight?.kind, .firstListen)
-    XCTAssertEqual(insight?.detail, "No plays in your history")
+    XCTAssertEqual(insight?.detail, "First time in your history")
   }
 
   func test_currentInsight_beforeCountedPlay_usesImportedTitleArtistAsKnownTrack() throws {
@@ -242,7 +242,7 @@ final class BadgeResolverTests: XCTestCase {
       .currentBadgeInsight(trackUri: "RARE", currentPlayAt: nil)
 
     XCTAssertEqual(insight?.kind, .deepCut)
-    XCTAssertEqual(insight?.detail, "Rare track from a familiar artist")
+    XCTAssertEqual(insight?.detail, "1 play · 20 from this artist")
   }
 
   func test_currentInsight_beforeCountedPlay_surfacesNewArtistContext() throws {

@@ -242,14 +242,27 @@ struct TrackHero: View {
 
   @ViewBuilder
   private var badgeSlot: some View {
-    HStack(spacing: Dial.Layout.Hero.badgeSpacing) {
-      if let badgeInsight {
-        trackBadgeLine(badgeInsight)
+    VStack(alignment: .leading, spacing: Self.badgeReasonGap) {
+      HStack(spacing: Dial.Layout.Hero.badgeSpacing) {
+        if let badgeInsight {
+          trackBadgeLine(badgeInsight)
+        }
+      }
+      .frame(height: max(badgeChipHeight, Dial.Layout.Hero.badgeMinHeight), alignment: .leading)
+      // PLA-111: the badge says why, at a glance, not only behind (i).
+      if let reason = badgeInsight?.detail, !reason.isEmpty {
+        Text(reason)
+          .font(Dial.Typography.monoSmall)
+          .foregroundStyle(theme.textFaint)
+          .lineLimit(1)
+          .truncationMode(.tail)
+          .accessibilityHidden(true) // the chip's label already reads it
       }
     }
-    .frame(height: max(badgeChipHeight, Dial.Layout.Hero.badgeMinHeight), alignment: .leading)
     .padding(.top, CGFloat(settings.hudHeroBadgeGap))
   }
+
+  static let badgeReasonGap: CGFloat = 3
 
   private func trackBadgeLine(_ insight: BadgeInsight) -> some View {
     let color = badgeColor(for: insight.kind)
