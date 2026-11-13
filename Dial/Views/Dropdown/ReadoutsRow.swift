@@ -23,7 +23,7 @@ struct ReadoutsRow: View {
       ReadoutDivider()
       Button(action: onOpenStats) {
         Readout(label: "RANK · 7D",
-                value: vm.agg.rank7d.map { "#\($0)" } ?? "—",
+                value: Self.rankValue(vm.agg.rank7d),
                 delta: vm.agg.firstListen && vm.agg.rank7d != nil ? "DEBUT" : "")
       }
       .buttonStyle(.pressable)
@@ -39,7 +39,7 @@ struct ReadoutsRow: View {
       .buttonStyle(.pressable)
       .frame(maxWidth: .infinity)
       .help("Last played ignores the current in-progress play and looks backward across imported, live, and recent catch-up history for the same merged track identity.")
-      .accessibilityLabel("Last played \(lastPlayedValue)")
+      .accessibilityLabel(lastPlayedValue == Self.firstPlay ? "First play of this track" : "Last played \(lastPlayedValue)")
     }
     .padding(Dial.Layout.Readouts.railPadding)
     .dialRaisedGel(
@@ -58,9 +58,18 @@ struct ReadoutsRow: View {
     .padding(.vertical, Dial.Layout.Readouts.outerVerticalPadding)
   }
 
+  /// PLA-107: a track with no earlier play reads as a moment, not a gap.
+  static let firstPlay = "FIRST"
+  /// No plays in the last 7 days yet (the current play hasn't counted).
+  static let unranked = "UNRANKED"
+
+  static func rankValue(_ rank: Int?) -> String {
+    rank.map { "#\($0)" } ?? unranked
+  }
+
   private var lastPlayedValue: String {
     guard vm.track != nil else { return "—" }
-    guard let lastPlayedAt = vm.agg.lastPlayedAt else { return "—" }
+    guard let lastPlayedAt = vm.agg.lastPlayedAt else { return Self.firstPlay }
     let seconds = max(0, Int64(Date().timeIntervalSince1970) - lastPlayedAt)
     let days = seconds / 86_400
     switch days {
@@ -75,13 +84,10 @@ struct ReadoutsRow: View {
     }
   }
 
-  private var lastPlayedDelta: String {
-    guard vm.track != nil, vm.agg.lastPlayedAt == nil else { return "" }
-    return "NEW"
-  }
+  private var lastPlayedDelta: String { "" }
 
   private var playsDelta: String {
-    if vm.agg.firstListen { return "NEW" }
+    // A first listen is announced once, by FIRST in the last-played cell.
     guard vm.agg.albumPlaysYTD > vm.playsYTD else { return "" }
     return "ALB \(compactCount(vm.agg.albumPlaysYTD))"
   }
@@ -114,7 +120,11 @@ private struct Readout: View {
   }
 
   private var valueColor: Color {
-    value == "—" ? theme.textFaint : theme.accent
+    switch value {
+    case "—", ReadoutsRow.unranked: return theme.textFaint
+    case ReadoutsRow.firstPlay:     return theme.memoryAccent
+    default:                        return theme.accent
+    }
   }
 
   var body: some View {

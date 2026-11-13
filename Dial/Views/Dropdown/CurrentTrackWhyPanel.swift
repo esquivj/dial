@@ -40,7 +40,7 @@ struct CurrentTrackWhyPanel: View {
           }
           factChip(
             label: "RANK · 7D",
-            value: vm.agg.rank7d.map { "#\($0)" } ?? "-",
+            value: ReadoutsRow.rankValue(vm.agg.rank7d),
             help: "7-day rank uses merged track identity, then ranks by play count with latest play as the tie break.")
           factChip(
             label: "LAST",
@@ -137,6 +137,14 @@ struct CurrentTrackWhyPanel: View {
     .help(detail)
   }
 
+  private func factColor(_ value: String) -> Color {
+    switch value {
+    case "-", ReadoutsRow.unranked: return theme.textFaint
+    case ReadoutsRow.firstPlay:     return theme.memoryAccent
+    default:                        return theme.accent
+    }
+  }
+
   private func factChip(label: String, value: String, help: String) -> some View {
     VStack(alignment: .leading, spacing: 3) {
       Text(label)
@@ -148,7 +156,7 @@ struct CurrentTrackWhyPanel: View {
       Text(value)
         .font(Dial.Typography.monoValue)
         .monospacedDigit()
-        .foregroundStyle(value == "-" ? theme.textFaint : theme.accent)
+        .foregroundStyle(factColor(value))
         .lineLimit(1)
         .minimumScaleFactor(0.70)
     }
@@ -261,7 +269,7 @@ struct CurrentTrackWhyPanel: View {
 
   private var lastPlayedValue: String {
     guard vm.track != nil else { return "-" }
-    guard let lastPlayedAt = vm.agg.lastPlayedAt else { return "NEW" }
+    guard let lastPlayedAt = vm.agg.lastPlayedAt else { return ReadoutsRow.firstPlay }
     let seconds = max(0, Int64(Date().timeIntervalSince1970) - lastPlayedAt)
     let days = seconds / 86_400
     switch days {
