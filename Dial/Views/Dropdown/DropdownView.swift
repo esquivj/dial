@@ -718,7 +718,7 @@ struct IdleHUDView: View {
           .fixedSize(horizontal: true, vertical: false)
       }
       .foregroundStyle(theme.textPrimary.opacity(0.82))
-      .frame(width: 62, height: 22)
+      .frame(width: 68, height: 22)
       .dialPrintedChip(
         shape: RoundedRectangle(cornerRadius: Dial.Radius.tiny, style: .continuous),
         color: theme.textMuted,
