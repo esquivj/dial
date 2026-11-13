@@ -58,7 +58,9 @@ struct CurrentTrackWhyPanel: View {
         footerActions
       }
       .padding(EdgeInsets(top: 14, leading: 15, bottom: 16, trailing: 15))
+      .dialScrollFadeInset()
     }
+    .dialScrollFade()
   }
 
   private var header: some View {

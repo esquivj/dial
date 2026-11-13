@@ -203,7 +203,9 @@ struct HistoryView: View {
       }
       .padding(.top, placement == .hardwareShell ? 8 : 0)
       .padding(.bottom, 10)
+      .dialScrollFadeInset()
     }
+    .dialScrollFade()
   }
 
   private func reload(totalPlays: Int?) {

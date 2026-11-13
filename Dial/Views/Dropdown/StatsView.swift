@@ -129,7 +129,9 @@ struct StatsView: View {
         memoriesSection
       }
       .padding(Dial.Layout.SecondaryScreen.contentPadding)
+      .dialScrollFadeInset()
     }
+    .dialScrollFade()
   }
 
   private var header: some View {
