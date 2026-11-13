@@ -18,7 +18,7 @@ struct BackButton: View {
           .frame(width: 10, height: 10)
         Text("BACK")
           .font(Dial.Typography.monoLabel)
-          .tracking(1.2)
+          .tracking(Dial.Tracking.label)
       }
       .foregroundStyle(Dial.Palette.textPrimary.opacity(hover ? 1.0 : 0.7))
       .padding(.horizontal, 8)

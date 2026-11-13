@@ -624,7 +624,7 @@ struct IdleHUDView: View {
           VStack(alignment: .leading, spacing: 3) {
             Text("READY")
               .font(.custom("GeistMono-Medium", size: 17))
-              .tracking(1.4)
+              .tracking(Dial.Tracking.label)
               .foregroundStyle(theme.accent)
               .lineLimit(1)
             Text("Start a track in Spotify. Dial will catch it.")
@@ -713,7 +713,7 @@ struct IdleHUDView: View {
           .frame(width: 10, height: 10)
         Text(label)
           .font(Dial.Typography.monoTiny)
-          .tracking(0.8)
+          .tracking(Dial.Tracking.tight)
           .lineLimit(1)
           .fixedSize(horizontal: true, vertical: false)
       }

@@ -84,7 +84,7 @@ struct GlossaryPanel: View {
     VStack(alignment: .leading, spacing: 10) {
       Text(title)
         .font(Dial.Typography.monoLabel)
-        .tracking(1.6)
+        .tracking(Dial.Tracking.stamp)
         .foregroundStyle(theme.accent)
       content()
     }
@@ -106,7 +106,7 @@ struct GlossaryPanel: View {
       BadgePixelIcon(kind: kind, color: color, size: 14)
       Text(label)
         .font(Dial.Typography.monoLabel)
-        .tracking(1.2)
+        .tracking(Dial.Tracking.label)
         .foregroundStyle(color)
     }
     .padding(EdgeInsets(top: 4, leading: 7, bottom: 4, trailing: 8))

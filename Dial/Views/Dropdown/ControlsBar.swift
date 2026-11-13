@@ -187,7 +187,7 @@ private struct PlaybackScrubber: View {
           .frame(width: Dial.Layout.Transport.scrubberTimeWidth, alignment: .leading)
       }
       .font(Dial.Typography.monoLabel)
-      .tracking(0.4)
+      .tracking(Dial.Tracking.tight)
       .foregroundStyle(isSeekable ? theme.textPrimary.opacity(0.78) : theme.textMuted.opacity(0.6))
       .monospacedDigit()
     }

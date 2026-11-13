@@ -132,12 +132,12 @@ struct PetView: View {
       BackButton(action: onBack)
       Text("ROOM")
         .font(Dial.Typography.monoLabel)
-        .tracking(1.6)
+        .tracking(Dial.Tracking.stamp)
         .foregroundStyle(theme.accent)
       Spacer()
       Text(pet.stage.rawValue.uppercased())
         .font(Dial.Typography.monoLabel)
-        .tracking(1.4)
+        .tracking(Dial.Tracking.label)
         .foregroundStyle(theme.textFaint)
         .contentTransition(.opacity)
     }
@@ -154,7 +154,7 @@ struct PetView: View {
         BackButton(action: onBack)
         Text("ROOM")
           .font(Dial.Typography.monoLabel)
-          .tracking(1.6)
+          .tracking(Dial.Tracking.stamp)
           .foregroundStyle(theme.accent)
       }
       .offset(x: Dial.Layout.SecondaryShell.railLeadingOffset)
@@ -163,7 +163,7 @@ struct PetView: View {
 
       Text(pet.stage.rawValue.uppercased())
         .font(Dial.Typography.monoLabel)
-        .tracking(1.4)
+        .tracking(Dial.Tracking.label)
         .foregroundStyle(theme.textFaint)
         .lineLimit(1)
         .minimumScaleFactor(0.72)
@@ -255,12 +255,12 @@ struct PetView: View {
             HStack(alignment: .firstTextBaseline, spacing: 5) {
               Text("WEEKLY DROP")
                 .font(Dial.Typography.monoTiny)
-                .tracking(0.8)
+                .tracking(Dial.Tracking.tight)
                 .foregroundStyle(theme.textFaint)
 
               Text(memory.trait.uppercased())
                 .font(Dial.Typography.monoTiny)
-                .tracking(0.8)
+                .tracking(Dial.Tracking.tight)
                 .foregroundStyle(color)
                 .lineLimit(1)
                 .minimumScaleFactor(0.78)
@@ -268,7 +268,7 @@ struct PetView: View {
 
             Text(memory.memento.uppercased())
               .font(Dial.Typography.monoLabel)
-              .tracking(1.0)
+              .tracking(Dial.Tracking.tight)
               .foregroundStyle(theme.textPrimary)
               .lineLimit(1)
               .minimumScaleFactor(0.80)
@@ -284,14 +284,14 @@ struct PetView: View {
           VStack(alignment: .trailing, spacing: 3) {
             Text("\(memory.playCount) \(memory.playCount == 1 ? "PLAY" : "PLAYS")")
               .font(Dial.Typography.monoTiny)
-              .tracking(0.8)
+              .tracking(Dial.Tracking.tight)
               .foregroundStyle(color.opacity(0.92))
               .lineLimit(1)
               .minimumScaleFactor(0.62)
 
             Text(roomObjectLabel(memory.roomObjectName))
               .font(Dial.Typography.monoTiny)
-              .tracking(0.8)
+              .tracking(Dial.Tracking.tight)
               .foregroundStyle(theme.textPrimary.opacity(0.82))
               .lineLimit(2)
               .multilineTextAlignment(.trailing)
@@ -317,12 +317,12 @@ struct PetView: View {
           VStack(alignment: .leading, spacing: 2) {
             Text("THIS WEEK")
               .font(Dial.Typography.monoTiny)
-              .tracking(0.8)
+              .tracking(Dial.Tracking.tight)
               .foregroundStyle(theme.textFaint)
 
             Text("NO ROOM MEMORY YET")
               .font(Dial.Typography.monoLabel)
-              .tracking(1.0)
+              .tracking(Dial.Tracking.tight)
               .foregroundStyle(theme.textPrimary.opacity(0.78))
 
             Text("Listening writes a trait, memento, and object.")
@@ -336,7 +336,7 @@ struct PetView: View {
 
           Text("WAITING")
             .font(Dial.Typography.monoTiny)
-            .tracking(0.8)
+            .tracking(Dial.Tracking.tight)
             .foregroundStyle(theme.textFaint)
         }
         .padding(.horizontal, 8)
@@ -398,7 +398,7 @@ struct PetView: View {
         HStack(spacing: 5) {
           Text("MEMORIES")
             .font(Dial.Typography.monoTiny)
-            .tracking(0.8)
+            .tracking(Dial.Tracking.tight)
             .foregroundStyle(theme.textFaint)
           Text(countLabel)
             .font(Dial.Typography.monoTiny)
@@ -460,7 +460,7 @@ struct PetView: View {
         DialThickIcon(iconName(for: snapshot.primaryAction), size: 12, weight: 0.55)
         Text(snapshot.primaryAction.label)
           .font(Dial.Typography.monoLabel)
-          .tracking(1.0)
+          .tracking(Dial.Tracking.tight)
           .lineLimit(1)
           .minimumScaleFactor(0.78)
       }
@@ -484,7 +484,7 @@ struct PetView: View {
     HStack(spacing: 7) {
       Text("BOND")
         .font(Dial.Typography.monoTiny)
-        .tracking(0.8)
+        .tracking(Dial.Tracking.tight)
         .foregroundStyle(theme.textFaint)
 
       GeometryReader { proxy in
@@ -518,7 +518,7 @@ struct PetView: View {
         // Body-content label, mixed-case sansCaption (was mono-caps).
         Text("EVOLUTION")
           .font(Dial.Typography.monoTiny)
-          .tracking(0.8)
+          .tracking(Dial.Tracking.tight)
           .foregroundStyle(theme.textFaint)
         Spacer()
         Text(evolutionStatus)
@@ -577,7 +577,7 @@ struct PetView: View {
     HStack(alignment: .firstTextBaseline) {
       Text(stageName(pet.stage))
         .font(Dial.Typography.monoTiny)
-        .tracking(0.8)
+        .tracking(Dial.Tracking.tight)
         .foregroundStyle(theme.textPrimary.opacity(0.82))
       Text("->")
         .font(Dial.Typography.monoTiny)
@@ -585,12 +585,12 @@ struct PetView: View {
       if let next = nextStage {
         Text(stageName(next))
           .font(Dial.Typography.monoTiny)
-          .tracking(0.8)
+          .tracking(Dial.Tracking.tight)
           .foregroundStyle(theme.accent.opacity(0.9))
       } else {
         Text("MAX")
           .font(Dial.Typography.monoTiny)
-          .tracking(0.8)
+          .tracking(Dial.Tracking.tight)
           .foregroundStyle(theme.accent.opacity(0.9))
       }
       Spacer(minLength: 8)

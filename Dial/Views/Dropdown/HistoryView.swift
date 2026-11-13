@@ -104,7 +104,7 @@ struct HistoryView: View {
       BackButton(action: onBack)
       Text("HISTORY")
         .font(Dial.Typography.monoLabel)
-        .tracking(1.6)
+        .tracking(Dial.Tracking.stamp)
         .foregroundStyle(theme.accent)
       Spacer()
       // "LAST N · TOTAL" — communicates that we're showing a recent slice
@@ -113,7 +113,7 @@ struct HistoryView: View {
       // suffix to avoid the redundant "LAST 47 · 47".
       Text(headerCount)
         .font(Dial.Typography.monoLabel)
-        .tracking(1.4)
+        .tracking(Dial.Tracking.label)
         .foregroundStyle(theme.textFaint)
         .contentTransition(.numericText())
     }
@@ -130,7 +130,7 @@ struct HistoryView: View {
         BackButton(action: onBack)
         Text("HISTORY")
           .font(Dial.Typography.monoLabel)
-          .tracking(1.6)
+          .tracking(Dial.Tracking.stamp)
           .foregroundStyle(theme.accent)
       }
       .offset(x: Dial.Layout.SecondaryShell.railLeadingOffset)
@@ -139,7 +139,7 @@ struct HistoryView: View {
 
       Text(headerCount)
         .font(Dial.Typography.monoLabel)
-        .tracking(1.4)
+        .tracking(Dial.Tracking.label)
         .foregroundStyle(theme.textFaint)
         .lineLimit(1)
         .minimumScaleFactor(0.72)
@@ -279,7 +279,7 @@ private struct HistoryRowView: View {
 
       Text(relative(row.playedAt))
         .font(Dial.Typography.monoTiny)
-        .tracking(0.6)
+        .tracking(Dial.Tracking.tight)
         .foregroundStyle(theme.textFaint)
     }
     .padding(EdgeInsets(top: 7, leading: 14, bottom: 7, trailing: 14))

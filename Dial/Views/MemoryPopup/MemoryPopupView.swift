@@ -30,7 +30,7 @@ struct MemoryPopupView: View {
         BadgePixelIcon(kind: content.kind, color: color, size: 11)
         Text(content.label)
           .font(Dial.Typography.pixelBadge)
-          .tracking(1.2)
+          .tracking(Dial.Tracking.label)
           .foregroundStyle(color)
           .fixedSize()
         Text(content.line)
