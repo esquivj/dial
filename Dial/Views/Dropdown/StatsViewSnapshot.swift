@@ -12,41 +12,63 @@ struct StatsViewSnapshot {
   let badgeSummaries: [StatsQueries.BadgeSummary]
   let recentBadges: [StatsQueries.BadgeMemoryRow]
 
-  static func load(dbq: DatabaseQueue, range: StatsRange) async -> StatsViewSnapshot {
-    await withCheckedContinuation { continuation in
-      DispatchQueue.global(qos: .userInitiated).async {
-        continuation.resume(returning: make(dbq: dbq, range: range))
+  /// `nil` when the load was cancelled. A cancelled load stops at the next
+  /// query instead of running to the end, so it doesn't hold the database
+  /// queue while the range the user picked next waits behind it.
+  static func load(dbq: DatabaseQueue, range: StatsRange) async -> StatsViewSnapshot? {
+    let cancelled = CancelFlag()
+    return await withTaskCancellationHandler {
+      await withCheckedContinuation { continuation in
+        DispatchQueue.global(qos: .userInitiated).async {
+          continuation.resume(returning: make(dbq: dbq, range: range, isCancelled: cancelled.isSet))
+        }
       }
+    } onCancel: {
+      cancelled.set()
     }
   }
 
-  private static func make(dbq: DatabaseQueue, range: StatsRange) -> StatsViewSnapshot {
+  static func make(
+    dbq: DatabaseQueue,
+    range: StatsRange,
+    isCancelled: () -> Bool = { false }
+  ) -> StatsViewSnapshot? {
     let q = StatsQueries(dbq: dbq)
     let since = range.since
-    let weeklyLog = (try? WeeklyMemoriesDAO(dbq: dbq).recent(limit: 1)) ?? []
+    func step<T>(_ fallback: T, _ query: () throws -> T) -> T? {
+      guard !isCancelled() else { return nil }
+      return (try? query()) ?? fallback
+    }
+    let emptyTotals = StatsQueries.Totals(plays: 0, listeningMs: 0, uniqueTracks: 0, uniqueArtists: 0)
+    guard let totals = step(emptyTotals, { try q.totals(since: since) }),
+          let topTracks = step([], { try q.topTracks(since: since) }),
+          let topArtists = step([], { try q.topArtists(since: since) }),
+          let rhythm = step([], {
+            range == .seven ? try q.recentDailyRhythm(days: 7) : try q.weekdayRhythm(since: since)
+          }),
+          let topGenres = step([], { try q.topGenres(since: since) }),
+          let weeklyLog = step([], { try WeeklyMemoriesDAO(dbq: dbq).recent(limit: 1) })
+    else { return nil }
     let weeklyMemory = weeklyLog.first.map(StatsQueries.WeeklyMemorySnapshot.init(record:))
       ?? (try? q.weeklyMemory())
-    let rhythm: [StatsQueries.RhythmBucket]
-    if range == .seven {
-      rhythm = (try? q.recentDailyRhythm(days: 7)) ?? []
-    } else {
-      rhythm = (try? q.weekdayRhythm(since: since)) ?? []
-    }
 
     return StatsViewSnapshot(
-      totals: (try? q.totals(since: since)) ?? StatsQueries.Totals(
-        plays: 0,
-        listeningMs: 0,
-        uniqueTracks: 0,
-        uniqueArtists: 0),
-      topTracks: (try? q.topTracks(since: since)) ?? [],
-      topArtists: (try? q.topArtists(since: since)) ?? [],
-      topGenres: (try? q.topGenres(since: since)) ?? [],
+      totals: totals,
+      topTracks: topTracks,
+      topArtists: topArtists,
+      topGenres: topGenres,
       weeklyMemory: weeklyMemory,
       rhythmBuckets: rhythm,
       badgeSummaries: (try? q.badgeSummaries()) ?? [],
       recentBadges: (try? q.recentBadgeMemories(limit: 5)) ?? [])
   }
+}
+
+private final class CancelFlag: @unchecked Sendable {
+  private let lock = NSLock()
+  private var value = false
+  func set() { lock.withLock { value = true } }
+  func isSet() -> Bool { lock.withLock { value } }
 }
 
 enum StatsRange: String, CaseIterable, Identifiable {

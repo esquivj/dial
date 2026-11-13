@@ -1298,7 +1298,8 @@ final class StatsQueriesTests: XCTestCase {
       newArtists: 1)
     try WeeklyMemoriesDAO(dbq: dbq, now: { now }).upsert(memory, now: now)
 
-    let snapshot = await StatsViewSnapshot.load(dbq: dbq, range: .ytd)
+    let loaded = await StatsViewSnapshot.load(dbq: dbq, range: .ytd)
+    let snapshot = try XCTUnwrap(loaded)
 
     XCTAssertEqual(snapshot.weeklyMemory?.trait, "Pulsebound")
     XCTAssertEqual(snapshot.weeklyMemory?.memento, "Signal Cube")
