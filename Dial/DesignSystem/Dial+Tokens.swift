@@ -226,7 +226,9 @@ enum Dial {
     /// badge labels, tiny shell copy. Keep body and values in Geist Mono
     /// so the toy aesthetic doesn't tax quick reading.
     static let pixelLabel  = Font.custom("GeistPixel-Square", size: 9)
-    static let pixelTiny   = Font.custom("GeistPixel-Square", size: 8)
+    /// 9pt like `pixelLabel` (PLA-106): 8pt pixel type was below the
+    /// smallest label tier in DESIGN.md and hard to read at a glance.
+    static let pixelTiny   = Font.custom("GeistPixel-Square", size: 9)
     static let pixelBadge  = Font.custom("GeistPixel-Square", size: 9)
     static let pixelDecal  = Font.custom("GeistPixel-Square", size: 16)
 
