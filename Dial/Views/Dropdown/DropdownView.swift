@@ -510,6 +510,7 @@ struct DropdownView: View {
   private var connectView: some View {
     ConnectSetupView(
       showingGlossary: $showingInfoPanel,
+      signInError: coord.settings.signInError,
       onConnect: { Task { try? await coord.signIn() } },
       onOpenSettings: openSettings)
   }
