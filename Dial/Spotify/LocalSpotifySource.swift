@@ -55,9 +55,14 @@ final class SpotifyAppleEventsSource: LocalPlaybackSource, @unchecked Sendable {
 
   private enum Access { case unknown, pending, granted, denied }
 
-  private let queue = DispatchQueue(label: "com.dial.Dial.spotify-apple-events", qos: .userInitiated)
+  /// Every read runs here, one at a time, and is given up on after
+  /// `readTimeout` (PLA-139).
+  private let reads = BoundedBlockingCall(
+    queue: DispatchQueue(label: "com.dial.Dial.spotify-apple-events", qos: .userInitiated))
+  private var queue: DispatchQueue { reads.queue }
   private let permissionQueue = DispatchQueue(label: "com.dial.Dial.spotify-apple-events-permission")
   private let replyTimeout: TimeInterval
+  private let readTimeout: TimeInterval
   private let deniedRecheckInterval: TimeInterval
 
   // All state below is touched only on `queue`.
@@ -67,16 +72,28 @@ final class SpotifyAppleEventsSource: LocalPlaybackSource, @unchecked Sendable {
   private var cachedTrackID: String?
   private var cachedTrack: LocalPlaybackSnapshot.Track?
 
-  init(replyTimeout: TimeInterval = 1.5, deniedRecheckInterval: TimeInterval = 15) {
+  init(
+    replyTimeout: TimeInterval = 1.5,
+    readTimeout: TimeInterval = 4,
+    deniedRecheckInterval: TimeInterval = 15
+  ) {
     self.replyTimeout = replyTimeout
+    self.readTimeout = readTimeout
     self.deniedRecheckInterval = deniedRecheckInterval
   }
 
+  /// A read that doesn't answer in `readTimeout` reports `.unavailable`, so
+  /// the poll loop falls back to the Web API instead of waiting on it.
+  /// macOS's permission check has hung for days without answering.
   func read() async -> LocalPlaybackReading {
-    await withCheckedContinuation { continuation in
-      queue.async {
-        continuation.resume(returning: self.readOnQueue())
-      }
+    switch await reads.run(timeout: readTimeout, { self.readOnQueue() }) {
+    case .value(let reading):
+      return reading
+    case .timedOut:
+      localLog.notice("Spotify app read timed out; using the Web API until it answers")
+      return .unavailable
+    case .busy:
+      return .unavailable
     }
   }
 
@@ -180,6 +197,20 @@ final class SpotifyAppleEventsSource: LocalPlaybackSource, @unchecked Sendable {
   /// Asks macOS whether Dial may send Apple Events to Spotify. With
   /// `askUserIfNeeded: false` it never prompts, which is how Settings reads
   /// the permission (`PermissionStatus(automation:)`).
+  private static let settingsCheck = BoundedBlockingCall(
+    queue: DispatchQueue(label: "com.dial.Dial.spotify-permission-status"))
+
+  /// The non-prompting check for Settings, given up on after `timeout`.
+  /// nil when it didn't answer, or an earlier check is still waiting.
+  static func permissionStatus(timeout: TimeInterval) async -> OSStatus? {
+    if case .value(let status) = await settingsCheck.run(timeout: timeout, {
+      permissionStatus(askUserIfNeeded: false)
+    }) {
+      return status
+    }
+    return nil
+  }
+
   static func permissionStatus(askUserIfNeeded: Bool) -> OSStatus {
     let target = NSAppleEventDescriptor(bundleIdentifier: bundleIdentifier)
     guard let desc = target.aeDesc else { return OSStatus(procNotFound) }

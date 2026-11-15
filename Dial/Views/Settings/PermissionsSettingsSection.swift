@@ -98,10 +98,10 @@ struct PermissionsSettingsSection: View {
   }
 
   private func refresh() async {
-    let automationCheck = await Task.detached(priority: .utility) {
-      SpotifyAppleEventsSource.permissionStatus(askUserIfNeeded: false)
-    }.value
-    automation = PermissionStatus(automation: automationCheck)
+    // A check that doesn't answer keeps the last status (PLA-139).
+    if let automationCheck = await SpotifyAppleEventsSource.permissionStatus(timeout: 2) {
+      automation = PermissionStatus(automation: automationCheck)
+    }
     screenRecording = ScreenRecordingCheck(
       allowed: ScreenRecordingAccess.isAllowed,
       requested: ScreenRecordingAccess.wasRequested())
