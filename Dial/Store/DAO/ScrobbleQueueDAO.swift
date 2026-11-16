@@ -45,6 +45,24 @@ struct ScrobbleQueueDAO {
     }
   }
 
+  /// Queues plays chosen by `ScrobbleBackfill`, whatever their source.
+  /// Only that one-time recovery command calls this; the live path uses
+  /// `enqueue`. Returns how many rows were added.
+  func enqueueBackfill(_ candidates: [ScrobbleBackfill.Candidate], now: Int64) throws -> Int {
+    try dbq.write { db in
+      var added = 0
+      for c in candidates {
+        try db.execute(sql: """
+          INSERT OR IGNORE INTO lastfm_scrobbles
+            (play_id, track_uri, artist, track, album, duration_ms, played_at, queued_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          """, arguments: [c.playId, c.trackUri, c.artist, c.track, c.album, c.durationMs, c.playedAt, now])
+        added += db.changesCount
+      }
+      return added
+    }
+  }
+
   /// The id of the live play recorded for this start time, track and length.
   func livePlayId(playedAt: Int64, trackUri: String, msPlayed: Int64) throws -> Int64? {
     try dbq.read { db in
