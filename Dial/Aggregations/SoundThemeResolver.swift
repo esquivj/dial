@@ -488,13 +488,12 @@ struct SoundThemeResolver {
         FROM artist_identity_aliases
         WHERE source_uri IN (SELECT uri FROM target)
       ),
+      -- Every track crediting one of the artists, from `track_artists`
+      -- (v22) rather than `json_each` over every track (PLA-151).
       artist_tracks AS (
-        SELECT DISTINCT t.uri AS track_uri
-        FROM tracks t,
-             json_each(CASE WHEN json_valid(t.artists_json) = 1 THEN t.artists_json ELSE '[]' END) j
-        WHERE t.artists_json IS NOT NULL
-          AND json_valid(t.artists_json) = 1
-          AND json_extract(j.value, '$.uri') IN (SELECT uri FROM target_sources)
+        SELECT DISTINCT track_uri
+        FROM track_artists
+        WHERE artist_uri IN (SELECT uri FROM target_sources)
       )
       SELECT COUNT(*)
       FROM counted_plays p
