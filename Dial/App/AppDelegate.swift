@@ -339,6 +339,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     case export(path: String)
     case merge(path: String, dryRun: Bool, sourceName: String?)
     case rebuildMemories(from: String, dryRun: Bool)
+    case backfillScrobbles(from: String, until: String?, dryRun: Bool)
   }
 
   private func archiveRequestFromArgs() -> ArchiveRequest? {
@@ -354,6 +355,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     }
     if let from = Self.argumentValue("--rebuild-memories", in: args) {
       return .rebuildMemories(from: from, dryRun: args.contains("--dry-run"))
+    }
+    if let from = Self.argumentValue("--backfill-scrobbles", in: args) {
+      return .backfillScrobbles(
+        from: from,
+        until: Self.argumentValue("--until", in: args),
+        dryRun: args.contains("--dry-run"))
     }
     return nil
   }
@@ -373,7 +380,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     let swapsArchive: Bool
     switch request {
     case .export: swapsArchive = false
-    case let .merge(_, dryRun, _), let .rebuildMemories(_, dryRun): swapsArchive = !dryRun
+    case let .merge(_, dryRun, _), let .rebuildMemories(_, dryRun),
+         let .backfillScrobbles(_, _, dryRun):
+      swapsArchive = !dryRun
     }
     if swapsArchive {
       let myPID = ProcessInfo.processInfo.processIdentifier
@@ -417,6 +426,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
           rebuilder.log = { [self] line in self.stderr(line) }
           stderr("→ Rebuilding memories in \(archiveURL.path)\(dryRun ? " (dry run)" : "")")
           for line in try rebuilder.run().summaryLines() {
+            stderr(line)
+          }
+        case let .backfillScrobbles(fromText, untilText, dryRun):
+          let now = Int64(Date().timeIntervalSince1970)
+          let until: Int64? = if let untilText { ScrobbleBackfill.time(untilText) } else { now }
+          guard let from = ScrobbleBackfill.time(fromText), let until else {
+            stderr("✗ --backfill-scrobbles and --until need a time as \"yyyy-MM-dd HH:mm\"")
+            exit(1)
+          }
+          let dbq = try DatabaseStack(url: archiveURL).dbq
+          stderr("→ Backfilling Last.fm scrobbles in \(archiveURL.path)\(dryRun ? " (dry run)" : "")")
+          let report = try ScrobbleBackfill(dbq: dbq, from: from, until: until, now: now).run(dryRun: dryRun)
+          for line in report.summaryLines(dryRun: dryRun) {
             stderr(line)
           }
         }
