@@ -534,6 +534,60 @@ enum Migrations {
           (CASE WHEN json_valid(artists_json) = 1 THEN LOWER(TRIM(json_extract(artists_json, '$[0].name'))) END));
         """)
     }
+
+    // PLA-151: "every track with this artist anywhere in its credits" ran
+    // `json_each` over every track's `artists_json`, about 230 ms a call.
+    // `track_artists` holds one row per credited artist id, indexed on the
+    // artist. Triggers on `tracks` keep it in step with `artists_json`, so
+    // every writer (upserts, import, enrichment, archive merge) maintains it
+    // without knowing it exists. Entries without a `uri` are left out, since
+    // no lookup by id can match them.
+    m.registerMigration("v22_track_artists") { db in
+      try db.execute(sql: """
+        CREATE TABLE track_artists (
+          track_uri  TEXT NOT NULL,
+          position   INTEGER NOT NULL,
+          artist_uri TEXT NOT NULL,
+          PRIMARY KEY (track_uri, position)
+        ) WITHOUT ROWID;
+        CREATE INDEX track_artists_by_artist ON track_artists(artist_uri, track_uri);
+
+        INSERT INTO track_artists (track_uri, position, artist_uri)
+        SELECT t.uri, CAST(j.key AS INTEGER), (CASE WHEN j.type = 'object' THEN json_extract(j.value, '$.uri') END)
+        FROM tracks t, json_each(t.artists_json) j
+        WHERE json_valid(t.artists_json) = 1
+          AND json_type(t.artists_json) = 'array'
+          AND (CASE WHEN j.type = 'object' THEN json_extract(j.value, '$.uri') END) IS NOT NULL;
+
+        CREATE TRIGGER track_artists_after_insert AFTER INSERT ON tracks
+        BEGIN
+          DELETE FROM track_artists WHERE track_uri = NEW.uri;
+          INSERT INTO track_artists (track_uri, position, artist_uri)
+          SELECT NEW.uri, CAST(j.key AS INTEGER), (CASE WHEN j.type = 'object' THEN json_extract(j.value, '$.uri') END)
+          FROM json_each(CASE WHEN json_valid(NEW.artists_json) = 1
+                               AND json_type(NEW.artists_json) = 'array'
+                              THEN NEW.artists_json ELSE '[]' END) j
+          WHERE (CASE WHEN j.type = 'object' THEN json_extract(j.value, '$.uri') END) IS NOT NULL;
+        END;
+
+        CREATE TRIGGER track_artists_after_update AFTER UPDATE OF uri, artists_json ON tracks
+        WHEN OLD.uri IS NOT NEW.uri OR OLD.artists_json IS NOT NEW.artists_json
+        BEGIN
+          DELETE FROM track_artists WHERE track_uri IN (OLD.uri, NEW.uri);
+          INSERT INTO track_artists (track_uri, position, artist_uri)
+          SELECT NEW.uri, CAST(j.key AS INTEGER), (CASE WHEN j.type = 'object' THEN json_extract(j.value, '$.uri') END)
+          FROM json_each(CASE WHEN json_valid(NEW.artists_json) = 1
+                               AND json_type(NEW.artists_json) = 'array'
+                              THEN NEW.artists_json ELSE '[]' END) j
+          WHERE (CASE WHEN j.type = 'object' THEN json_extract(j.value, '$.uri') END) IS NOT NULL;
+        END;
+
+        CREATE TRIGGER track_artists_after_delete AFTER DELETE ON tracks
+        BEGIN
+          DELETE FROM track_artists WHERE track_uri = OLD.uri;
+        END;
+        """)
+    }
     return m
   }
 }

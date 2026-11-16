@@ -185,6 +185,53 @@ final class ArchiveMergerTests: XCTestCase {
     XCTAssertEqual(origins, ["unidentified:First Mac"])
   }
 
+  func test_trackArtistsFollowTheMergedTracks() throws {
+    // PLA-151: the snapshot predates `track_artists`; here has an imported
+    // track whose synthetic artist id the snapshot's real one replaces.
+    let older = directory.appendingPathComponent("older-v21", isDirectory: true)
+    try FileManager.default.createDirectory(at: older, withIntermediateDirectories: true)
+    let olderURL = older.appendingPathComponent("dial.sqlite")
+    let olderDB = try DatabaseQueue(path: olderURL.path)
+    try Migrations.register().migrate(olderDB, upTo: "v21_tracks_first_artist_indexes")
+    try seedCatalog(olderDB)
+    try olderDB.write { db in
+      try db.execute(sql: """
+        INSERT INTO tracks (uri, name, duration_ms, artists_json) VALUES
+          ('spotify:track:e1', 'Echo', 200000,
+           '[{"name":"Echo","uri":"spotify:artist:echo"},{"name":"Alpha","uri":"spotify:artist:alpha"}]'),
+          ('spotify:track:i1', 'Imported', 200000, '[{"name":"Iota","uri":"spotify:artist:iota"}]')
+        """)
+    }
+    try olderDB.close()
+    let plainCopy = directory.appendingPathComponent("dial-older.sqlite")
+    try ArchiveFiles.vacuumCopy(from: olderURL, to: plainCopy)
+
+    let here = try makeArchive("here", installedAt: noon(0))
+    try withArchive(here) { dbq in
+      try TracksDAO(dbq: dbq).upsert(.init(
+        uri: "spotify:track:i1", name: "Imported", albumName: nil, albumArtUrl: nil, durationMs: 200_000,
+        artistsJson: #"[{"name":"Iota","uri":"artist:Iota"}]"#))
+    }
+
+    _ = try merge(plainCopy, into: here, as: miniMac, sourceName: "Older Mac")
+
+    let artists = try withArchive(here) { dbq in
+      try dbq.read { db in
+        try String.fetchAll(db, sql: """
+          SELECT track_uri || ' ' || position || ' ' || artist_uri FROM track_artists
+          WHERE track_uri IN ('spotify:track:e1', 'spotify:track:i1', 'spotify:track:a1')
+          ORDER BY 1
+          """)
+      }
+    }
+    XCTAssertEqual(artists, [
+      "spotify:track:a1 0 spotify:artist:alpha",
+      "spotify:track:e1 0 spotify:artist:echo",
+      "spotify:track:e1 1 spotify:artist:alpha",
+      "spotify:track:i1 0 spotify:artist:iota",
+    ])
+  }
+
   func test_xpNeverGoesDown() throws {
     let archives = try buildArchives()
     try withArchive(archives.mini) { dbq in try PetStateDAO(dbq: dbq).update { $0.xp = 999_999 } }
