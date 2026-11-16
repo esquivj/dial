@@ -461,10 +461,19 @@ struct SoundThemeResolver {
       reason: "Smoke Gel because this is a core-library artist (\(plays) plays); weak \(decision.theme.label) signal held back.")
   }
 
-  private static func artistPlayCount(db: Database, artistUris: [String]) throws -> Int {
+  /// Counted plays of any track credited to one of `artistUris`, following
+  /// `artist_identity_aliases` both ways.
+  static func artistPlayCount(db: Database, artistUris: [String]) throws -> Int {
     let artistUris = dedupedArtistUris(artistUris)
     guard !artistUris.isEmpty else { return 0 }
-    return try Int.fetchOne(db, sql: """
+    return try Int.fetchOne(db, sql: artistPlayCountSQL, arguments: [try jsonArray(artistUris)]) ?? 0
+  }
+
+  /// Bound to one JSON array of artist uris. The plays are probed by track
+  /// (`plays_by_track`) from the artist's tracks: a `JOIN` here let SQLite
+  /// drive from `counted_plays`, scanning every play and running the view's
+  /// subqueries on each one (PLA-150, about 1 s per track change).
+  static let artistPlayCountSQL = """
       WITH target(uri) AS (
         SELECT value FROM json_each(?)
       ),
@@ -489,9 +498,8 @@ struct SoundThemeResolver {
       )
       SELECT COUNT(*)
       FROM counted_plays p
-      JOIN artist_tracks at ON at.track_uri = p.track_uri
-    """, arguments: [try jsonArray(artistUris)]) ?? 0
-  }
+      WHERE p.track_uri IN (SELECT track_uri FROM artist_tracks)
+    """
 
   private static func dedupedArtistUris(_ artistUris: [String]) -> [String] {
     var seen = Set<String>()
